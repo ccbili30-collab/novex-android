@@ -72,7 +72,7 @@ class BackgroundTaskNotifier(
 
         scope.launch {
             try {
-                val session = chatRepository.getSession(sessionId)
+                val session = chatRepository.sessionById(sessionId)
                 val rawTitle = session?.title?.takeIf { it.isNotBlank() }
                     ?: context.getString(R.string.notif_task_completed_default_title)
                 val title = if (isError) "❌ $rawTitle" else rawTitle

@@ -1,7 +1,7 @@
 package novex.core
 
-import com.openminis.app.data.model.FallbackStrategy
-import com.openminis.app.data.model.LLMError
+import novex.android.data.model.FallbackStrategy
+import novex.android.data.model.LLMError
 import kotlinx.coroutines.*
 import org.junit.Assert.*
 import org.junit.Test

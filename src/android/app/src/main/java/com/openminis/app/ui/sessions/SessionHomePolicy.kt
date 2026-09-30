@@ -1,6 +1,6 @@
 package com.openminis.app.ui.sessions
 
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import java.util.Calendar
 import java.util.TimeZone
 
@@ -28,10 +28,10 @@ internal fun sessionHomeAvailability(
     contentReady = sessionsLoaded && worldNamesLoaded,
 )
 
-internal fun ChatSessionEntity.isWorldConversation(): Boolean =
+internal fun SessionRow.isWorldConversation(): Boolean =
     !worldId.isNullOrBlank() || !worldSnapshotJson.isNullOrBlank()
 
-internal fun ChatSessionEntity.hasNovexContext(): Boolean =
+internal fun SessionRow.hasNovexContext(): Boolean =
     runCatching {
         val binding=org.json.JSONObject(novexConfigurationJson?:"{}").optJSONObject("cardBinding")
         (binding?.optJSONArray("primary")?.length()?:0)>0 || (binding?.optJSONArray("backgrounds")?.length()?:0)>0
@@ -42,11 +42,11 @@ internal fun ChatSessionEntity.hasNovexContext(): Boolean =
         !personaId.isNullOrBlank() ||
         !personaSnapshotJson.isNullOrBlank()
 
-internal fun List<ChatSessionEntity>.forHomeFilter(filter: SessionHomeFilter): List<ChatSessionEntity> =
+internal fun List<SessionRow>.forHomeFilter(filter: SessionHomeFilter): List<SessionRow> =
     when (filter) {
         SessionHomeFilter.RECENT -> this
-        SessionHomeFilter.CONTEXT_FREE -> filterNot(ChatSessionEntity::hasNovexContext)
-        SessionHomeFilter.WITH_CONTEXT -> filter(ChatSessionEntity::hasNovexContext)
+        SessionHomeFilter.CONTEXT_FREE -> filterNot(SessionRow::hasNovexContext)
+        SessionHomeFilter.WITH_CONTEXT -> filter(SessionRow::hasNovexContext)
     }
 
 internal fun sessionHomeRecency(

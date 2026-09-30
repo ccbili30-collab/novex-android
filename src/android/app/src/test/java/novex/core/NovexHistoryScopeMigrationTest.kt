@@ -1,9 +1,16 @@
 package novex.core
 
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
-import com.openminis.app.data.db.CompactMarkerEntity
+import novex.android.data.NovexMainDatabase
+import novex.android.data.chat.CompactMarkerRow
 import com.openminis.app.data.repository.ChatRepository
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -22,11 +29,11 @@ class NovexHistoryScopeMigrationTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun upgradeKeepsOldSummaryWithoutInventingItsAccessScope() = runBlocking {
         val path = File(files.root, "scope.db").absolutePath
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, path)
+            .addMigrations(MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
         var db = open()
         val session = ChatRepository(db.chatDao()).createSession("fixture")
-        db.chatDao().insertCompactMarker(CompactMarkerEntity("old", session.id, "原始摘要", 10, 2, 1, version = 2))
+        db.chatDao().addMarker(CompactMarkerRow("old", session.id, "原始摘要", 10, 2, 1, version = 2))
         // Rebuild the exact v33 table (including existing rows and indexes) before the real reopen.
         val sql = db.openHelper.writableDatabase
         val oldCreate = sql.query("SELECT sql FROM sqlite_master WHERE type='table' AND name='compact_markers'").use { cursor ->
@@ -57,7 +64,7 @@ class NovexHistoryScopeMigrationTest {
             }
             assertEquals("原始摘要", restored.first)
             assertTrue(restored.second)
-            db.chatDao().insertCompactMarker(CompactMarkerEntity("new", session.id, "同范围摘要", 20, 3, 2, version = 2, historyScopeKey = "scope-key"))
+            db.chatDao().addMarker(CompactMarkerRow("new", session.id, "同范围摘要", 20, 3, 2, version = 2, historyScopeKey = "scope-key"))
         } finally { db.close() }
         db = open()
         try {

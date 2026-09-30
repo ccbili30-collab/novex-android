@@ -1,7 +1,7 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 
 object NovexConversationActionTools {
     const val SELECT_IDENTITY = "select_answer_identity"

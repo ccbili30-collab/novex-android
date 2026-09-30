@@ -1,6 +1,6 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolDefinition
 import novex.core.NovexDocumentSnapshotStore
 import novex.core.NovexDocumentToolRouter
 import novex.core.NovexDocumentTools

@@ -50,12 +50,12 @@ abstract class OAuthManager(
         }
 
         /** Create the appropriate OAuthManager for a provider instance. */
-        fun forInstance(context: Context, instance: com.openminis.app.data.model.ProviderInstance): OAuthManager? {
+        fun forInstance(context: Context, instance: novex.android.data.model.ProviderInstance): OAuthManager? {
             return when (instance.providerType) {
-                com.openminis.app.data.model.ProviderType.anthropic -> ClaudeOAuthManager(context, instance.id)
-                com.openminis.app.data.model.ProviderType.openAI -> OpenAIOAuthManager(context, instance.id)
-                com.openminis.app.data.model.ProviderType.xAI -> XAIOAuthManager(context, instance.id)
-                com.openminis.app.data.model.ProviderType.kimiCode -> KimiOAuthManager(context, instance.id)
+                novex.android.data.model.ProviderType.anthropic -> ClaudeOAuthManager(context, instance.id)
+                novex.android.data.model.ProviderType.openAI -> OpenAIOAuthManager(context, instance.id)
+                novex.android.data.model.ProviderType.xAI -> XAIOAuthManager(context, instance.id)
+                novex.android.data.model.ProviderType.kimiCode -> KimiOAuthManager(context, instance.id)
                 else -> null
             }
         }

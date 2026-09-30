@@ -213,13 +213,13 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.character.effectiveAssistantAvatarPath
 import com.openminis.app.data.character.effectiveAssistantName
 import com.openminis.app.data.character.usesRolePresentation
@@ -705,7 +705,7 @@ fun ChatScreen(
     // 书签列与状态把手（防嵌套；状态只属于主线）。
     var sideParentId by remember(sessionId) { mutableStateOf<String?>(null) }
     LaunchedEffect(sessionId) {
-        sideParentId = runCatching { chatRepository.getSession(sessionId)?.sideOfSession }.getOrNull()
+        sideParentId = runCatching { chatRepository.sessionById(sessionId)?.sideOfSession }.getOrNull()
     }
     // ── 沉浸淡化（2026-09-15 用户确认：不做收起做淡化）──────────────────
     // 范围：顶栏 + 主线页侧边组件（书签列/状态把手）+ 右下浮动按钮——全部原地
@@ -774,7 +774,7 @@ fun ChatScreen(
                 novex.android.ui.TextButton(onClick = {
                     showSideDeleteDialog = false
                     coroutineScope.launch {
-                        runCatching { chatRepository.deleteSession(sessionId) }
+                        runCatching { chatRepository.dropSession(sessionId) }
                         onBack()
                     }
                 }) { Text("删除", color = novex.android.ui.NovexColors.Danger) }
@@ -1541,7 +1541,7 @@ fun ChatScreen(
     // exact same SessionEditSheet hosted by the session list home screen,
     // reused via `internal` visibility — no duplicate UI). Populated by an
     // async repo lookup once the user taps the title pill.
-    var editingSession by remember { mutableStateOf<com.openminis.app.data.db.ChatSessionEntity?>(null) }
+    var editingSession by remember { mutableStateOf<novex.android.data.chat.SessionRow?>(null) }
     DisposableEffect(appearancePrefs) {
         val listener = android.content.SharedPreferences.OnSharedPreferenceChangeListener { sp, key ->
             when (key) {

@@ -1,9 +1,9 @@
 package novex.core
 
 import android.content.Context
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.LLMMessage
 import com.openminis.app.provider.LLMProvider
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import java.io.File
 import org.json.JSONObject
 

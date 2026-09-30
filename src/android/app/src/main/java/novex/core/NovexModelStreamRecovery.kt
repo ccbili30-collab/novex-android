@@ -1,7 +1,7 @@
 package novex.core
 
-import com.openminis.app.data.model.FallbackStrategy
-import com.openminis.app.data.model.LLMError
+import novex.android.data.model.FallbackStrategy
+import novex.android.data.model.LLMError
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.currentCoroutineContext
 import kotlinx.coroutines.delay
@@ -43,7 +43,7 @@ class NovexModelStreamRecovery<C>(
                 }
                 rejected(failure)
                 val rateLimited = failure is LLMError.RateLimited
-                val serverError = failure is LLMError.ProviderError && com.openminis.app.data.model.ProviderFailure.httpStatus(failure.detail) in 500..599
+                val serverError = failure is LLMError.ProviderError && novex.android.data.model.ProviderFailure.httpStatus(failure.detail) in 500..599
                 val transient = failure is LLMError.NetworkError || failure is LLMError.TransientError || serverError
                 if (transient && retries < retryDelaysSeconds.size) {
                     val seconds = retryDelaysSeconds[retries++]
@@ -55,7 +55,7 @@ class NovexModelStreamRecovery<C>(
                     continue
                 }
                 settled()
-                val invalidRequest = failure is IllegalArgumentException || failure is LLMError.ProviderError && (com.openminis.app.data.model.ProviderFailure.isContextLimit(failure.detail) || com.openminis.app.data.model.ProviderFailure.httpStatus(failure.detail) in listOf(400, 413, 422))
+                val invalidRequest = failure is IllegalArgumentException || failure is LLMError.ProviderError && (novex.android.data.model.ProviderFailure.isContextLimit(failure.detail) || novex.android.data.model.ProviderFailure.httpStatus(failure.detail) in listOf(400, 413, 422))
                 val mayFallback = !invalidRequest && (rateLimited || serverError || strategy == FallbackStrategy.always)
                 val next = if (mayFallback) remaining.removeFirstOrNull() else null
                 if (next == null) {

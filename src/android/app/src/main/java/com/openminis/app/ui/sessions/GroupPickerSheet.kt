@@ -32,7 +32,7 @@ import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.data.db.FolderEntity
+import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.ui.components.MinisSmallButton
 import com.openminis.app.ui.components.SectionDesign
 import com.openminis.app.ui.components.SectionTextField
@@ -67,7 +67,7 @@ sealed interface GroupChoice {
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun GroupPickerSheet(
-    folders: List<FolderEntity>,
+    folders: List<SessionFolderRow>,
     memberCounts: Map<String, Int>,
     sessionCount: Int,
     anyFiled: Boolean,
@@ -91,7 +91,7 @@ fun GroupPickerSheet(
     androidx.compose.runtime.LaunchedEffect(createSuggestion) {
         if (createSuggestion != null) {
             newName = createSuggestion.name
-            createSuggestion.description?.let { newDesc = it.take(FolderEntity.DESC_MAX_CHARS) }
+            createSuggestion.description?.let { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) }
         }
     }
 
@@ -132,7 +132,7 @@ fun GroupPickerSheet(
                 value = newDesc,
                 // Hard-cap at the storage limit as the user types, so the field
                 // can never hold text the repository would silently truncate.
-                onValueChange = { newDesc = it.take(FolderEntity.DESC_MAX_CHARS) },
+                onValueChange = { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
                 placeholder = stringResource(R.string.group_desc_hint),
                 modifier = Modifier.padding(horizontal = 20.dp),
                 containerColor = SectionDesign.screenBackgroundColor(),

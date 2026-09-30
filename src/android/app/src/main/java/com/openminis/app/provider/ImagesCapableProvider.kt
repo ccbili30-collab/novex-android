@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMResponse
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMResponse
 
 /**
  * P3.1d 生图接口面（绞杀缝）：消费方（GenerateImageTool / QuickTestSheet）经此

@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -21,7 +21,7 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexWorldParallelPersistenceTest {
     @get:Rule val files = TemporaryFolder()
-    private fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+    private fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
         File(files.root, "parallel.db").absolutePath).allowMainThreadQueries().build()
 
     @Test(timeout = 60_000) fun `batch parallel route keeps shared people and remaps selected same person versions after reopen`() = runBlocking {

@@ -8,9 +8,9 @@ import com.openminis.app.config.ConfigSchema
 import com.openminis.app.config.ConfigValue
 import com.openminis.app.config.fields.ClosureField
 import com.openminis.app.config.fields.ReadOnlyField
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelOverrides
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelOverrides
 import com.openminis.app.data.repository.ProviderRepository
 
 /**

@@ -7,7 +7,7 @@ import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -26,9 +26,9 @@ import org.robolectric.annotation.Config
 @Config(application = Application::class, sdk = [28])
 class NovexManagementRecoveryTest {
     @get:Rule val files = TemporaryFolder()
-    private fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+    private fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
         File(files.root, "recovery.db").absolutePath).allowMainThreadQueries().build()
-    private fun service(database: AppDatabase, workspace: NovexWorkspace, interrupt: Boolean = false) = NovexManagementService(
+    private fun service(database: NovexMainDatabase, workspace: NovexWorkspace, interrupt: Boolean = false) = NovexManagementService(
         workspace, CreativeArtifactRepository(database, CreativeArtifactFileStore(File(files.root, "artifacts"))),
         NovexManagementTransaction { work -> database.withTransaction {
             work()

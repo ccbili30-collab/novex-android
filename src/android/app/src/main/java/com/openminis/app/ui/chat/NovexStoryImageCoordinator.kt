@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import novex.core.NovexConversationConfigurationSnapshot
 import org.json.JSONObject
 import org.json.JSONArray
@@ -30,7 +30,7 @@ internal object NovexStoryImageCoordinator {
         return output
     }
     fun completed(configuration: NovexConversationConfigurationSnapshot, visibleMessages: List<String>, blocks: List<AssistantBlock>,
-        start: Int, rows: List<MessageEntity>, messageId: String, providedImages:List<novex.core.NovexSnapshotMedia>?=null): AssistantBlock? {
+        start: Int, rows: List<MessageRow>, messageId: String, providedImages:List<novex.core.NovexSnapshotMedia>?=null): AssistantBlock? {
         if (blocks.any { it.toolName == NOVEX_STORY_IMAGE }) return null
         val text = formalAssistantText(blocks.drop(start), "")
         if (text.isBlank()) return null

@@ -1,8 +1,8 @@
 package com.openminis.app.provider
 
 import android.app.Application
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 import java.io.File
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

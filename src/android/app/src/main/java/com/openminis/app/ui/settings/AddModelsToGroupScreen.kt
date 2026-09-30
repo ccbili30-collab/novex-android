@@ -22,7 +22,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
-import com.openminis.app.data.model.SystemVoiceEntries
+import novex.android.data.model.SystemVoiceEntries
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.components.PickerModalityFilter
 import com.openminis.app.ui.components.modelEntryPickerItems
@@ -63,7 +63,7 @@ fun AddModelsToGroupScreen(
 
     val searchQuery = remember { mutableStateOf("") }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
-    var quickTestEntry by remember { mutableStateOf<com.openminis.app.data.model.ModelEntry?>(null) }
+    var quickTestEntry by remember { mutableStateOf<novex.android.data.model.ModelEntry?>(null) }
     val collapsedInstanceIds = remember(config) {
         // T185: default-collapsed mirrors pre-refactor behaviour. The
         // shared picker auto-expands when search is non-empty so hits

@@ -2,9 +2,9 @@ package com.openminis.app.debug
 
 import android.content.Context
 import com.openminis.app.MinisApp
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import org.json.JSONArray
 import org.json.JSONObject
@@ -254,7 +254,7 @@ internal object ProviderDebugMethods {
                     // matching modelEntries alone reported `members: []` for both
                     // voice groups while memberEntryIds listed two.
                     val entry = cfg.modelEntries.find { it.id == memberId }
-                        ?: com.openminis.app.data.model.SystemVoiceEntries.resolve(memberId)
+                        ?: novex.android.data.model.SystemVoiceEntries.resolve(memberId)
                         ?: continue
                     val instLabel = cfg.instances.find { it.id == entry.providerInstanceId }?.label
                     members.put(JSONObject().apply {
@@ -296,7 +296,7 @@ internal object ProviderDebugMethods {
         if (entryId.isEmpty()) throw RPCException(-32602, "Invalid params: 'entryId' is required")
         val repo = repo(context)
         val entry = repo.config.value.modelEntries.find { it.id == entryId }
-            ?: com.openminis.app.data.model.SystemVoiceEntries.resolve(entryId)
+            ?: novex.android.data.model.SystemVoiceEntries.resolve(entryId)
             ?: throw RPCException(-32602, "Model entry not found: $entryId")
 
         val requested = params.optJSONArray("kinds")

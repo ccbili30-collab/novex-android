@@ -1,6 +1,6 @@
 package com.openminis.app.provider.xai
 
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMModel
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ModelsDevApi
 

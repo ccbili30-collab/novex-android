@@ -6,10 +6,10 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.ViewModelProvider
 import androidx.lifecycle.viewModelScope
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
-import com.openminis.app.data.db.ChatSessionEntity
-import com.openminis.app.data.db.FolderEntity
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.chat.SessionRow
+import novex.android.data.chat.SessionFolderRow
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.logging.AppLogger
@@ -70,7 +70,7 @@ class SessionListViewModel(
          */
         internal fun parseGroupSuggestion(
             text: String,
-            folders: List<FolderEntity>,
+            folders: List<SessionFolderRow>,
         ): GroupSuggestion? {
             val start = text.indexOf('{')
             val end = text.lastIndexOf('}')
@@ -94,7 +94,7 @@ class SessionListViewModel(
             val newName = (json.optString("name").takeIf { it.isNotBlank() } ?: folderName)?.trim()
             if (newName.isNullOrEmpty()) return null
             val desc = json.optString("description").trim()
-                .takeIf { it.isNotEmpty() }?.take(FolderEntity.DESC_MAX_CHARS)
+                .takeIf { it.isNotEmpty() }?.take(SessionFolderRow.DESCRIPTION_MAX_CHARS)
             return GroupSuggestion.Create(newName, desc)
         }
 
@@ -124,7 +124,7 @@ class SessionListViewModel(
         }
     }
 
-    private val _allSessions = MutableStateFlow<List<ChatSessionEntity>>(emptyList())
+    private val _allSessions = MutableStateFlow<List<SessionRow>>(emptyList())
     val hasSessions: StateFlow<Boolean> = _allSessions
         .map { it.isNotEmpty() }
         .stateIn(viewModelScope, SharingStarted.Eagerly, false)
@@ -142,7 +142,7 @@ class SessionListViewModel(
     // Search
     val searchQuery = MutableStateFlow("")
     val isSearchActive = MutableStateFlow(false)
-    val searchResults = MutableStateFlow<List<ChatSessionEntity>>(emptyList())
+    val searchResults = MutableStateFlow<List<SessionRow>>(emptyList())
 
     /**
      * Query that produced the currently displayed result set. Unlike the text
@@ -170,7 +170,7 @@ class SessionListViewModel(
     val searchSnippets = MutableStateFlow<Map<String, String>>(emptyMap())
 
     // The list to actually show: search results when searching, otherwise all sessions
-    val displayedSessions: StateFlow<List<ChatSessionEntity>> = combine(
+    val displayedSessions: StateFlow<List<SessionRow>> = combine(
         _allSessions, searchResults, appliedSearchQuery, isSearchActive
     ) { all, results, q, active ->
         if (active && q.isNotBlank()) results else all
@@ -187,7 +187,7 @@ class SessionListViewModel(
      * filed session as an orphan and draws a flat list, then visibly reflows —
      * the "group cards only show up after a moment" symptom iOS hit.
      */
-    val folders = MutableStateFlow<List<FolderEntity>>(emptyList())
+    val folders = MutableStateFlow<List<SessionFolderRow>>(emptyList())
 
     /**
      * Which groups are collapsed. Never persisted to the DB, but mirrored to
@@ -306,7 +306,7 @@ class SessionListViewModel(
                 started.await()
                 runCatching { unsub() }
             }
-            chatRepository.observeSessions().collect {
+            chatRepository.observeSessionIndex().collect {
                 _allSessions.value = it
                 if (!_isInitialLoadComplete.value) _isInitialLoadComplete.value = true
                 detectNewTopSession(it)
@@ -401,7 +401,7 @@ class SessionListViewModel(
         }
     }
 
-    fun deleteSession(id: String) {
+    fun dropSession(id: String) {
         viewModelScope.launch {
             try { deleteConversation(id) }
             catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
@@ -418,7 +418,7 @@ class SessionListViewModel(
      * "暂不分组" for a group the user cannot see — and label the action 更换 when
      * there is nothing to change from. Mirrors partitionByFolder's presence test.
      */
-    private fun isFiled(session: ChatSessionEntity?): Boolean {
+    private fun isFiled(session: SessionRow?): Boolean {
         val fid = session?.folderId ?: return false
         return folders.value.any { it.id == fid }
     }
@@ -533,7 +533,7 @@ class SessionListViewModel(
         // Anchor on the first selected session whose bound model is usable,
         // falling back to the dedicated sub-model and then anything eligible.
         val anchorPrimary = sorted.firstNotNullOfOrNull { sid ->
-            val modelId = chatRepository.getSession(sid)?.modelId ?: return@firstNotNullOfOrNull null
+            val modelId = chatRepository.sessionById(sid)?.modelId ?: return@firstNotNullOfOrNull null
             titleEligible.firstOrNull { it.model.id == modelId }
         }
         val candidates = (listOfNotNull(subEntry, anchorPrimary) +
@@ -549,13 +549,13 @@ class SessionListViewModel(
 
         // Existing groups + up to 3 member titles each, deduped by name so two
         // offline-created "Work" folders don't both bid for the merge.
-        val folders = chatRepository.listFolders()
+        val folders = chatRepository.allFolders()
         val seenNames = mutableSetOf<String>()
         val folderLines = mutableListOf<String>()
         for (f in folders) {
             if (!seenNames.add(f.name.lowercase())) continue
-            val memberTitles = chatRepository.sessionIdsInFolder(f.id).take(3)
-                .mapNotNull { chatRepository.getSession(it)?.title }
+            val memberTitles = chatRepository.sessionIdsFiledUnder(f.id).take(3)
+                .mapNotNull { chatRepository.sessionById(it)?.title }
             val descPart = f.description?.takeIf { it.isNotBlank() }?.let { " ($it)" } ?: ""
             folderLines += "- \"${f.name}\"$descPart: ${memberTitles.joinToString(" / ")}"
         }
@@ -563,7 +563,7 @@ class SessionListViewModel(
         // Sorted + capped at 20 for the same reason as the anchor: an unsorted
         // sample would send a different 20 sessions on each run.
         val sessionLines = sorted.take(20).mapNotNull { sid ->
-            chatRepository.getSession(sid)?.let { s ->
+            chatRepository.sessionById(sid)?.let { s ->
                 "- ${s.title ?: "Untitled"} [${s.category ?: "other"}]"
             }
         }
@@ -597,7 +597,7 @@ class SessionListViewModel(
         for (entry in candidates) {
             val instance = providerRepository.instance(entry.providerInstanceId) ?: continue
             var apiKey = providerRepository.loadApiKey(instance.id) ?: continue
-            if (instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth) {
+            if (instance.credentialType == novex.android.data.model.ProviderCredential.oauth) {
                 try {
                     val manager = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                     val freshToken = manager?.validAccessToken()
@@ -668,7 +668,7 @@ class SessionListViewModel(
                     val folder = chatRepository.createFolder(
                         choice.name,
                         choice.description,
-                        origin = if (fromAi) FolderEntity.ORIGIN_AI else FolderEntity.ORIGIN_MANUAL,
+                        origin = if (fromAi) SessionFolderRow.AI_ORIGIN else SessionFolderRow.MANUAL_ORIGIN,
                     )
                     chatRepository.setFolderForSessions(folder.id, request.sessionIds)
                     // A brand-new group starts expanded so the sessions the
@@ -713,7 +713,7 @@ class SessionListViewModel(
     fun deleteFolderWithSessions(folderId: String) {
         viewModelScope.launch {
             try {
-            val memberIds = chatRepository.sessionIdsInFolder(folderId)
+            val memberIds = chatRepository.sessionIdsFiledUnder(folderId)
             for (id in memberIds) {
                 deleteConversation(id)
             }
@@ -757,15 +757,15 @@ class SessionListViewModel(
 
     fun togglePin(id: String) {
         viewModelScope.launch {
-            val session = chatRepository.getSession(id) ?: return@launch
+            val session = chatRepository.sessionById(id) ?: return@launch
             val newPinnedAt = if (session.pinnedAt != null) null else System.currentTimeMillis()
-            chatRepository.dao.updatePinnedAt(id, newPinnedAt)
+            chatRepository.dao.setPinStamp(id, newPinnedAt)
         }
     }
 
     fun updateTitleAndCategory(id: String, title: String, category: String?) {
         viewModelScope.launch {
-            chatRepository.updateSessionTitleAndCategory(id, title, category)
+            chatRepository.renameSessionWithCategory(id, title, category)
         }
     }
 
@@ -801,8 +801,8 @@ class SessionListViewModel(
         val startedAt = System.currentTimeMillis()
         var firstUserRaw: String? = null
         try {
-                val session = chatRepository.getSession(id) ?: return false
-                val messages = chatRepository.loadMessages(id)
+                val session = chatRepository.sessionById(id) ?: return false
+                val messages = chatRepository.historyFor(id)
                 if (messages.isEmpty()) return false
 
                 // [T-titlegen-context-first-last-pair] Summary = first user +
@@ -873,7 +873,7 @@ class SessionListViewModel(
                     var apiKey = providerRepository.loadApiKey(instance.id) ?: continue
 
                     // Refresh OAuth token if needed
-                    if (instance.credentialType == com.openminis.app.data.model.ProviderCredential.oauth) {
+                    if (instance.credentialType == novex.android.data.model.ProviderCredential.oauth) {
                         try {
                             val manager = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                             val freshToken = manager?.validAccessToken()
@@ -932,7 +932,7 @@ class SessionListViewModel(
                         )
                         val (title, category) = parseTitleResponse(response.text)
                         if (title.isNotEmpty()) {
-                            chatRepository.updateSessionTitleAndCategory(id, title, category)
+                            chatRepository.renameSessionWithCategory(id, title, category)
                             AppLogger.info(
                                 "TitleGen",
                                 "outcome=set origin=$origin session=${id.take(8)} " +
@@ -985,7 +985,7 @@ class SessionListViewModel(
      * while the LLM call was in flight, which can be tens of seconds.
      */
     private suspend fun applyFallbackTitle(id: String, firstUserRaw: String?, origin: String): Boolean {
-        val current = chatRepository.getSession(id)?.title?.trim()
+        val current = chatRepository.sessionById(id)?.title?.trim()
         if (!current.isNullOrEmpty() && current != NEW_CHAT_TITLE) {
             AppLogger.info(
                 "TitleGen",
@@ -1002,7 +1002,7 @@ class SessionListViewModel(
             )
             return false
         }
-        chatRepository.updateSessionTitle(id, cleaned)
+        chatRepository.renameSession(id, cleaned)
         // Length only — never the prompt text itself.
         AppLogger.info(
             "TitleGen",
@@ -1066,8 +1066,8 @@ class SessionListViewModel(
 
     fun duplicateSession(id: String) {
         viewModelScope.launch {
-            val session = chatRepository.getSession(id) ?: return@launch
-            val messages = chatRepository.loadMessages(id)
+            val session = chatRepository.sessionById(id) ?: return@launch
+            val messages = chatRepository.historyFor(id)
             val newSession = chatRepository.createSession(
                 modelId = session.modelId,
                 title = "${session.title ?: "Chat"} (Copy)",
@@ -1119,7 +1119,7 @@ class SessionListViewModel(
      * of existing sessions keep their ids (already in [knownSessionIds]) so
      * they never fire. Runs on the collector coroutine; no thread switch.
      */
-    private fun detectNewTopSession(sessions: List<ChatSessionEntity>) {
+    private fun detectNewTopSession(sessions: List<SessionRow>) {
         val topId = sessions.firstOrNull()?.id
         if (!newTopBaselineSeeded) {
             knownSessionIds = sessions.mapTo(HashSet()) { it.id }
@@ -1143,7 +1143,7 @@ class SessionListViewModel(
      * Runs on Dispatchers.IO; caller is responsible for thread switching.
      */
     private suspend fun buildContentSnippets(
-        sessions: List<ChatSessionEntity>,
+        sessions: List<SessionRow>,
         query: String,
     ): Map<String, String> {
         if (query.isBlank() || sessions.isEmpty()) return emptyMap()
@@ -1152,7 +1152,7 @@ class SessionListViewModel(
         for (session in sessions) {
             val title = session.title.orEmpty()
             if (title.lowercase().contains(q)) continue
-            val msgs = chatRepository.loadMessages(session.id)
+            val msgs = chatRepository.historyFor(session.id)
             var foundSnippet: String? = null
             for (m in msgs) {
                 val text = extractText(m.partsJson)

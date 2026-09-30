@@ -4,7 +4,7 @@ import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
 import com.openminis.app.data.ConversationSettingsSnapshot
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -19,7 +19,7 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CharacterConversationSnapshotFactoryInstrumentedTest {
-    private lateinit var database: AppDatabase
+    private lateinit var database: NovexMainDatabase
     private lateinit var catalog: CharacterCatalogRepository
     private lateinit var modules: ContentModuleRepository
     private lateinit var media: MediaAssetRepository
@@ -28,7 +28,7 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         catalog = CharacterCatalogRepository(database.characterCatalogDao())
@@ -131,8 +131,8 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
             personaId = snapshot.profile.persona?.id,
             personaSnapshotJson = snapshot.profile.persona?.toJson()?.toString(),
         )
-        assertEquals(world.id, database.chatDao().getSession(session.id)?.worldId)
-        assertEquals(variant.id, database.chatDao().getSession(session.id)?.characterVersionId)
+        assertEquals(world.id, database.chatDao().sessionById(session.id)?.worldId)
+        assertEquals(variant.id, database.chatDao().sessionById(session.id)?.characterVersionId)
     }
 
     @Test
@@ -177,7 +177,7 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
             personaSnapshotJson = null,
             chatBackgroundPath = null,
         )
-        val restored = repository.getSession(session.id)
+        val restored = repository.sessionById(session.id)
         assertEquals(world.id, restored?.worldId)
         assertEquals(null, restored?.characterId)
         assertTrue(restored?.worldSnapshotJson.orEmpty().contains("群星海"))
@@ -188,7 +188,7 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
         val repository = ChatRepository(database.chatDao())
         val session = repository.createSession(modelId = "model-1")
 
-        repository.updateConversationSettings(
+        repository.writeConversationSettings(
             session.id,
             ConversationSettingsSnapshot(
                 conversationPrompt = "当前对话提示词",
@@ -197,17 +197,17 @@ class CharacterConversationSnapshotFactoryInstrumentedTest {
         )
         assertEquals(
             "/managed/conversation-background.jpg",
-            repository.getSession(session.id)?.chatBackgroundPath,
+            repository.sessionById(session.id)?.chatBackgroundPath,
         )
 
-        repository.updateConversationSettings(
+        repository.writeConversationSettings(
             session.id,
             ConversationSettingsSnapshot(
                 conversationPrompt = "当前对话提示词",
                 backgroundPath = null,
             ),
         )
-        assertEquals(null, repository.getSession(session.id)?.chatBackgroundPath)
+        assertEquals(null, repository.sessionById(session.id)?.chatBackgroundPath)
     }
 
     @Test

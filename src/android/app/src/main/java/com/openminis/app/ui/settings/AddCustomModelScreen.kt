@@ -16,8 +16,8 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.components.RowLabel
 import com.openminis.app.ui.components.SectionTextField

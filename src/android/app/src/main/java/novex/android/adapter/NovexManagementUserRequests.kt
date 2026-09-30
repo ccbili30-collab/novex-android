@@ -1,6 +1,6 @@
 package novex.android.adapter
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import com.openminis.app.data.attachments.containsAgentAttachmentMetadata
 import com.openminis.app.data.attachments.stripAgentAttachmentMetadata
 import com.openminis.app.data.repository.ChatRepository
@@ -13,7 +13,7 @@ import org.json.JSONObject
  * An empty real user turn remains a boundary: do not fall back to an older OK.
  */
 object NovexManagementUserRequests {
-    fun fromActiveMessages(rows: List<MessageEntity>): List<String> {
+    fun fromActiveMessages(rows: List<MessageRow>): List<String> {
         require(rows.all { it.sessionId == rows.first().sessionId }) { "用户请求不能跨对话合并" }
         val requests = mutableListOf<String>()
         for (row in rows) {

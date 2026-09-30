@@ -109,7 +109,7 @@ data class ScheduledTask(
     val prompt: String,
     val targetMode: ScheduledTargetMode = ScheduledTargetMode.NewSession,
     val modelId: String? = null,             // null → use app default (or fall back from modelBinding's resolved entry)
-    // [T-android-scheduled-task-model-binding] Mirrors ChatSessionEntity.modelBinding.
+    // [T-android-scheduled-task-model-binding] Mirrors SessionRow.modelBinding.
     // JSON: `{"type":"group","groupId":"..."}` or `{"type":"entry","entryId":"..."}`
     // null → "use app default" (ScheduledAgentRunner resolves to defaultPrimaryGroupId).
     // When non-null, ScheduledAgentRunner writes it onto the new session row so the

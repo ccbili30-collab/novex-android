@@ -5,7 +5,7 @@ import androidx.room.Room
 import androidx.room.withTransaction
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -24,7 +24,7 @@ import org.robolectric.RuntimeEnvironment
 class NovexNaturalCardExecutionTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun `save as game edits its module in library and stable outputs distinguish identical copies from retry`() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("chat"))

@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.LLMUsage
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.LLMUsage
 import kotlinx.coroutines.yield
 import org.json.JSONObject
 

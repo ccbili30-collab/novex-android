@@ -1,6 +1,6 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import org.junit.Assert.assertEquals
 import org.junit.Test
 
@@ -59,7 +59,7 @@ class ConversationBranchMemoryTest {
         )
     }
 
-    private fun row(id: String, parts: String, order: Int) = MessageEntity(
+    private fun row(id: String, parts: String, order: Int) = MessageRow(
         id = id,
         sessionId = "session",
         role = "assistant",

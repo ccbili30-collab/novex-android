@@ -3,7 +3,7 @@ package com.openminis.app.debug
 import android.content.Context
 import androidx.core.content.FileProvider
 import com.openminis.app.MinisApp
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.ui.chat.InputAttachment
 import org.json.JSONObject
 import java.io.File
@@ -97,9 +97,9 @@ internal object ChatMutationMethods {
         )
 
         // Re-read DB to pick up the latest message metadata after the run.
-        val msgs = app.chatRepository.dao.loadMessages(sessionId)
+        val msgs = app.chatRepository.dao.historyFor(sessionId)
         val userMsg = msgs.lastOrNull { it.role == "user" }
-        val displayedModelName = overrideName ?: app.chatRepository.dao.getSession(sessionId)?.let { resolveDisplay(context, it.modelId) }
+        val displayedModelName = overrideName ?: app.chatRepository.dao.sessionById(sessionId)?.let { resolveDisplay(context, it.modelId) }
         return JSONObject().apply {
             put("sessionId", sessionId)
             put("isNewSession", isNew)
@@ -117,7 +117,7 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         val messageId = if (params.has("messageId") && !params.isNull("messageId")) params.optString("messageId").ifEmpty { null } else null
 
@@ -139,7 +139,7 @@ internal object ChatMutationMethods {
             timeoutMs = timeoutSec * 1000L,
         )
         val displayedModelName = overrideName
-            ?: app.chatRepository.dao.getSession(sessionId)?.let { resolveDisplay(context, it.modelId) }
+            ?: app.chatRepository.dao.sessionById(sessionId)?.let { resolveDisplay(context, it.modelId) }
         return JSONObject().apply {
             put("sessionId", sessionId)
             put("status", result.status)
@@ -167,7 +167,7 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'blockId' param")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         val wait = params.optBoolean("wait", false)
         val timeoutSec = params.optInt("waitTimeout", 600).coerceIn(1, 1800)
@@ -193,9 +193,9 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val app = app(context)
-        val s = app.chatRepository.dao.getSession(sessionId)
+        val s = app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
-        val msgs = app.chatRepository.dao.loadMessages(sessionId)
+        val msgs = app.chatRepository.dao.historyFor(sessionId)
         val lastMsg = msgs.lastOrNull()
         return JSONObject().apply {
             put("sessionId", sessionId)
@@ -264,7 +264,7 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         val includesBoundary = params.optBoolean("includesBoundary", false)
         val messageId = if (params.has("messageId") && !params.isNull("messageId"))
@@ -276,7 +276,7 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'messageId' param (required when includesBoundary=false)")
         }
         val waitTimeoutSec = params.optInt("waitTimeout", 120).coerceIn(1, 1800)
-        val beforeMarkerCount = app.chatRepository.dao.listCompactMarkers(sessionId).size
+        val beforeMarkerCount = app.chatRepository.dao.markersFor(sessionId).size
         val result = HeadlessChatRunner.compact(
             context = context,
             sessionId = sessionId,
@@ -285,7 +285,7 @@ internal object ChatMutationMethods {
             messageId = messageId,
             includesBoundary = includesBoundary,
         )
-        val afterMarkers = app.chatRepository.dao.listCompactMarkers(sessionId)
+        val afterMarkers = app.chatRepository.dao.markersFor(sessionId)
         val latest = afterMarkers.maxByOrNull { it.createdAt }
         return JSONObject().apply {
             put("sessionId", sessionId)
@@ -320,10 +320,10 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         val includeFullSummary = params.optBoolean("includeFullSummary", false)
-        val markers = app.chatRepository.dao.listCompactMarkers(sessionId)
+        val markers = app.chatRepository.dao.markersFor(sessionId)
         val arr = org.json.JSONArray()
         for (m in markers) {
             val obj = JSONObject().apply {
@@ -358,9 +358,9 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Missing 'sessionId' param")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
-        val beforeMarkers = app.chatRepository.dao.listCompactMarkers(sessionId)
+        val beforeMarkers = app.chatRepository.dao.markersFor(sessionId)
         val removed = beforeMarkers.maxByOrNull { it.createdAt }
         // ChatViewModel.revertCompact() does its DB delete in viewModelScope
         // .launch(IO) — fire-and-forget. We can't observe a completion flow
@@ -369,11 +369,11 @@ internal object ChatMutationMethods {
         kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.Main) {
             HeadlessChatRunner.revertCompact(context, sessionId)
         }
-        var afterMarkers = app.chatRepository.dao.listCompactMarkers(sessionId)
+        var afterMarkers = app.chatRepository.dao.markersFor(sessionId)
         val deadline = System.currentTimeMillis() + 5000L
         while (afterMarkers.size == beforeMarkers.size && System.currentTimeMillis() < deadline) {
             kotlinx.coroutines.delay(150L)
-            afterMarkers = app.chatRepository.dao.listCompactMarkers(sessionId)
+            afterMarkers = app.chatRepository.dao.markersFor(sessionId)
         }
         val newLatest = afterMarkers.maxByOrNull { it.createdAt }
         return JSONObject().apply {
@@ -394,12 +394,12 @@ internal object ChatMutationMethods {
             throw RPCException(-32602, "Pass confirm=true to delete a session")
         }
         val app = app(context)
-        app.chatRepository.dao.getSession(sessionId)
+        app.chatRepository.dao.sessionById(sessionId)
             ?: throw RPCException(-32602, "Session not found")
         // Cancel any in-flight stream first so we don't leave a dangling job
         // writing into a deleted session row.
         HeadlessChatRunner.cancel(context, sessionId)
-        app.chatRepository.deleteSession(sessionId)
+        app.chatRepository.dropSession(sessionId)
         HeadlessChatRunner.forget(sessionId)
         return JSONObject().apply {
             put("sessionId", sessionId)

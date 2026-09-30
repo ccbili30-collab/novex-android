@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexConversationContextAdoption
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import novex.android.adapter.WorkspaceNovexContextLoader
@@ -26,7 +26,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `direct adoption and game adoption keep different revisions readable after closing and reopening`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "parallel-adoption.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         try {
@@ -45,7 +45,7 @@ class NovexConversationContextAdoptionPersistenceTest {
                 novexConfigurationJson = NovexConversationConfigurationCodec.encode(started))
             database.close(); database = open()
             workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
-            val restored = NovexConversationConfigurationCodec.decode(database.chatDao().getSession(row.id)!!.novexConfigurationJson, row.id)
+            val restored = NovexConversationConfigurationCodec.decode(database.chatDao().sessionById(row.id)!!.novexConfigurationJson, row.id)
             val candidates = WorkspaceNovexContextLoader(workspace).load(restored).filter { it.content.contains("规则：") }
             assertEquals(setOf("旧规则：十取一", "新规则：二十取一"), candidates.map { it.content }.toSet())
             assertEquals(2, candidates.map { it.sourceId }.distinct().size)
@@ -68,7 +68,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `legacy-compatible role snapshot keeps companion identity out of public knowledge and scopes instructions`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -100,7 +100,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `ending a game restores the pregame role text even after explicitly refreshing that role during play`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -126,7 +126,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `explicit refresh changes adopted source while preserving playthrough state identity and controls`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -162,7 +162,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `removing conversation background drops only that use while a game reference remains frozen`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -190,7 +190,7 @@ class NovexConversationContextAdoptionPersistenceTest {
 
     @Test
     fun `ordinary role and background keep adopted text after original edits and configuration reload`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "adoption.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         try {
@@ -218,7 +218,7 @@ class NovexConversationContextAdoptionPersistenceTest {
             database.close()
             database = open()
             workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
-            val saved = com.openminis.app.data.repository.ChatRepository(database.chatDao()).getSession(session.id)!!.novexConfigurationJson
+            val saved = com.openminis.app.data.repository.ChatRepository(database.chatDao()).sessionById(session.id)!!.novexConfigurationJson
             val reopened = NovexConversationConfigurationCodec.decode(saved, "chat")
             val loader = WorkspaceNovexContextLoader(workspace)
             val text = loader.load(reopened).joinToString("\n") { it.content }

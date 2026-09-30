@@ -1,8 +1,8 @@
 package novex.android.adapter
 
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.chat.MessageRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 import novex.core.*
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,7 +11,7 @@ import org.json.JSONObject
 object NovexScopedConversationHistory {
     data class Projection(val messages: List<LLMMessage>, val restrictedMessageIds: Set<String>)
 
-    fun project(history: List<LLMMessage>, rows: List<MessageEntity>, records: List<ContextUsageRecord>,
+    fun project(history: List<LLMMessage>, rows: List<MessageRow>, records: List<ContextUsageRecord>,
         scopeKey: String): Projection {
         val byResponse = records.filter { it.responseMessageId != null }.associateBy { it.responseMessageId }
         val byId = rows.associateBy { it.id }

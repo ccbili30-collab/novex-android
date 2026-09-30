@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 
 /**
  * [T-presend-contract] PR 0 地震仪：请求出口三不变量。

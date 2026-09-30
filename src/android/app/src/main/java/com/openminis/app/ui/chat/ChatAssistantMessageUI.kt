@@ -196,13 +196,13 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
@@ -349,7 +349,7 @@ internal fun AssistantMessageView(message: ChatMessage, onRetry: (() -> Unit)? =
                     // gate stays here so any future re-introduction
                     // doesn't silently bring back the always-render bug.
                     val effectiveLevel = message.thinkingLevel
-                        ?: com.openminis.app.data.model.ThinkingLevel.MEDIUM
+                        ?: novex.android.data.model.ThinkingLevel.MEDIUM
                     if (effectiveLevel.isEnabled) {
                         // [T-android-thinking-auto-collapse] Stream signal
                         // requires THIS block to be the trailing block of

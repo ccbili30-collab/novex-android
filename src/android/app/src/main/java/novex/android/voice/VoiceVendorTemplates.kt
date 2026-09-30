@@ -1,9 +1,9 @@
 package novex.android.voice
 
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
 
 /**
  * 语音厂商的接入模板（P3.2 真重写版）。

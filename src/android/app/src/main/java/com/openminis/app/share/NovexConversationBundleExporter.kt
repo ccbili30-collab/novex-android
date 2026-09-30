@@ -5,7 +5,7 @@ import android.database.Cursor
 import androidx.room.withTransaction
 import com.openminis.app.data.character.NovexCardKind
 import com.openminis.app.data.character.NovexCardPackageCodec
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.core.*
 import java.io.File
 import java.security.MessageDigest
@@ -27,7 +27,7 @@ private class BundleLimitExceeded : IllegalStateException("对话包超过一吉
 data class NovexConversationBundleResult(val file: File, val messageCount: Int, val fileCount: Int,
     val missing: List<String>, val traceCount: Int)
 
-class NovexConversationBundleExporter(private val context: Context, private val database: AppDatabase,
+class NovexConversationBundleExporter(private val context: Context, private val database: NovexMainDatabase,
     private val workspace: NovexWorkspace) {
     suspend fun export(conversationId: String, runtime: JSONObject): NovexConversationBundleResult = withContext(Dispatchers.IO) {
         require(conversationId.isNotBlank()) { "尚无可导出的对话" }

@@ -2,7 +2,7 @@ package novex.core
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.NovexContextReadJournal
 import java.io.File
@@ -24,7 +24,7 @@ class NovexDocumentReadCoveragePersistenceTest {
 
     @Test
     fun `workspace file coverage follows real content revisions and rejects an old cursor`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(database.chatDao())
             val session = repository.createSession("model")
@@ -54,7 +54,7 @@ class NovexDocumentReadCoveragePersistenceTest {
 
     @Test
     fun `document directory and search never complete reading and compact passages retain durable exact ranges`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "reads.db").absolutePath).allowMainThreadQueries().build()
         var database = open()
         val document = NovexDocumentSnapshot(NovexResourceRef("novex://documents/source"), "a".repeat(64), "parser-1", "制度文档",

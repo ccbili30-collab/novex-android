@@ -1,7 +1,7 @@
 package com.openminis.app.provider
 
 import android.content.Context
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMModel
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString

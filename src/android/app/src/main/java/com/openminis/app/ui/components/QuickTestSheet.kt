@@ -43,10 +43,10 @@ import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMMediaAttachment
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.normalizeModalityName
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMMediaAttachment
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.normalizeModalityName
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ProviderFactory

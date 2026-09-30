@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory
 import java.io.File
 import java.util.Base64
@@ -27,7 +27,7 @@ class NovexWorldGameExportCompletenessTest {
     @Test fun gamePackageRetainsEveryModuleAndEditableExtension() = checkPackage(NovexCardKind.GAME)
 
     private fun checkPackage(kind: NovexCardKind) = runBlocking {
-        fun database() = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        fun database() = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         val sourceDatabase = database()
         val targetDatabase = database()

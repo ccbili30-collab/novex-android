@@ -1,8 +1,8 @@
 package novex.core
 
-import com.openminis.app.data.db.MessageEntity
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.chat.MessageRow
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 import novex.android.adapter.NovexScopedConversationHistory
 import org.json.JSONArray
 import org.json.JSONObject
@@ -16,11 +16,11 @@ class NovexScopedConversationHistoryTest {
     private val secret = "未公开的私人约定"
     private fun text(value: String) = JSONArray().put(JSONObject().put("type", "text").put("value", value)).toString()
     private val rows get() = listOf(
-        MessageEntity("user", "chat", "user", text("整理邮局"), 1, sortOrder = 0),
-        MessageEntity("call", "chat", "assistant", JSONArray().put(JSONObject().put("type", "text").put("value", "工作推断$secret").put("execution", true))
+        MessageRow("user", "chat", "user", text("整理邮局"), 1, sortOrder = 0),
+        MessageRow("call", "chat", "assistant", JSONArray().put(JSONObject().put("type", "text").put("value", "工作推断$secret").put("execution", true))
             .put(JSONObject().put("type", "toolUse")).toString(), 2, sortOrder = 1),
-        MessageEntity("result", "chat", "user", JSONArray().put(JSONObject().put("type", "toolResult")).toString(), 3, sortOrder = 2),
-        MessageEntity("formal", "chat", "assistant", text("邮局已保存"), 4, sortOrder = 3),
+        MessageRow("result", "chat", "user", JSONArray().put(JSONObject().put("type", "toolResult")).toString(), 3, sortOrder = 2),
+        MessageRow("formal", "chat", "assistant", text("邮局已保存"), 4, sortOrder = 3),
     )
     private val history get() = listOf(
         LLMMessage(LLMMessage.Role.USER, "整理邮局", dbMessageId = "user"),

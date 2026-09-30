@@ -1,6 +1,6 @@
 package novex.android.thinking
 
-import com.openminis.app.data.db.ProviderThinkingContractEntity
+import novex.android.data.provider.ThinkingRuleRow
 
 /**
  * 自定义规则 ↔ Room 行的往返（P3.2 真重写版）。
@@ -26,8 +26,8 @@ object ThinkingContractCoding {
 
     // ---- 规则 ↔ Entity ----
 
-    fun toEntity(rule: ThinkingContract, id: String, instanceId: String, sortOrder: Int): ProviderThinkingContractEntity =
-        ProviderThinkingContractEntity(
+    fun toEntity(rule: ThinkingContract, id: String, instanceId: String, sortOrder: Int): ThinkingRuleRow =
+        ThinkingRuleRow(
             id = id,
             providerInstanceId = instanceId,
             label = rule.label,
@@ -38,7 +38,7 @@ object ThinkingContractCoding {
             sortOrder = sortOrder,
         )
 
-    fun toRule(row: ProviderThinkingContractEntity): ThinkingContract =
+    fun toRule(row: ThinkingRuleRow): ThinkingContract =
         ThinkingContract(
             kind = ThinkingContract.Kind.CUSTOM,
             scope = row.scopeColumn(),
@@ -50,7 +50,7 @@ object ThinkingContractCoding {
     private fun ThinkingContract.Scope.columnKind(): String =
         if (this is ThinkingContract.Scope.ModelPattern) "modelPattern" else "allModels"
 
-    private fun ProviderThinkingContractEntity.scopeColumn(): ThinkingContract.Scope =
+    private fun ThinkingRuleRow.scopeColumn(): ThinkingContract.Scope =
         if (scopeKind == "modelPattern") {
             ThinkingContract.Scope.ModelPattern(scopePattern ?: "*")
         } else {

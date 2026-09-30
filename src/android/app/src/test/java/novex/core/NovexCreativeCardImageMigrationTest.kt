@@ -2,7 +2,7 @@ package novex.core
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.character.*
 import com.openminis.app.data.creative.*
 import novex.android.adapter.NovexTestWorkspaceFactory
@@ -22,7 +22,7 @@ import java.io.File
 class NovexCreativeCardImageMigrationTest {
     @get:Rule val files = TemporaryFolder()
     @Test fun oldAttachmentsBecomeOwnedAndNeitherSourceDeletionNorRestartRecreatesRemovedPictures() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexTestWorkspaceFactory.create(db, File(files.root, "media"))
             val world = workspace.apply(NovexCommand.CreateWorld("旧图", "正文")).requireWorld()

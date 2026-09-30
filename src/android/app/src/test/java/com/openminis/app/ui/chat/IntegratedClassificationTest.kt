@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import com.openminis.app.cards.IntegratedCatalog
 import com.openminis.app.data.creative.RoomNovexWorkGroups
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.core.*
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.runBlocking
@@ -22,7 +22,7 @@ import org.robolectric.annotation.Config
 class IntegratedClassificationTest {
     @Test fun newWorldAndRoleCanBeGroupedWithoutOldRowsAndDeletedCardsCannotBeReadded()=runBlocking {
         val context=RuntimeEnvironment.getApplication()
-        val db=Room.inMemoryDatabaseBuilder(context,AppDatabase::class.java).allowMainThreadQueries().build()
+        val db=Room.inMemoryDatabaseBuilder(context,NovexMainDatabase::class.java).allowMainThreadQueries().build()
         val store=CardStore(java.nio.file.Files.createTempDirectory("classification"))
         try {
             for(kind in CardKind.values())store.save(ContentDocument(kind.name,kind,kind.name,emptyList()),null,ChangeSource.HUMAN,"create-${kind.name}")
@@ -30,7 +30,7 @@ class IntegratedClassificationTest {
             val id=groups.create("分类")
             val folder=groups.createFolder(id,null,"子目录")
             val members=setOf(NovexContentAddress.world("WORLD"),NovexContentAddress.characterVersion("CHARACTER"))
-            assertFalse(db.novexWorkGroupDao().targetExists("WORLD","WORLD"))
+            assertFalse(db.workGroupDao().targetExists("WORLD","WORLD"))
             groups.replaceMembers(id,emptySet(),members,folder)
             val reopened=RoomNovexWorkGroups(db){IntegratedCatalog.contains(it,store)}.snapshots.first()
             assertEquals(members,reopened.groups.single().contents(folder))

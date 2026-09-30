@@ -1,8 +1,8 @@
 package com.openminis.app.tools
 
 import android.content.Context
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
 import java.io.File
 import novex.android.ContentPaths

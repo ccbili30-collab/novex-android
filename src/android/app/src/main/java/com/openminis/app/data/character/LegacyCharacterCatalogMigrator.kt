@@ -1,7 +1,7 @@
 package com.openminis.app.data.character
 
 import android.content.Context
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import org.json.JSONArray
 import org.json.JSONObject
 
@@ -23,7 +23,7 @@ object LegacyCharacterCatalogMigrator {
 
     suspend fun migrate(
         context: Context,
-        database: AppDatabase,
+        database: NovexMainDatabase,
         now: Long = System.currentTimeMillis(),
     ): LegacyCatalogMigrationReport {
         val dao = database.characterCatalogDao()
@@ -108,7 +108,7 @@ object LegacyCharacterCatalogMigrator {
                 createdAt = card.createdAt,
             )
         }
-        val sessionReferences = database.chatDao().listSessions().map { session ->
+        val sessionReferences = database.chatDao().primarySessions().map { session ->
             val snapshotWorldId = session.worldSnapshotJson?.let(::worldIdFromSnapshot)
                 ?: session.characterSnapshotJson?.let(::worldIdFromCharacterSnapshot)
             CatalogSessionReference(

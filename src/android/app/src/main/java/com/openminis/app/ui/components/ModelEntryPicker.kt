@@ -31,15 +31,15 @@ import com.openminis.app.R
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.annotation.StringRes
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.SystemVoiceEntries
-import com.openminis.app.data.model.hasAudioInput
-import com.openminis.app.data.model.hasAudioOutput
-import com.openminis.app.data.model.hasImageInput
-import com.openminis.app.data.model.normalizeModalities
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.model.SystemVoiceEntries
+import novex.android.data.model.hasAudioInput
+import novex.android.data.model.hasAudioOutput
+import novex.android.data.model.hasImageInput
+import novex.android.data.model.normalizeModalities
 
 /**
  * [T-android-provider-voice] First-class modality scoping for the shared

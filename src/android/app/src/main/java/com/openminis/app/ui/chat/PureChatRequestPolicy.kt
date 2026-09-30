@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMMessage
 
 internal fun hasSameToolMode(first: LLMModel, second: LLMModel): Boolean =
     (first.supportsTools != false) == (second.supportsTools != false)

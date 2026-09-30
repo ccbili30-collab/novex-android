@@ -21,7 +21,7 @@ import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.text.input.KeyboardType
 import androidx.compose.ui.text.input.PasswordVisualTransformation
 import androidx.compose.ui.unit.dp
-import com.openminis.app.data.model.*
+import novex.android.data.model.*
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ProviderFactory
@@ -77,7 +77,7 @@ internal fun toggleModelSelection(current: List<String>, clicked: String): List<
 }
 
 internal fun looksLikeImageGenerationModel(modelId: String): Boolean =
-    com.openminis.app.data.model.ChatModelSelection.imageGenerationId(modelId)
+    novex.android.data.model.ChatModelSelection.imageGenerationId(modelId)
 
 /** Input capability assigned to a chat model saved by the simplified setup. */
 internal fun novexChatInputModalities(
@@ -215,7 +215,7 @@ fun NovexProviderSetupScreen(
     var deleteConfirm by remember(instanceId) { mutableStateOf(false) }
     val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
     val initialModels = remember(instanceId) {
-        existingEntries.filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        existingEntries.filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
             .map { it.model.id }.distinct()
             .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
     }
@@ -223,7 +223,7 @@ fun NovexProviderSetupScreen(
     val modelToolsEnabled = remember(instanceId) {
         mutableStateMapOf<String, Boolean>().apply {
             existingEntries
-                .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+                .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
                 .forEach { entry -> put(entry.model.id, entry.model.supportsTools != false) }
         }
     }
@@ -776,21 +776,21 @@ private fun saveConnections(
     modelToolsEnabled: Map<String, Boolean>,
     metadata: Map<String, LLMModel> = emptyMap(),
 ) {
-    require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(com.openminis.app.data.model.ChatModelSelection::imageOutput) == true }) {
+    require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(novex.android.data.model.ChatModelSelection::imageOutput) == true }) {
         "请选择聊天模型，生图模型不能用于此对话"
     }
     val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix, direction)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)
-        .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
     val previousIds = previousEntries.map { it.id }.toSet()
     val group = repository.config.value.modelGroups.firstOrNull { candidate ->
         candidate.memberEntryIds.any { it in previousIds }
     }
     previousEntries.filter { it.model.id !in modelIds }.forEach { repository.removeEntry(it.id) }
     modelIds.forEach { modelId ->
-        if (repository.entriesFor(instance.id).none { it.model.id == modelId && com.openminis.app.data.model.ChatModelSelection.eligible(it) }) {
+        if (repository.entriesFor(instance.id).none { it.model.id == modelId && novex.android.data.model.ChatModelSelection.eligible(it) }) {
             repository.addEntry(
                 ModelEntry(
                     providerInstanceId = instance.id,
@@ -810,7 +810,7 @@ private fun saveConnections(
         }
     }
     repository.entriesFor(instance.id)
-        .filterNot { com.openminis.app.data.model.ChatModelSelection.imageOutput(it.model) || com.openminis.app.data.model.ChatModelSelection.imageOutput(it.baseModel) }
+        .filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
         .forEach { entry ->
         val refreshedBase = novexConnectionModel(metadata[entry.model.id], entry.baseModel, instance.effectiveBaseURL)
         val desiredInput = novexChatInputModalities(entry.model.id, entry.model.inputModalities)
@@ -833,7 +833,7 @@ private fun saveConnections(
         }
     }
     val selectedEntries = repository.entriesFor(instance.id).filter {
-        it.model.id in modelIds && com.openminis.app.data.model.ChatModelSelection.eligible(it)
+        it.model.id in modelIds && novex.android.data.model.ChatModelSelection.eligible(it)
     }
     val selectedIds = selectedEntries.map { it.id }
     if (group == null) {
@@ -850,5 +850,5 @@ private fun saveConnections(
 
 /** Fetched capacities survive saving; separately stored user overrides are untouched. */
 internal fun novexConnectionModel(fetched: LLMModel?, previous: LLMModel, base: String?): LLMModel =
-    com.openminis.app.data.model.NovexDeepSeekModelMetadata.official(
+    novex.android.data.model.NovexDeepSeekModelMetadata.official(
         fetched ?: com.openminis.app.provider.ModelsDevApi.enrichModel(previous), base)

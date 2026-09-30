@@ -2,14 +2,14 @@ package com.openminis.app.tools
 
 import android.content.Context
 import android.util.Log
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.data.model.ImageEndpointMode
-import com.openminis.app.data.model.LLMMediaAttachment
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMResponse
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
+import novex.android.data.model.ImageEndpointMode
+import novex.android.data.model.LLMMediaAttachment
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMResponse
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderType
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.provider.ProviderFactory
 import com.openminis.app.logging.AppLogger

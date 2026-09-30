@@ -1,8 +1,8 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.AgentToolParam
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.AgentToolParam
+import novex.android.data.model.LLMMessage
 import org.json.JSONArray
 import org.json.JSONObject
 

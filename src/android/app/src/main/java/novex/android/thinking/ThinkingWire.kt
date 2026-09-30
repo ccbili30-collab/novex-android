@@ -1,6 +1,6 @@
 package novex.android.thinking
 
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import org.json.JSONObject
 
 

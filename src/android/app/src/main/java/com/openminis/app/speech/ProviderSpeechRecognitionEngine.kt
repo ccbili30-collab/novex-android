@@ -307,7 +307,7 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
     private fun startVadCapture(
         locale: Locale,
         repo: com.openminis.app.data.repository.ProviderRepository,
-        candidates: List<Pair<com.openminis.app.data.model.ProviderInstance, com.openminis.app.data.model.ModelEntry>>,
+        candidates: List<Pair<novex.android.data.model.ProviderInstance, novex.android.data.model.ModelEntry>>,
         listener: SpeechRecognitionEngine.Listener,
     ) {
         val det = VoiceActivityDetector(
@@ -429,7 +429,7 @@ class ProviderSpeechRecognitionEngine(private val appContext: Context) : SpeechR
         wav: ByteArray,
         locale: Locale,
         repo: com.openminis.app.data.repository.ProviderRepository,
-        candidates: List<Pair<com.openminis.app.data.model.ProviderInstance, com.openminis.app.data.model.ModelEntry>>,
+        candidates: List<Pair<novex.android.data.model.ProviderInstance, novex.android.data.model.ModelEntry>>,
         listener: SpeechRecognitionEngine.Listener,
     ) {
         val ordered = stickyEntryId

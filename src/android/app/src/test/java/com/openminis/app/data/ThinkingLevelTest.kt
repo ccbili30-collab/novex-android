@@ -1,8 +1,8 @@
 package com.openminis.app.data
 
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ModelOverrides
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ModelOverrides
+import novex.android.data.model.ThinkingLevel
 import kotlinx.serialization.json.Json
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull

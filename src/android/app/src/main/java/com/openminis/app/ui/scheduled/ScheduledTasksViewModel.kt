@@ -68,7 +68,7 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
     /** A selectable model entry for the optional model override. */
     data class ModelOption(val entryId: String, val modelId: String, val displayName: String, val providerLabel: String)
 
-    suspend fun listSessions(limit: Int = 100): List<SessionOption> = withContext(Dispatchers.IO) {
+    suspend fun primarySessions(limit: Int = 100): List<SessionOption> = withContext(Dispatchers.IO) {
         if (!ready()) return@withContext emptyList()
         app.chatRepository.querySessionsMeta(
             sessionIds = null, keywords = null, limit = limit, startMs = null, endMs = null,
@@ -79,7 +79,7 @@ class ScheduledTasksViewModel(private val appContext: Context) : ViewModel() {
 
     suspend fun listUserMessages(sessionId: String): List<MessageOption> = withContext(Dispatchers.IO) {
         if (!ready()) return@withContext emptyList()
-        app.chatRepository.loadMessages(sessionId)
+        app.chatRepository.historyFor(sessionId)
             .filter { it.role == "user" }
             .map { MessageOption(it.id, extractPreview(it.partsJson), it.createdAt) }
     }

@@ -1,8 +1,22 @@
 package novex.core
 
+import novex.android.data.MIGRATION_26_27
+import novex.android.data.MIGRATION_27_28
+import novex.android.data.MIGRATION_28_29
+import novex.android.data.MIGRATION_29_30
+import novex.android.data.MIGRATION_30_31
+import novex.android.data.MIGRATION_31_32
+import novex.android.data.MIGRATION_32_33
+import novex.android.data.MIGRATION_33_34
+import novex.android.data.MIGRATION_34_35
+import novex.android.data.MIGRATION_35_36
+import novex.android.data.MIGRATION_36_37
+import novex.android.data.MIGRATION_37_38
+import novex.android.data.MIGRATION_38_39
+
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ContentModuleDocument
 import com.openminis.app.data.character.ContentModuleDocumentCodec
@@ -29,7 +43,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `native management can add a purposeful reference with source permission only and exposes its purpose`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -70,8 +84,8 @@ class NovexCardReferencePersistenceTest {
     @Test
     fun `migration from version 26 adds reference storage while preserving existing cards`() = runBlocking {
         val path = File(files.root, "migration.db").absolutePath
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
-            .addMigrations(AppDatabase.MIGRATION_26_27, AppDatabase.MIGRATION_27_28, AppDatabase.MIGRATION_28_29, AppDatabase.MIGRATION_29_30, AppDatabase.MIGRATION_30_31, AppDatabase.MIGRATION_31_32, AppDatabase.MIGRATION_32_33, AppDatabase.MIGRATION_33_34, AppDatabase.MIGRATION_34_35, AppDatabase.MIGRATION_35_36, AppDatabase.MIGRATION_36_37, AppDatabase.MIGRATION_37_38, AppDatabase.MIGRATION_38_39).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, path)
+            .addMigrations(MIGRATION_26_27, MIGRATION_27_28, MIGRATION_28_29, MIGRATION_29_30, MIGRATION_30_31, MIGRATION_31_32, MIGRATION_32_33, MIGRATION_33_34, MIGRATION_34_35, MIGRATION_35_36, MIGRATION_36_37, MIGRATION_37_38, MIGRATION_38_39).allowMainThreadQueries().build()
         var database = open()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -89,7 +103,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `an invalid source module in a dependency package rolls back every imported card`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -111,7 +125,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `a package actor points to the imported concrete version and retains its instructions`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -142,7 +156,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `missing package dependencies keep their foreign address without binding local identifiers`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -173,7 +187,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `native package restores dependencies and module references to new objects rather than originals or names`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -204,7 +218,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `ordinary conversation follows background references but never management or actor links`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -230,7 +244,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `starting a game also freezes the conversation backgrounds without adopting managed only cards`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -252,7 +266,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `rules from another game never activate its opening player or controls and cycles terminate`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -280,7 +294,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `a module entry reference freezes only that stable entry and reports its later removal`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -307,7 +321,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `explicit game actor is frozen and stops contributing instructions after changing identity`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -333,7 +347,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `a started game freezes linked background without becoming its background character`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -362,7 +376,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `one explicit role identity is distinct from background people and must be replaced deliberately`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -392,7 +406,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `deleting a target preserves independent users and marks their reference missing`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -416,7 +430,7 @@ class NovexCardReferencePersistenceTest {
 
     @Test
     fun `a purposeful incoming reference protects a private empty target during exit cleanup`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
@@ -435,7 +449,7 @@ class NovexCardReferencePersistenceTest {
     @Test
     fun `purposeful references and backlinks survive restart using exact identifiers`() = runBlocking {
         val path = File(files.root, "references.db").absolutePath
-        fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, path)
+        fun openDatabase() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, path)
             .allowMainThreadQueries().build()
         var database = openDatabase()
         val media = File(files.root, "media")

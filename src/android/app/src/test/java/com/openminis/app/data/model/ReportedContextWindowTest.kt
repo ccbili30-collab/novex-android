@@ -1,4 +1,5 @@
 package com.openminis.app.data.model
+import novex.android.data.model.*
 import org.json.JSONObject
 import org.junit.Assert.*
 import org.junit.Test

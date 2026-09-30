@@ -6,7 +6,7 @@ import androidx.room.withTransaction
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
@@ -25,7 +25,7 @@ import java.io.File
 class NovexCardFileServiceTest {
     @get:Rule val folder = TemporaryFolder()
     @Test fun `filling an owned blank card retains its address across an identity change`() = runBlocking<Unit> {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "promoted-media"))
             val executor = NovexContentToolExecutor(workspace,
@@ -51,7 +51,7 @@ class NovexCardFileServiceTest {
                 assertEquals(2, workspace.conversationDrafts(chat)!!.cards.count { it.isPrivate })
                 val next = saved.configuration.copy(playerIdentity = ConversationPlayerIdentity("player", "我", "新邮差"))
                 val receipt = novex.android.adapter.NovexPublicWriteReceipt.project(
-                    com.openminis.app.data.model.AgentContentPart.ToolResult("fill", "novex_update_card", saved.tool.output),
+                    novex.android.data.model.AgentContentPart.ToolResult("fill", "novex_update_card", saved.tool.output),
                     NovexHistoryAccessScope.key(next))
                 assertTrue(receipt.joinToString().contains(card.subject.id))
                 val unmounted = saved.configuration.copy(managedSubjects = emptyList())
@@ -63,7 +63,7 @@ class NovexCardFileServiceTest {
     }
 
     @Test fun `source preparation stays outside commit and revoked sources cannot be committed`() = runBlocking<Unit> {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "prepared-media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("prepared-chat"))
@@ -108,7 +108,7 @@ class NovexCardFileServiceTest {
     }
 
     @Test fun `content executor rolls back cards with failed configuration save and replays committed receipt`() = runBlocking<Unit> {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "executor-media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("chat"))
@@ -139,7 +139,7 @@ class NovexCardFileServiceTest {
         } finally { db.close() }
     }
     @Test(timeout = 60000) fun `private directory supports repeated creation editing order and links with exact readback`() = runBlocking<Unit> {
-        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(folder.root, "cards.db").absolutePath).allowMainThreadQueries().build()
+        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(folder.root, "cards.db").absolutePath).allowMainThreadQueries().build()
         try {
             var workspace = NovexWorkspaceFactory.create(db, File(folder.root, "media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("mine"))
@@ -186,7 +186,7 @@ class NovexCardFileServiceTest {
             assertNull(first.configuration.activeInteractiveFiction)
             assertEquals(AnswerIdentity.Nova, first.configuration.answerIdentity)
             db.close()
-            db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(folder.root, "cards.db").absolutePath).allowMainThreadQueries().build()
+            db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(folder.root, "cards.db").absolutePath).allowMainThreadQueries().build()
             workspace = NovexWorkspaceFactory.create(db, File(folder.root, "media"))
             assertEquals(reordered, management().inspect(config, game, null).modules)
             assertEquals(1, workspace.referencesFrom(game).size)
@@ -194,7 +194,7 @@ class NovexCardFileServiceTest {
         } finally { db.close() }
     }
     @Test fun `new module receipt survives storage reopen and exact operation replay`() = runBlocking<Unit> {
-        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(folder.root, "module-replay.db").absolutePath).allowMainThreadQueries().build()
+        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(folder.root, "module-replay.db").absolutePath).allowMainThreadQueries().build()
         try {
             var workspace = NovexWorkspaceFactory.create(db, File(folder.root, "replay-media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("chat"))
@@ -210,7 +210,7 @@ class NovexCardFileServiceTest {
             assertEquals("规则", saved.getString("name")); assertEquals(0, saved.getInt("position"))
             val id = saved.getString("module_id")
             db.close()
-            db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(folder.root, "module-replay.db").absolutePath).allowMainThreadQueries().build()
+            db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(folder.root, "module-replay.db").absolutePath).allowMainThreadQueries().build()
             workspace = NovexWorkspaceFactory.create(db, File(folder.root, "replay-media"))
             assertEquals(listOf(id), workspace.conversationDrafts("chat")!!.completedWrites.single().changedModuleIds)
             val replay = service().execute(config, "novex_write_module", args, listOf("加入规则"), "add-rule")
@@ -239,7 +239,7 @@ class NovexCardFileServiceTest {
     }
 
     @Test fun `explicit plural request can create identical cards and does not hit a one card ceiling`() = runBlocking<Unit> {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(folder.root, "plural-media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("plural"))

@@ -1,7 +1,7 @@
 package novex.android.models
 
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderType
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderType
 import com.openminis.app.logging.AppLogger
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers

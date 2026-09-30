@@ -2,7 +2,7 @@ package novex.core
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import novex.android.adapter.NovexConversationContextAdoption
 import novex.android.adapter.WorkspaceNovexContextLoader
@@ -28,7 +28,7 @@ class NovexTavernWorldbookPersistenceTest {
             .put("character_book", JSONObject().put("entries", JSONArray().put(JSONObject().put("name", "采用规则")
                 .put("content", body).put("enabled", true).put("constant", true).put("keys", JSONArray()))))).toString())).toString()
     @Test fun `adopted book survives reopen while mutable edits and background-only roles cannot inject it`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "book.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {

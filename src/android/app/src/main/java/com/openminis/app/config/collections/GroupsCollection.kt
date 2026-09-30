@@ -7,10 +7,10 @@ import com.openminis.app.config.ConfigRisk
 import com.openminis.app.config.ConfigSchema
 import com.openminis.app.config.ConfigValue
 import com.openminis.app.config.fields.ClosureField
-import com.openminis.app.data.model.FallbackStrategy
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.FallbackStrategy
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ProviderRepository
 
 /**

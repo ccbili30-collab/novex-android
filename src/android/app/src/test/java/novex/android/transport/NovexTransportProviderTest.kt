@@ -1,12 +1,12 @@
 package novex.android.transport
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.AgentToolDefinition
-import com.openminis.app.data.model.LLMError
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.LLMStreamChunk
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.AgentToolDefinition
+import novex.android.data.model.LLMError
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.LLMStreamChunk
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.provider.LLMProvider
 import com.openminis.app.provider.ImageDegradationLearning
 import kotlinx.coroutines.Dispatchers
@@ -128,7 +128,7 @@ class NovexTransportProviderTest {
             name = "save_card",
             description = "保存卡片",
             parameters = mapOf(
-                "title" to com.openminis.app.data.model.AgentToolParam(
+                "title" to novex.android.data.model.AgentToolParam(
                     type = "string", description = "标题",
                 ),
             ),
@@ -418,7 +418,7 @@ class NovexTransportProviderTest {
         assertEquals(LLMStreamChunk.ToolUseStart("call-1", "get_weather"), chunks[3])
         assertEquals(LLMStreamChunk.ToolInputDelta("call-1", "{\"city\":"), chunks[4])
         assertEquals(LLMStreamChunk.ToolInputDelta("call-1", "{\"city\":\"上海\"}"), chunks[5])
-        assertEquals(LLMStreamChunk.Usage(com.openminis.app.data.model.LLMUsage(30, 7, latestContextTokens = 30)), chunks[6])
+        assertEquals(LLMStreamChunk.Usage(novex.android.data.model.LLMUsage(30, 7, latestContextTokens = 30)), chunks[6])
         assertEquals(LLMStreamChunk.ReasoningContent("想"), chunks[7])
         assertEquals(LLMStreamChunk.Finished("tool_calls"), chunks[8])
         val complete = chunks[9] as LLMStreamChunk.ToolCallComplete
@@ -750,7 +750,7 @@ class NovexTransportProviderTest {
     fun `responses 请求体形状-instructions-工具扁平-store-缓存键`() {
         val tool = AgentToolDefinition(
             name = "save_card", description = "保存",
-            parameters = mapOf("title" to com.openminis.app.data.model.AgentToolParam(type = "string", description = "t")),
+            parameters = mapOf("title" to novex.android.data.model.AgentToolParam(type = "string", description = "t")),
             required = listOf("title"),
         )
         val call = ScriptedCall(listOf(StreamChunk.Done("stop")), StreamResult.Completed)

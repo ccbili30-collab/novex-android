@@ -3,7 +3,7 @@ package novex.core
 import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import java.io.File
 import kotlinx.coroutines.runBlocking
@@ -23,7 +23,7 @@ class NovexCardSelectionExportTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test(timeout = 60_000) fun `selected parallel version exports only its content with unresolved source relation and independent import`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
             val character = workspace.apply(NovexCommand.CreateCharacter("伏生", """{"name":"伏生","summary":"本体专属内容，不应导出"}""")).requireCharacter()
@@ -55,7 +55,7 @@ class NovexCardSelectionExportTest {
     }
 
     @Test(timeout = 60_000) fun `explicit dependency export remaps legacy cross card module links and preserves chosen version limit through a cycle`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(database, File(files.root, "media"))
             val character = workspace.apply(NovexCommand.CreateCharacter("同名人物", "{}" )).requireCharacter()

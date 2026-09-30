@@ -174,7 +174,11 @@ API 面）→ ②自有实现（放 novex.model / novex.runtime / novex.android.
    transport 适配器 + novex.android.voice/thinking/models），provider/ 下
    openai、anthropic、gemini、voice、image、thinking 六包上游原件清零
    （provider/ 根与 openrouter/xai 的 ModelsApi 随后续刀处置）
-2. data.db（Room minis.db）+ data.repository → 自有存储模块
+2. ~~data.db（Room minis.db）+ data.repository → 自有存储模块~~ —— P3.2b
+   完成前半：data/db（27f）+ data/model（18f）整包删除，Room 层自有化
+   （novex.android.data；schema 冻结证据见进度日志 P3.2b 行——DDL 逐句
+   一致 + identityHash 字节相同，老用户库无损）；data/repository 本轮仅
+   改接（import/符号名），其真重写立为 **P3.2c 独立任务**（下一刀）
 3. ~~sandbox 应用侧 Kotlin 重写~~ → 已被 P2.5 沙箱退役整体取代（用户裁决）
 4. browser + ui.browser、speech（活 12f）、debug 面板、config、tools、
    offload、share、ui.settings 剩余屏、ui.chat 逐块 → conversation-runtime
@@ -374,6 +378,45 @@ P3.2 provider 剩余小件绞杀（PR 见进度日志，2026-09-28）——**voi
 - 验收：`grep 'VoiceProvider\|ImageModelCatalog\|ThinkingRule' src/android/
   app/src --include='*.kt'` 归零；model-transport 零 com.openminis 不变；
   审计死代码归零（血统数字见进度日志行）。
+P3.2b Room 数据层绞杀（PR 见进度日志，2026-09-28）——**删 data/db（27f）
++ data/model（18f）整包，Room 存储与模型值类型全部自有化
+（novex.android.data，app 模块内）**：
+- **冻结面（逐字保留，schema 无损的硬证据）**：主库 minis.db 版本 39、
+  副库 provider.db 版本 5 不变；表/列/索引/外键经 @Entity/@ColumnInfo 显式
+  钉住；38 步迁移 DDL 原文保留（仅外围重构）；**Room KSP 生成物比对：
+  主库 createAllTables 89/89 条 DDL 逐句一致、副库 9/9 一致，identityHash
+  （主 6397ab3a…/8567eaad…、副 394a39eb…/4d415b94…）重写前后字节相同**——
+  老用户库零损升级，Room 校验不触发 fallback。
+- **重做面**：AppDatabase → NovexMainDatabase + MainDatabaseMigrations（38
+  步重排为 step() 注册表 + addColumnUnlessPresent 幂等助手，迁移链
+  MAIN_SCHEMA_STEPS 显式成表）；ChatDao 单体 800 行拆为读写面（SessionReads/
+  SessionWrites/FolderReads/FolderWrites/MessageDao/MarkerDao/ContextUsageDao）
+  + ChatDao 门面（@Transaction 复合操作重排控制流）；provider 库 DAO 改
+  快照式（readSnapshot/overwriteConfigTables 截断走共享 RawQuery 执行器）；
+  卡片库实体集中进 CardTables 冻结文件、DAO 分件；查询语句全部等价改形
+  （表别名/谓词重排/截断合并），结果集不变。
+- **模型值类型（data/model 18f → 11f）**：LLMMessage/LLMStreamChunk/
+  ContentPart 等 wire/parts_json 事实面保持逐字（@SerialName 标签即存储
+  格式）；错误文案重写（英文转中文用户向措辞，无消费方按前缀匹配，已核）；
+  ProviderFailure 取证重构（状态形态表驱动 + firstNotNullOfOrNull）。
+- **测试**：新增 Robolectric 两件十用例（inMemoryDatabaseBuilder 钉
+  sessions/messages/compact_markers/provider_instances/provider_thinking_
+  rules 列名与列序 + 版本号/文件名 + 插入/分支切换/compact marker/provider
+  配置/思考规则读写回路）；既有 androidTest Room 用例改 import 保留
+  （androidTest 编译错误为 next 上预存 UI 签名漂移，与本刀无关，快线 CI
+  不编译 androidTest）；全量单测 1,585 条通过。
+- **死码**：AgentTypes 族（AgentStreamEvent/AgentBlockStart/AgentStopReason/
+  ToolCallMetadata/AgentMessage/sanitizeToolId）在 HEAD 上已零活引用（仅
+  注释提及），随绞杀删除。
+- **相似度验收**：剥注释+归一化标识符+语句级对比（与 P3.2 同口径）——
+  逻辑件 21 件全部 <40%（最大 26.4%、均值 7.4%）；>40% 者皆为冻结面
+  （MainDatabaseMigrations DDL 0%、Room 列声明、parts_json 编解码 95.8%、
+  LLM 线协议 DTO 92-100%、provider JSON 镜像字段名 68.1%——字段名/标签
+  即持久化格式，逐字保留是验收要求而非缺陷）。
+- **消费方**：全仓 ~290 件改接（import + 符号名），data/repository 按纪律
+  仅改接不重写；data/character、data/creative、data/attachments 未动（随
+  各自消费方战役处置）。
+
 
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
@@ -431,3 +474,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-29 | 本 PR（P3.1d） | 绞杀收尾：删上游 anthropic/（3f 1,430 行）+ gemini/（2f 683 行）+ OpenAIModelsApi（212 行）+ 两测试（1,035 行）；移植 ImagesClient（novex.model 生图）与 ModelsCatalog/ModelsCatalogApi（三方言模型目录）；适配器 imageDelegate 切自有传输、消费方改走 ImagesCapableProvider 接口；净眼挂账五条全清（a 工具结果图片补发/b 孤儿过一条 user 即失效/c usage 缓存计量/d 协议防呆/e OAuth 前缀注入）；Anthropic*/Gemini* 主代码引用清零（仅注释墓碑）| 血统：上游未动 191f/39,865 → 186f/37,943（−1,922 行），上游改动 161f/100,520 → 160f/100,153；Novex 新增 379f/50,349 → 382f/51,691（+ImagesClient/ModelsCatalog/ImagesCapableProvider/ModelsCatalogApi）；provider.openai 留存 2f/3,920 行（活码，P3.1e）；model-transport 零上游依赖不变 |
 | 2026-09-28 | 本 PR（P3.1e） | OpenAIProvider 终局退役：删上游 provider/openai/ 整包（2f 3,920 行）+ 旧测试 3 件；novex.model 新增 ResponsesWire（请求编码+SSE 事件族+codex 生图流）与 ModelEndpoint tokenHeader/permitQueryParams、ImagesClient 端点覆盖；适配器九类路由（Codex-OAuth/官方直连/useResponsesAPI/Azure/前尘回退/LAN 明文/OpenRouter/xAI/Kimi）+ 动态 OAuth bearer + 前尘回退进程粘性 + OpenRouter 附加头与 anthropic cache_control；imageDegradedModels 迁 app 侧 ImageDegradationLearning；P3.1d 净眼三建议采纳；存量行为测试 10 件换管续跑、模块+适配器+工厂新增 40+ 用例 | 血统：上游未动 186f/37,943 → 179f/36,228（openai 整包归零 + 墓碑注释改动使 4 个文件移入「上游改动」桶），上游改动 160f/100,153 → 163f/97,807；Novex 新增 382f/51,691 → 383f/52,065；model-transport 新增 ResponsesWire（+~470 行）零上游依赖不变 |
 | 2026-09-28 | 本 PR（P3.2） | provider 剩余小件绞杀：删上游 provider/voice（4f）+ provider/thinking（4f）+ provider/image/ImageModelCatalog（零血统件机械搬家为 novex.android.models.ImageGenerationModels）+ data/model/VoiceProviderTemplate（自有 VoiceVendorTemplates 重写，模板数据逐字节一致）+ LargeAllocProbe/JsonExt 死码（123 行）；自有 novex.android.voice 五件（VoiceWire 值类型/VoiceClient 引擎+OpenAI 方言/VoiceClients 十二厂商/VoiceClientFactory 标记路由表/VoiceVendorTemplates）与 novex.android.thinking 四件（ThinkingWire 词表+内聚编解码/ThinkingContract/ThinkingContractResolver 座次表+决策落笔分离/ThinkingContractCoding）；DB 实体/DAO/仓库/配置集合件随消费者更名（Room 表列名不变）；净眼 PR#66 七条全清（③④代码修复 + ①②⑦测试补钉 + ⑤⑥docs 记档）；净眼退回后九件真重写（结构/分解/控制流/注释/文案全部重做，协议事实逐字节保留；剥注释+归一化标识符的语句相似度从 96-99% 降至 10.8-35.8%、均值 23.3%，对照 P3.1c GeminiWire 同口径 ~7.5%），退回附带补钉：讯飞签名 URL/WS 收流确定性测试（注入假 socket 零网络）、MiniMax legacy b64 外壳兜底用例、①Codex 工厂手工 bearer 断言；假服务器 parity 测试钉 Doubao TTS/ASR 与 OpenAI TTS 等厂商；思考金表/回归/合并/xAI 四件测试原样通过| 血统：上游未动 179f/36,228 → 163f/30,167，上游改动 163f/97,807 → 168f/100,749（含 改名换路径的血统件落 Novex 新增桶（其中 ThinkingContractsCollection 经净眼三轮揪出为改名直译，已真重写）），Novex 新增 383f/52,065 → 394f/54,690；死代码 2f/123 行 → 0f；grep 'VoiceProvider|ImageModelCatalog|ThinkingRule' src/android/app/src 归零；model-transport 零 com.openminis 不变 |
+| 2026-09-28 | 本 PR（P3.2b） | Room 数据层绞杀：删 data/db（27f）+ data/model（18f）整包，自有 novex.android.data 三十件 = 库件 4（NovexMainDatabase+MainDatabaseMigrations 38 步迁移重排为 step 注册表/NovexProviderDatabase/WebShortcutStore）+ chat 6（DAO 按读写面拆并：SessionReads/SessionWrites/FolderReads/FolderWrites/MessageDao/MarkerDao+ChatDao 门面）+ cards 6（含冻结面集中文件 CardTables）+ provider 3（快照式读写 ProviderStoreDao+行声明+编解码）+ model 11；**schema 冻结证据：Room KSP 生成物 createAllTables DDL 逐句一致（createAllTables 59 条；89 含 DROP/INSERT 口径）、provider 库 9/9 一致，identityHash 主库 6397ab3a…/8567eaad… 副库 394a39eb…/4d415b94… 重写前后字节相同，老用户库无损**；DAO 查询全部等价改形（表别名/谓词重排/截断走共享 RawQuery 执行器），Robolectric 钉 sessions/messages/compact_markers/provider_instances/provider_thinking_rules 表列名与插入/分支切换/compact marker/provider 配置/思考规则读写十用例；全量单测 1,585 条通过；死码 AgentTypes 族（AgentStreamEvent/AgentMessage/sanitizeToolId，HEAD 上已零引用）删除；相似度：逻辑件 21 件全部 <40%（最大 26.4%、均值 7.4%；冻结面除外——迁移 DDL、Room 列声明、parts_json 编解码、LLM 线协议 DTO、provider JSON 镜像字段名） | 血统：上游未动 163f/30,167 → 128f/24,366，上游改动 168f/100,749 → 173f/102,448，Novex 新增 394f/54,690 → 409f/58,456；死代码 0f；grep 'com.openminis.app.data.db\|com.openminis.app.data.model' src 归零；data/repository 仅改接（import/符号），真重写留 P3.2c |

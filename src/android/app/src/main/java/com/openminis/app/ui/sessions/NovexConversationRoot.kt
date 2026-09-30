@@ -44,7 +44,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
 import novex.core.NovexWorkspace
 import novex.android.ui.NovexArtwork
@@ -107,8 +107,8 @@ fun NovexConversationRoot(
     var manualOrderIds by remember {
         mutableStateOf(orderStore.read(NovexManualOrderKind.CONVERSATIONS))
     }
-    val sessionsOrNull by produceState<List<ChatSessionEntity>?>(initialValue = null, chatRepository) {
-        chatRepository.observeSessions().collect { value = it }
+    val sessionsOrNull by produceState<List<SessionRow>?>(initialValue = null, chatRepository) {
+        chatRepository.observeSessionIndex().collect { value = it }
     }
     val catalogOrNull by produceState<ConversationHomeCatalog?>(initialValue = null, workspace) {
         val worlds = workspace.worlds().associate { card ->
@@ -143,9 +143,9 @@ fun NovexConversationRoot(
     }
 
     val scope = rememberCoroutineScope()
-    fun togglePin(session: ChatSessionEntity) {
+    fun togglePin(session: SessionRow) {
         scope.launch {
-            chatRepository.dao.updatePinnedAt(
+            chatRepository.dao.setPinStamp(
                 session.id,
                 if (session.pinnedAt == null) System.currentTimeMillis() else null,
             )
@@ -167,9 +167,9 @@ fun NovexConversationRoot(
     val sessions = sessionsOrNull.orEmpty()
     val catalog = catalogOrNull ?: ConversationHomeCatalog(emptyMap(), emptyMap())
     val visibleSessions = remember(sessions, selectedFilter, appliedQuery, manualOrderIds) {
-        val byId = sessions.associateBy(ChatSessionEntity::id)
+        val byId = sessions.associateBy(SessionRow::id)
         mergeNovexManualOrder(
-            sourceIds = sessions.map(ChatSessionEntity::id),
+            sourceIds = sessions.map(SessionRow::id),
             savedIds = manualOrderIds,
         ).mapNotNull(byId::get)
             .forHomeFilter(selectedFilter)
@@ -197,7 +197,7 @@ fun NovexConversationRoot(
         val toId = (to.key as? String)?.removePrefix("conversation:")
             ?: return@rememberReorderableLazyListState
         val completeIds = mergeNovexManualOrder(
-            sourceIds = sessions.map(ChatSessionEntity::id),
+            sourceIds = sessions.map(SessionRow::id),
             savedIds = manualOrderIds,
         )
         val fromIndex = completeIds.indexOf(fromId)
@@ -278,7 +278,7 @@ fun NovexConversationRoot(
                 verticalArrangement = Arrangement.spacedBy(2.dp),
                 modifier = Modifier.fillMaxSize(),
             ) {
-                fun section(label: String, rows: List<ChatSessionEntity>) {
+                fun section(label: String, rows: List<SessionRow>) {
                     if (rows.isEmpty()) return
                     item(key = "section_$label") {
                         NovexSectionTitle(label)
@@ -347,7 +347,7 @@ private fun NovexConversationSearchInput(state: NovexLibrarySearchState) {
 
 @Composable
 private fun NovexConversationRow(
-    session: ChatSessionEntity,
+    session: SessionRow,
     world: ConversationWorldMeta?,
     version: ConversationVersionMeta?,
     pinned: Boolean,

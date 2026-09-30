@@ -177,7 +177,7 @@ class ThinkingContractsCollection(
                 if (sep <= 0 || sep == id.length - 1) {
                     throw ConfigError.InvalidValue("bad rule id: $id")
                 }
-                repo.deleteThinkingContract(id.substring(0, sep), id.substring(sep + 1))
+                repo.dropRule(id.substring(0, sep), id.substring(sep + 1))
             }
         }
     }

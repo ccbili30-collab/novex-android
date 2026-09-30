@@ -32,7 +32,7 @@ import com.openminis.app.ui.theme.ChatColors
 /** Thinking controls share presentation; the conversation host owns selected model and persistence. */
 @Composable
 internal fun ThinkingLevelBadge(
-    level: com.openminis.app.data.model.ThinkingLevel,
+    level: novex.android.data.model.ThinkingLevel,
     onClick: () -> Unit,
 ) {
     val context = LocalContext.current
@@ -78,17 +78,17 @@ internal fun ThinkingLevelBadge(
 @OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 internal fun ThinkingLevelSheet(
-    currentLevel: com.openminis.app.data.model.ThinkingLevel,
-    availableLevels: List<com.openminis.app.data.model.ThinkingLevel>,
-    onSelect: (com.openminis.app.data.model.ThinkingLevel) -> Unit,
+    currentLevel: novex.android.data.model.ThinkingLevel,
+    availableLevels: List<novex.android.data.model.ThinkingLevel>,
+    onSelect: (novex.android.data.model.ThinkingLevel) -> Unit,
     onDismiss: () -> Unit,
 ) {
     // Off is always offered (turns thinking off); availableLevels already
     // excludes Off, so prepend it. De-dup defensively in case a caller ever
     // includes it.
     val rows = remember(availableLevels) {
-        listOf(com.openminis.app.data.model.ThinkingLevel.OFF) +
-            availableLevels.filter { it != com.openminis.app.data.model.ThinkingLevel.OFF }
+        listOf(novex.android.data.model.ThinkingLevel.OFF) +
+            availableLevels.filter { it != novex.android.data.model.ThinkingLevel.OFF }
     }
     ModalBottomSheet(onDismissRequest = onDismiss) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 12.dp)) {
@@ -104,7 +104,7 @@ internal fun ThinkingLevelSheet(
             rows.forEach { level ->
                 // "Off selected" = the current level is disabled; otherwise an
                 // exact match.
-                val isSelected = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) {
+                val isSelected = if (level == novex.android.data.model.ThinkingLevel.OFF) {
                     !currentLevel.isEnabled
                 } else {
                     currentLevel == level
@@ -120,7 +120,7 @@ internal fun ThinkingLevelSheet(
                         imageVector = novex.android.ui.NovexIcons.Lightbulb,
                         contentDescription = null,
                         tint = ChatColors.thinking.copy(
-                            alpha = if (level == com.openminis.app.data.model.ThinkingLevel.OFF) 0.4f else 1f,
+                            alpha = if (level == novex.android.data.model.ThinkingLevel.OFF) 0.4f else 1f,
                         ),
                         modifier = Modifier.size(18.dp),
                     )

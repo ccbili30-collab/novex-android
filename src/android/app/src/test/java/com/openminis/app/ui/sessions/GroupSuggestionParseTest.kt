@@ -1,6 +1,6 @@
 package com.openminis.app.ui.sessions
 
-import com.openminis.app.data.db.FolderEntity
+import novex.android.data.chat.SessionFolderRow
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -16,7 +16,7 @@ import org.junit.Test
  */
 class GroupSuggestionParseTest {
 
-    private fun folder(id: String, name: String, updatedAt: Long = 0L) = FolderEntity(
+    private fun folder(id: String, name: String, updatedAt: Long = 0L) = SessionFolderRow(
         id = id,
         name = name,
         createdAt = 0L,
@@ -108,7 +108,7 @@ class GroupSuggestionParseTest {
             folders,
         )
         val create = r as SessionListViewModel.GroupSuggestion.Create
-        assertEquals(FolderEntity.DESC_MAX_CHARS, create.description!!.length)
+        assertEquals(SessionFolderRow.DESCRIPTION_MAX_CHARS, create.description!!.length)
     }
 
     @Test

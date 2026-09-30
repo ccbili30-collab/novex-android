@@ -1,10 +1,10 @@
 package com.openminis.app.provider
 
 import android.content.Context
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.NovexDeepSeekModelMetadata
-import com.openminis.app.data.model.ReportedContextWindow
-import com.openminis.app.data.model.normalizeModalities
+import novex.android.data.model.LLMModel
+import novex.android.data.model.NovexDeepSeekModelMetadata
+import novex.android.data.model.ReportedContextWindow
+import novex.android.data.model.normalizeModalities
 import com.openminis.app.logging.AppLogger
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext

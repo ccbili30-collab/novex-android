@@ -60,7 +60,7 @@ import com.openminis.app.data.character.PlayerPersona
 import com.openminis.app.data.character.SillyTavernCardExporter
 import com.openminis.app.data.character.SillyTavernCardParser
 import com.openminis.app.data.character.StoryWorld
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import java.io.File
 import java.util.UUID
 import kotlinx.coroutines.Dispatchers
@@ -133,7 +133,7 @@ fun WorldLibraryScreen(
 @Composable
 fun StoryWorldDetailScreen(
     worldId: String,
-    sessions: List<ChatSessionEntity>,
+    sessions: List<SessionRow>,
     onBack: () -> Unit,
     onEditWorld: () -> Unit,
     onEditPersona: (String?) -> Unit,
@@ -281,7 +281,7 @@ fun StoryWorldDetailScreen(
 @Composable
 fun CharacterDetailScreen(
     characterId: String,
-    sessions: List<ChatSessionEntity>,
+    sessions: List<SessionRow>,
     onBack: () -> Unit,
     onEdit: () -> Unit,
     onNewChat: () -> Unit,

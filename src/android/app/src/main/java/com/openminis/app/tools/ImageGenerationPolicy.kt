@@ -1,8 +1,8 @@
 package com.openminis.app.tools
 
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
 import java.util.UUID
 import kotlinx.coroutines.CancellationException
 

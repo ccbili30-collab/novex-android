@@ -1,7 +1,7 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.AgentContentPart
-import com.openminis.app.data.model.LLMMessage
+import novex.android.data.model.AgentContentPart
+import novex.android.data.model.LLMMessage
 
 /** Capacity-based retained tail. Original messages are never mutated. */
 internal object ConversationRetention {

@@ -48,10 +48,10 @@ import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.SystemVoiceEntries
-import com.openminis.app.data.model.SystemVoiceIds
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.SystemVoiceEntries
+import novex.android.data.model.SystemVoiceIds
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.speech.VoiceOutputState
 import com.openminis.app.ui.theme.ChatColors

@@ -193,13 +193,13 @@ import com.mikepenz.markdown.m3.markdownColor
 import com.mikepenz.markdown.m3.markdownTypography
 import org.intellij.markdown.ast.ASTNode
 import org.intellij.markdown.ast.getTextInNode
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ModelGroup
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.RoutingStrategy
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ModelGroup
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderType
+import novex.android.data.model.RoutingStrategy
+import novex.android.data.model.ThinkingLevel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
@@ -455,12 +455,12 @@ internal fun ModelPickerSheet(
                                 // matching modelEntries alone counts them as 0.
                                 val resolvedEntry = group.memberEntryIds.firstNotNullOfOrNull { entryId ->
                                     config.modelEntries.find { it.id == entryId }
-                                        ?: com.openminis.app.data.model.SystemVoiceEntries.resolve(entryId)
+                                        ?: novex.android.data.model.SystemVoiceEntries.resolve(entryId)
                                 } ?: if (isSelected && activeEntryId != null) config.modelEntries.find { it.id == activeEntryId } else null
                                 // Count of resolved members for display
                                 val resolvedCount = group.memberEntryIds.count { entryId ->
                                     config.modelEntries.any { it.id == entryId } ||
-                                        com.openminis.app.data.model.SystemVoiceEntries.resolve(entryId) != null
+                                        novex.android.data.model.SystemVoiceEntries.resolve(entryId) != null
                                 }
 
                                 // Header sits above the first row, so the
@@ -640,7 +640,7 @@ internal fun ModelPickerSheet(
                                     // Resolve actual entries from memberEntryIds
                                     val resolvedMembers = group.memberEntryIds.mapNotNull { entryId ->
                                         config.modelEntries.find { it.id == entryId }
-                                            ?: com.openminis.app.data.model.SystemVoiceEntries.resolve(entryId)
+                                            ?: novex.android.data.model.SystemVoiceEntries.resolve(entryId)
                                     }
                                     // Fallback: show active entry ONLY if this group is selected
                                     val displayMembers = resolvedMembers.ifEmpty {

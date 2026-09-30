@@ -27,9 +27,9 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
-import com.openminis.app.data.db.ChatDao
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ProviderConfig
+import novex.android.data.chat.ChatDao
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ProviderConfig
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
@@ -80,7 +80,7 @@ fun UsageStatsScreen(
     var isLoaded by remember { mutableStateOf(false) }
 
     LaunchedEffect(Unit) {
-        val records = chatDao.allUsageRecords()
+        val records = chatDao.usageJoinRows()
 
         val modelLookup = mutableMapOf<String, Pair<String, String>>()
         for (m in LLMModel.allModels) modelLookup[m.id] = m.displayName to m.provider

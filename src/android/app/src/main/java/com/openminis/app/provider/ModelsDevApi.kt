@@ -2,7 +2,7 @@ package com.openminis.app.provider
 
 import android.content.Context
 import android.util.Log
-import com.openminis.app.data.model.LLMModel
+import novex.android.data.model.LLMModel
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import okhttp3.OkHttpClient

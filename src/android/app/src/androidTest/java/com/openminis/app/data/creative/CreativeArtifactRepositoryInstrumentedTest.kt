@@ -3,7 +3,7 @@ package com.openminis.app.data.creative
 import androidx.room.Room
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.platform.app.InstrumentationRegistry
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.core.CreativeArtifactAttachment
 import novex.core.CreativeArtifactKind
@@ -21,14 +21,14 @@ import org.junit.runner.RunWith
 
 @RunWith(AndroidJUnit4::class)
 class CreativeArtifactRepositoryInstrumentedTest {
-    private lateinit var database: AppDatabase
+    private lateinit var database: NovexMainDatabase
     private lateinit var root: File
     private lateinit var repository: CreativeArtifactRepository
 
     @Before
     fun setUp() {
         val context = InstrumentationRegistry.getInstrumentation().targetContext
-        database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java)
+        database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java)
             .allowMainThreadQueries()
             .build()
         root = File(context.cacheDir, "creative-artifact-test-${System.nanoTime()}")
@@ -68,7 +68,7 @@ class CreativeArtifactRepositoryInstrumentedTest {
 
         assertEquals(first.artifact.id, second.artifact.id)
         assertEquals(listOf(1, 2), second.revisions.map { it.number })
-        chatRepository.deleteSession(session.id)
+        chatRepository.dropSession(session.id)
         assertNotNull(repository.artifact(first.artifact.id))
     }
 

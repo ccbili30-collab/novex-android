@@ -6,7 +6,7 @@ import androidx.room.withTransaction
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.creative.CreativeArtifactFileStore
 import com.openminis.app.data.creative.CreativeArtifactRepository
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import com.openminis.app.tools.*
 import kotlinx.coroutines.runBlocking
@@ -32,7 +32,7 @@ class NovexNativeCardModelBridgeTest {
         val sourceStore = FileNovexDocumentSnapshotRepository(File(root, "documents"))
         val documentRef = NovexResourceRef(File(root, "document-ref.txt").readText().trim())
         val document = requireNotNull(sourceStore.find(documentRef))
-        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
+        var db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
         var workspace = NovexWorkspaceFactory.create(db, File(root, "media"))
         workspace.apply(NovexCommand.EnsureConversationDrafts("original-case"))
         var configuration = NovexConversationConfigurationSnapshot("original-case", executionMode = NovexExecutionMode.FREE)
@@ -60,7 +60,7 @@ class NovexNativeCardModelBridgeTest {
                 val name = request.getString("name")
                 if (name == "__snapshot" || name == "__verify_and_close" && File(root, "matrix-mode").exists()) {
                     db.close()
-                    db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
+                    db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
                     workspace = NovexWorkspaceFactory.create(db, File(root, "media"))
                     File(root, "configuration.json").takeIf { it.exists() }?.let {
                         configuration = NovexConversationConfigurationCodec.decode(it.readText(), "original-case")
@@ -84,7 +84,7 @@ class NovexNativeCardModelBridgeTest {
                 }
                 if (name == "__verify_and_close") {
                     db.close()
-                    db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
+                    db = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java, File(root, "native.db").absolutePath).allowMainThreadQueries().build()
                     workspace = NovexWorkspaceFactory.create(db, File(root, "media"))
                     val draft = requireNotNull(workspace.conversationDrafts("original-case"))
                     val games = draft.cards.filter { it.subject.kind == NovexContentKind.INTERACTIVE_FICTION }.filter { workspace.modules(ModuleOwner.interactiveFiction(it.subject.id)).modules.isNotEmpty() }

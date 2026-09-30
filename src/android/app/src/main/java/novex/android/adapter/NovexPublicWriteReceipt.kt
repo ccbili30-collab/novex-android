@@ -1,6 +1,6 @@
 package novex.android.adapter
 
-import com.openminis.app.data.model.AgentContentPart
+import novex.android.data.model.AgentContentPart
 import org.json.JSONArray
 import org.json.JSONObject
 

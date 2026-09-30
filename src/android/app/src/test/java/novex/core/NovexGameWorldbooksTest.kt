@@ -5,7 +5,7 @@ import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
 import novex.android.adapter.*
@@ -27,7 +27,7 @@ class NovexGameWorldbooksTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test fun reusedWorldbookDefaultsAndPerRunChoicesStayIndependentAfterReopen() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "books.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -70,7 +70,7 @@ class NovexGameWorldbooksTest {
     }
 
     @Test fun agentOperationsUseSavedChoiceRevisionsAndExistingManagementPermission() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexWorkspaceFactory.create(db, File(files.root, "agent-media"))
             val game = workspace.apply(NovexCommand.SaveInteractiveFictionPage(null, "夜邮", "送信冒险")).requireInteractiveFiction()

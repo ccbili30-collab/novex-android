@@ -6,12 +6,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
-import com.openminis.app.data.db.NovexCardTextReader
-import com.openminis.app.data.db.NovexCardTextField
-import com.openminis.app.data.db.readCardText
+import novex.android.data.cards.LargeColumnReader
+import novex.android.data.cards.LargeTextField
+import novex.android.data.cards.readLargeText
 
 @Dao
-interface CharacterCatalogDao : NovexCardTextReader {
+interface CharacterCatalogDao : LargeColumnReader {
     @Insert(onConflict = OnConflictStrategy.ABORT)
     suspend fun insertWorld(world: WorldEntity)
 
@@ -192,12 +192,12 @@ interface CharacterCatalogDao : NovexCardTextReader {
     @Query("DELETE FROM worlds WHERE id = :worldId")
     suspend fun deleteWorld(worldId: String)
     private suspend fun hydrateWorld(row: WorldEntity) = row.copy(
-        overview = requireNotNull(readCardText(NovexCardTextField.WORLD_OVERVIEW, row.id)),
-        tagsJson = requireNotNull(readCardText(NovexCardTextField.WORLD_TAGS, row.id)),
-        legacySnapshotJson = readCardText(NovexCardTextField.WORLD_SOURCE, row.id),
+        overview = requireNotNull(readLargeText(LargeTextField.WORLD_OVERVIEW, row.id)),
+        tagsJson = requireNotNull(readLargeText(LargeTextField.WORLD_TAGS, row.id)),
+        legacySnapshotJson = readLargeText(LargeTextField.WORLD_SOURCE, row.id),
     )
 
     private suspend fun hydrateVersion(row: CharacterVersionEntity) = row.copy(
-        profileJson = requireNotNull(readCardText(NovexCardTextField.ROLE_PROFILE, row.id)),
+        profileJson = requireNotNull(readLargeText(LargeTextField.ROLE_PROFILE, row.id)),
     )
 }

@@ -55,7 +55,7 @@ class NovexConversationRepositoryTest {
             app.creativeArtifactRepository.list(CreativeArtifactQuery(conversationId = id, includeTrashed = true)).forEach {
                 app.creativeArtifactRepository.permanentlyDelete(it.artifact.id)
             }
-            app.chatRepository.deleteSession(id)
+            app.chatRepository.dropSession(id)
         }; app.contentResolver.call("com.noven.repository.testfixtures", "clear", null, null) }
     }
 
@@ -133,7 +133,7 @@ class NovexConversationRepositoryTest {
                 app.creativeArtifactRepository.list(CreativeArtifactQuery(conversationId = id, includeTrashed = true)).forEach {
                     app.creativeArtifactRepository.permanentlyDelete(it.artifact.id)
                 }
-                app.chatRepository.deleteSession(id)
+                app.chatRepository.dropSession(id)
             }
             app.contentResolver.call("com.noven.repository.testfixtures", "clear", null, null)
         }

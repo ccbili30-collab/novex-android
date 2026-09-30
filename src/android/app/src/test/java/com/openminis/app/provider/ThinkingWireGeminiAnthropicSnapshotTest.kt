@@ -1,6 +1,6 @@
 package com.openminis.app.provider
 
-import com.openminis.app.data.model.ThinkingLevel
+import novex.android.data.model.ThinkingLevel
 import novex.android.thinking.ThinkingContractResolver
 import org.json.JSONObject
 import org.junit.Assert.assertEquals

@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import androidx.room.withTransaction
 import com.openminis.app.data.character.*
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import novex.android.adapter.NovexConversationContextAdoption
 import novex.android.adapter.NovexTestWorkspaceFactory
 import novex.android.adapter.WorkspaceNovexContextLoader
@@ -60,7 +60,7 @@ class NovexExternalCardImportTest {
     }
 
     @Test fun rawWorldIsUsableAfterRestartAndSourceSurvivesEditAndExport() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "external.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -90,7 +90,7 @@ class NovexExternalCardImportTest {
     }
 
     @Test fun rawRoleWorksWhenSelectedWithoutLeakingItsInstructionsAsBackground() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexTestWorkspaceFactory.create(db, File(files.root, "media"))
             val text = "扮演邮差阿予，害怕鬼；说话简短。配套玩家为记言人。"
@@ -108,7 +108,7 @@ class NovexExternalCardImportTest {
     }
 
     @Test fun optionalOrganizationEditsTheMountedOriginalAndDoesNotReAdoptBothCopies() = runBlocking {
-        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java).allowMainThreadQueries().build()
+        val db = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val workspace = NovexTestWorkspaceFactory.create(db, File(files.root, "organized-media"))
             workspace.apply(NovexCommand.EnsureConversationDrafts("organize"))

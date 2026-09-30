@@ -225,7 +225,7 @@ object Routes {
     fun modelGroupDetail(groupId: String) = "model_group/$groupId"
     fun addModelsToGroup(groupId: String) = "add_models_to_group/$groupId"
     // [T-android-model-entry-route-slash-crash] entryId is a composite key
-    // "<instanceId>/<modelId>" (compositeEntryKey) — it CONTAINS a '/'. Left
+    // "<instanceId>/<modelId>" (entryCompositeId) — it CONTAINS a '/'. Left
     // raw, that slash splits the route into an extra path segment, so the
     // built route no longer matches the registered MODEL_ENTRY_DETAIL pattern
     // (model_entry/{instanceId}/{entryId}) and navigate() throws

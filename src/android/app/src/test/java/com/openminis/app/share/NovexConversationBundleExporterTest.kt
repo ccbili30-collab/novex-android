@@ -4,7 +4,7 @@ import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.NovexConversationContextAdoption
 import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
@@ -29,7 +29,7 @@ class NovexConversationBundleExporterTest {
     @get:Rule val files = TemporaryFolder()
     @Test(timeout = 60_000) fun `first turn failure exports request evidence without an assistant row`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
-        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(database.chatDao())
             val session = repository.createSession("display-model")
@@ -58,7 +58,7 @@ class NovexConversationBundleExporterTest {
 
     @Test(timeout = 60_000) fun `story image versions from both reply branches remain in the export`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
-        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(database.chatDao())
             val session = repository.createSession("model")
@@ -72,7 +72,7 @@ class NovexConversationBundleExporterTest {
                     com.openminis.app.data.character.MediaAssetSlot.MODULE_IMAGE, moduleId = "module", label = "镇口")
                 if (branch == "new") repository.forkReplyFrom(session.id, "root")
                 val parts = com.openminis.app.ui.chat.encodeAssistantTurnParts(
-                    listOf(com.openminis.app.data.model.AgentContentPart.Text("$branch 剧情")),
+                    listOf(novex.android.data.model.AgentContentPart.Text("$branch 剧情")),
                     mapOf("image" to com.openminis.app.ui.chat.storyImageBlock(image, branch)))
                 repository.appendMessage(session.id, "assistant", parts, messageId = branch)
                 picture
@@ -98,7 +98,7 @@ class NovexConversationBundleExporterTest {
     @Test(timeout = 60_000) fun `bundle keeps raw branches and adopted environment apart from current library with file hashes`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
         val path = File(files.root, "bundle.db").absolutePath
-        fun open() = Room.databaseBuilder(context, AppDatabase::class.java, path).allowMainThreadQueries().build()
+        fun open() = Room.databaseBuilder(context, NovexMainDatabase::class.java, path).allowMainThreadQueries().build()
         var database = open()
         try {
             var workspace = NovexWorkspaceFactory.create(database, File(context.filesDir, "novex-media"))
@@ -110,7 +110,7 @@ class NovexConversationBundleExporterTest {
             val adopted = NovexConversationContextAdoption(workspace).adopt(NovexConversationConfigurationSnapshot(session.id,
                 backgroundSettings = listOf(BackgroundSetting(NovexContentAddress.world(world.id)))))
             val configuration = NovexConversationConfigurationCodec.encode(adopted)
-            database.chatDao().insertSession(database.chatDao().getSession(session.id)!!.copy(novexConfigurationJson = configuration,
+            database.chatDao().upsertSession(database.chatDao().sessionById(session.id)!!.copy(novexConfigurationJson = configuration,
                 conversationPrompt = "自定义原话\n第二行", imageStylePrompt = "原图片风格"))
             val relative = "2026/09/07/${session.id}/source.txt"
             val original = File(context.filesDir, "media/$relative").apply { parentFile.mkdirs(); writeText("附件原文\n没有删节") }
@@ -172,13 +172,13 @@ class NovexConversationBundleExporterTest {
             val repeated = NovexConversationBundleExporter(context, database, workspace).export(session.id, runtime)
             assertNotEquals(result.file, repeated.file)
             assertTrue(result.file.isFile)
-            assertEquals(raw, repository.loadMessages(session.id).single { it.id == "user" }.partsJson)
+            assertEquals(raw, repository.historyFor(session.id).single { it.id == "user" }.partsJson)
         } finally { database.close() }
     }
 
     @Test(timeout = 60_000) fun `missing and escaped attachment references are explicit without reading credential files`() = runBlocking {
         val context = RuntimeEnvironment.getApplication()
-        val database = Room.inMemoryDatabaseBuilder(context, AppDatabase::class.java).allowMainThreadQueries().build()
+        val database = Room.inMemoryDatabaseBuilder(context, NovexMainDatabase::class.java).allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(database.chatDao())
             val session = repository.createSession("model")

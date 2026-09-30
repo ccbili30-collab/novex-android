@@ -6,7 +6,7 @@ import android.app.Application
 import androidx.room.Room
 import com.openminis.app.data.character.ContentModuleType
 import com.openminis.app.data.character.ModuleOwner
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.*
 import java.io.File
@@ -26,7 +26,7 @@ class NovexSettingUsePersistenceTest {
     @get:Rule val files = TemporaryFolder()
 
     @Test fun `reopen preserves child switches and independent paths without changing identity or originals`() = runBlocking {
-        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java,
+        fun open() = Room.databaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java,
             File(files.root, "use.db").absolutePath).allowMainThreadQueries().build()
         var db = open()
         try {
@@ -50,7 +50,7 @@ class NovexSettingUsePersistenceTest {
             toggle(NovexReferenceTarget(parent), false)
             val row = ChatRepository(db.chatDao()).createSession("test-model", novexConfigurationJson = NovexConversationConfigurationCodec.encode(state))
             db.close(); db = open(); workspace = NovexWorkspaceFactory.create(db, File(files.root, "media"))
-            state = NovexConversationConfigurationCodec.decode(db.chatDao().getSession(row.id)!!.novexConfigurationJson, row.id)
+            state = NovexConversationConfigurationCodec.decode(db.chatDao().sessionById(row.id)!!.novexConfigurationJson, row.id)
             toggle(NovexReferenceTarget(parent), true)
             val reads = NovexContextReadService(workspace)
             val text = WorkspaceNovexContextLoader(workspace).load(state).filter { it.kind != ContextSourceKind.TOOL_DEFINITION }.joinToString { it.content }

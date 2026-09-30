@@ -52,7 +52,7 @@ import com.openminis.app.data.character.MediaAssetSlot
 import com.openminis.app.data.character.ModuleOwner
 import com.openminis.app.data.character.ModuleOwnerType
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.data.db.ChatSessionEntity
+import novex.android.data.chat.SessionRow
 import novex.core.NovexCommand
 import novex.core.NovexContentAddress
 import novex.core.NovexImageChange

@@ -1,14 +1,14 @@
 package com.openminis.app.diagnostics
 
 import android.app.Application
-import com.openminis.app.data.model.LLMMessage
-import com.openminis.app.data.model.LLMModel
-import com.openminis.app.data.model.ModelEntry
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.ProviderInstance
-import com.openminis.app.data.model.ProviderType
-import com.openminis.app.data.model.ProviderCredential
-import com.openminis.app.data.model.ChatModelSelection
+import novex.android.data.model.LLMMessage
+import novex.android.data.model.LLMModel
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.ProviderInstance
+import novex.android.data.model.ProviderType
+import novex.android.data.model.ProviderCredential
+import novex.android.data.model.ChatModelSelection
 import com.openminis.app.provider.ProviderFactory
 import kotlinx.coroutines.runBlocking
 import kotlinx.coroutines.withContext

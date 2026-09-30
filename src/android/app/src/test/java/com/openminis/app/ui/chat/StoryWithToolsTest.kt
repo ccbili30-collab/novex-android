@@ -1,6 +1,6 @@
 package com.openminis.app.ui.chat
 
-import com.openminis.app.data.model.LLMStreamChunk
+import novex.android.data.model.LLMStreamChunk
 import kotlinx.coroutines.runBlocking
 import org.json.JSONObject
 import org.junit.Assert.*

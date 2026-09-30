@@ -46,7 +46,7 @@ import androidx.compose.animation.core.animateDpAsState
 import androidx.compose.material3.Surface
 import androidx.compose.runtime.key
 import sh.calvin.reorderable.ReorderableColumn
-import com.openminis.app.data.model.ProviderInstance
+import novex.android.data.model.ProviderInstance
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.R
 import kotlinx.coroutines.Dispatchers
@@ -204,7 +204,7 @@ fun ProviderListScreen(
                             // instances always show the gray dot even after a
                             // successful sign-in or manual token paste.
                             val isConfigured = if (instance.credentialType ==
-                                com.openminis.app.data.model.ProviderCredential.oauth) {
+                                novex.android.data.model.ProviderCredential.oauth) {
                                 val mgr = com.openminis.app.auth.OAuthManager.forInstance(context, instance)
                                 mgr?.isAuthenticated() == true
                             } else {

@@ -83,9 +83,9 @@ object VoiceCorrection {
         }
 
         // Straight from the Room singleton rather than adding an accessor to
-        // MinisApp — AppDatabase.getInstance is already the shared handle.
+        // MinisApp — NovexMainDatabase.getInstance is already the shared handle.
         val dao = runCatching {
-            com.openminis.app.data.db.AppDatabase.getInstance(app).chatDao()
+            novex.android.data.NovexMainDatabase.getInstance(app).chatDao()
         }.getOrNull()
         if (dao != null) {
             vocabularyBuilder = TypedVocabularyBuilder(app, database, dao, posTag, segment, rank)

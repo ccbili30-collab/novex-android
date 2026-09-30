@@ -4,7 +4,7 @@ import novex.android.adapter.NovexTestWorkspaceFactory as NovexWorkspaceFactory
 
 import android.app.Application
 import androidx.room.Room
-import com.openminis.app.data.db.AppDatabase
+import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.ChatRepository
 import novex.android.adapter.*
 import java.io.File
@@ -25,7 +25,7 @@ class NovexContextReadJournalPersistenceTest {
 
     @Test
     fun `real scoped tool reads persist their exact coverage before returning a receipt`() = runBlocking {
-        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), AppDatabase::class.java)
+        val database = Room.inMemoryDatabaseBuilder(RuntimeEnvironment.getApplication(), NovexMainDatabase::class.java)
             .allowMainThreadQueries().build()
         try {
             val repository = ChatRepository(database.chatDao())

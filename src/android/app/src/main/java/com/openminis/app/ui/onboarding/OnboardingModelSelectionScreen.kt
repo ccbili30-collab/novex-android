@@ -48,7 +48,7 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import com.openminis.app.data.model.ModelGroup
+import novex.android.data.model.ModelGroup
 import com.openminis.app.data.repository.ProviderRepository
 
 /**

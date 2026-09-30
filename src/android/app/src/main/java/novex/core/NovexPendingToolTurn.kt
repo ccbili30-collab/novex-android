@@ -1,6 +1,6 @@
 package novex.core
 
-import com.openminis.app.data.db.MessageEntity
+import novex.android.data.chat.MessageRow
 import novex.android.adapter.NovexManagementUserRequests
 import com.openminis.app.tools.ToolExecutionResult
 import org.json.JSONArray
@@ -10,7 +10,7 @@ data class NovexPendingToolCall(val id: String, val name: String, val arguments:
 data class NovexPendingToolTurn(val replyId: String, val requestId: String?, val calls: List<NovexPendingToolCall>) {
     companion object {
         /** Uses raw active-path rows, never model summaries or inferred intent. */
-        fun find(rows: List<MessageEntity>): NovexPendingToolTurn? {
+        fun find(rows: List<MessageRow>): NovexPendingToolTurn? {
             val lastAssistant = rows.indexOfLast { it.role == "assistant" }
             if (lastAssistant < 0) return null
             if (NovexManagementUserRequests.fromActiveMessages(rows.drop(lastAssistant + 1)).isNotEmpty()) return null

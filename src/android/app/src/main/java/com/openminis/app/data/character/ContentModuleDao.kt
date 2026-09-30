@@ -6,12 +6,12 @@ import androidx.room.OnConflictStrategy
 import androidx.room.Query
 import androidx.room.Transaction
 import androidx.room.Update
-import com.openminis.app.data.db.NovexCardTextReader
-import com.openminis.app.data.db.NovexCardTextField
-import com.openminis.app.data.db.readCardText
+import novex.android.data.cards.LargeColumnReader
+import novex.android.data.cards.LargeTextField
+import novex.android.data.cards.readLargeText
 
 @Dao
-interface ContentModuleDao : NovexCardTextReader {
+interface ContentModuleDao : LargeColumnReader {
     @Query(
         "SELECT id, owner_type, owner_id, type, name, '' AS content_json, position, collapsed, created_at, updated_at FROM content_modules WHERE owner_type = :ownerType AND owner_id = :ownerId " +
             "ORDER BY position ASC, created_at ASC, id ASC",
@@ -119,6 +119,6 @@ interface ContentModuleDao : NovexCardTextReader {
         updateAll(normalized)
     }
     private suspend fun hydrate(row: ContentModuleEntity) = row.copy(
-        contentJson = requireNotNull(readCardText(NovexCardTextField.MODULE_CONTENT, row.id)),
+        contentJson = requireNotNull(readLargeText(LargeTextField.MODULE_CONTENT, row.id)),
     )
 }

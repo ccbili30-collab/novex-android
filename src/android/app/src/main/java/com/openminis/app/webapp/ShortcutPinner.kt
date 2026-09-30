@@ -9,7 +9,7 @@ import androidx.core.content.pm.ShortcutInfoCompat
 import androidx.core.content.pm.ShortcutManagerCompat
 import androidx.core.graphics.drawable.IconCompat
 import com.openminis.app.R
-import com.openminis.app.data.db.WebAppShortcutEntity
+import novex.android.data.WebShortcutRow
 
 /**
  * T-pwa-1 (renamed Pwa → WebApp): pin a WebApp shortcut to the user's
@@ -20,7 +20,7 @@ object ShortcutPinner {
 
     fun pin(
         context: Context,
-        shortcut: WebAppShortcutEntity,
+        shortcut: WebShortcutRow,
         iconBitmap: Bitmap?,
     ): Boolean {
         if (!ShortcutManagerCompat.isRequestPinShortcutSupported(context)) {

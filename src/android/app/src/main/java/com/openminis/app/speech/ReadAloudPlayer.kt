@@ -381,8 +381,8 @@ class ReadAloudPlayer(context: Context) {
 
     /** @return true when provider audio was synthesized AND played. */
     private suspend fun speakViaProvider(
-        instance: com.openminis.app.data.model.ProviderInstance,
-        modelEntry: com.openminis.app.data.model.ModelEntry,
+        instance: novex.android.data.model.ProviderInstance,
+        modelEntry: novex.android.data.model.ModelEntry,
         text: String,
     ): Boolean {
         // [T-android-safemode-lateinit-crash-147] `?.` guards a null
