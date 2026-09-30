@@ -524,6 +524,101 @@ MainActivity 63.8%）、ui.theme（46.0%）——这四块全部落在半血档�
 ≥80%，维持现状随邻近战役顺带即可。ui.sessions/ui.sandbox/auth 三块是
 「名义混合、实则纯上游」的整刀候选，优先级应按此上调。
 
+### P3.5 · 非 UI 底层战役（战线重划） — 黄档 — 进行中
+
+**战线重划（2026-09-30 用户裁决）**：UI 血统清洗移交 feat/ui-rikkahub 大改分支
+负责人（下称「她」），本线只打非 UI 底层。两线并行期的铁律：**本线不碰任何
+ui/ 文件的非 import 行**（避免与大改分支冲突），她不碰本线的底层件。
+
+#### P3.5a · data/repository 三件真重写 — [x]（本刀）
+
+三件按 P3.2 的「真重写」纪律重做（非改名直译；验收 = mixed_similarity
+<40%，冻结面逐字保留）：
+
+| 件 | 重写前 | 重写后（旧路径门面） | 对上游基线相似度 |
+|---|---|---|---|
+| data/repository/ChatRepository.kt | 1,165 行 / 69% | 602 净行 | **18.9%** |
+| data/repository/SkillRepository.kt | 1,764 行 / 95% | 709 净行 | **25.7%** |
+| data/repository/ProviderRepository.kt | 2,369 行 / 70% | 757 净行 | **10.8%** |
+
+**结构**：重实现拆到新包 `novex.android.repo`（12 件 2,048 净行，对三件上游
+原件的相似度全部 <16%，最大 BundledSkillSeed.kt 15.5%——其中大头是逐字
+冻结的 skill-creator 内嵌数据面）：技能侧 SkillMarkdown（编解码/虚拟路径）
++ SkillStorage（skills.db 注册表 + 磁盘目录）+ SkillTransfer（zip/GitHub
+定位/同步客户端）+ BundledSkillSeed（种植器+冻结载荷）；会话侧
+MessagePreviews（parts_json 三种文本投影）+ TranscriptPager（CursorWindow
+分页兜底）+ ChatArchiveQueries（offload 四条大查询（已删））；供应商侧 ProviderConfigStore
+（双写/对账/锁/状态流内核）+ ProviderModelRefresh + ProviderImageSources +
+ProviderTransfer（导出导入+模态位域）+ ProviderOpenCodeSunset。
+
+**门面为何留在旧路径（对既定「换包名」方案的偏离，原因记档）**：ui 文件里
+存在**非 import 行**的引用——ChatViewModel/ChatScreen 对
+`com.openminis.app.data.repository.SkillRepository` 的全限定类型引用、
+`SkillRepository.ImportSource`/`ChatRepository.ActiveConversation` 嵌套类型
+引用、`sideConversationNumber`/`isOpenCodeFreeInstanceId` 的内联全限定调用。
+typealias 透传不了嵌套类（Kotlin 限制），继承桥透传不了嵌套类与伴生成员
+（实测）。故公共 API 形状（类名/嵌套类型/伴生/顶层函数）钉在旧路径门面上，
+全部逻辑实现在 novex.android.repo；调用方零改动、与 UI 战线零冲突。旧路径
+三件按「保留原包名」口径过相似度验收（上表，全部 <40%）。
+
+**冻结面（逐字/逐语义保留）**：skills.db 表列与 DDL 及 v2/v3 升级路径；
+`filesDir/minis-global/skills/<id>/` 目录布局与 `/var/minis/skills/<id>/SKILL.md`
+虚拟挂载；SKILL.md frontmatter 格式与解析容忍度（块标量/chomping 变体）；
+skillPromptFragment 的提示协议文本与三层挑选算法（捆绑>7天>使用数，上限
+20/描述 200）；导出 zip 的 cacheDir/share/skill-export-<uuid>/ 布局与 24h
+TTL 清扫；GitHub contents API 的重试纪律（2 次/1.5s/瞬态码判别/深度 5）；
+provider_config/provider_secrets prefs 名与全部键（config 镜像、
+modelsLastFetchAt_*、lastUsedModelEntryId、lastModelsRefreshDate、apikey_*）；
+导出/导入 JSON 的跨端键集与 modalityOverride 位域；Room DAO 面
+（novex.android.data.chat/provider）零改动；对外公开 API 签名（含参数名，
+调用方遍布全仓含命名实参）。**行为等价证据**：既有测试零断言改动全过
+（含 SkillRepositoryBundledAssetSkillTest 7 例、SideConversationNamingTest
+4 例、OpenCodeSunsetMigrationTest 3 例、novex/core 会话持久化 17 件、
+ChatRepositoryTest 6 例）；新增 repository 层 16 例
+（SkillRepositoryLifecycleTest 6：导入原位替换保开关与计数/会话覆盖与
+草稿改挂/提示片段可见性/使用频段/虚拟路径边界/SKILL.md 回写对账；
+ProviderRepositoryRoundTripTest 5：第三方端不播种/导出导入往返含密钥/
+最近使用解析/删实例级联/排序丢未知补未提；
+ChatRepositoryBranchAndPreviewTest 5：工具调用预览与空预览不覆盖/
+超长截断单文本部件/分裂-切换-删除路径一致/助手正式化/历史重算清预览）；
+全量单测 1,369 条通过。
+
+**移交清理项（她的 UI 重写顺手带走）**：ui 内联引用改指 novex.android.repo
+后，旧包顶层委托（sideConversationNumber 等，见旧路径三件文件尾）与门面
+可随后续刀整体合并；届时 data/repository 只剩 Memory/Background/EnvVar/
+AppIcon 四件自有仓。
+
+#### 给她的移交清单（UI 血统清洗标准）
+
+纪律与口径和本线完全同款，三条铁律 + 一张验收表：
+
+1. **真重写不是改名直译**：类结构（职责重排/拆分/合并）、方法分解与命名、
+   内部控制流、并发结构（锁形态可换语义等价）、注释自写（中文、写设计
+   意图）、英文错误/日志文案改写措辞——全是重做面。机械相似度验收：
+   `python3 scripts/upstream_audit.py` 的 mixed_similarity（剥注释+空白归一+
+   大小写折叠+行级 SequenceMatcher），**逻辑件 <40%**。
+2. **冻结面逐字保留**：字符串资源键与文案语义、导航路由名、Room/DAO 触点、
+   对仓库层的调用签名（含参数名）、Compose 状态流的可观察行为、无障碍
+   语义（contentDescription 语义等价）。
+3. **既有测试不改断言原样通过**；关键屏补 UI 层测试。
+
+她名下的 ui 文件清单与当前相似度（2026-09-30 @ 本刀树，重跑审计可复现；
+「件数/行数」为净行口径）。按 ≥80% 档行数排优先级：
+
+| 子包 | ≥80% 档 | 半血档（40-80%） | 单件最重 |
+|---|---|---|---|
+| ui.chat | StreamingMarkdownText 98.9%/3,659、MinisTextKitGesture 98.9%/1,030、ChatModelPickerSheet 90.8%/1,162、ChatComposerWidgets 89.6%/933、ChatMiscViews 89.9%/984、ChatToolDetailUI 92.5%/1,582、SessionSkillsSheet 99.0%、SessionMemorySheet 98.8%、MemoryDetailScreens 98.8%、LargeContentGuard 98.2%、ChatFlatItems 84.6%/959、ChatScreenHelpers 92.4% 等 | ChatViewModel 59.1%/14,132、ChatScreen 63.3%/4,684、ChatAssistantMessageUI 72.6%、ChatUserMessageUI 75.0% | ChatViewModel（14.1k 行半血，建议拆文件后逐块重写） |
+| ui.sessions | SessionListScreen 84.0%/3,282、SessionListViewModel 90.0%/1,175 | GroupPickerSheet 95.4%、SearchHighlight 85.4% 等 | SessionListScreen |
+| ui.settings | SkillsManagementScreen 95.7%/1,182、ModelGroupDetailScreen 96.1%/733、LogManagementScreen 95.1%/533、AppearanceScreen 89.5%/743、StorageManagementScreen 94.1%、SoulSettingsScreen 96.7%、ModelEntryDetailScreen 98.5% 等 23 件 | ModelGroupsScreen 76.0%、CheckUpdateSection 49.1% | SkillsManagementScreen |
+| ui.components | FullscreenImageViewer 96.4%/548、ImageGalleryViewer 97.7%、ModelEntryPicker 92.3%/436、MinisButton 91.6% 等 12 件 | QuickTestSheet 79.2%、MinisMenu 62.6% 等 | FullscreenImageViewer |
+| ui.sandbox（幸存三件） | FilePreviewScreen 96.6%/1,199、FileBrowserViewModel 99.2%/513、FileBrowserScreen 87.7%/489 | — | 整包纯上游，整刀候选 |
+| ui.markdown | MarkdownText 97.8%/939 | — | 单件纯上游 |
+| ui.onboarding | OnboardingModelSelectionScreen 97.3%/240 | — | 单件 |
+
+ui 战线合计（本刀树口径）：≥80% 档约 85 件里 ui 占 55 件 / 约 24,300 行；
+半血档 25 件里 ui 占 13 件 / 约 24,900 行。ui.navigation（61.5%）、
+ui.theme（46.0%）已落半血，维持随邻近战役顺带即可。
+
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
 MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
@@ -583,3 +678,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-28 | 本 PR（P3.2b） | Room 数据层绞杀：删 data/db（27f）+ data/model（18f）整包，自有 novex.android.data 三十件 = 库件 4（NovexMainDatabase+MainDatabaseMigrations 38 步迁移重排为 step 注册表/NovexProviderDatabase/WebShortcutStore）+ chat 6（DAO 按读写面拆并：SessionReads/SessionWrites/FolderReads/FolderWrites/MessageDao/MarkerDao+ChatDao 门面）+ cards 6（含冻结面集中文件 CardTables）+ provider 3（快照式读写 ProviderStoreDao+行声明+编解码）+ model 11；**schema 冻结证据：Room KSP 生成物 createAllTables DDL 逐句一致（createAllTables 59 条；89 含 DROP/INSERT 口径）、provider 库 9/9 一致，identityHash 主库 6397ab3a…/8567eaad… 副库 394a39eb…/4d415b94… 重写前后字节相同，老用户库无损**；DAO 查询全部等价改形（表别名/谓词重排/截断走共享 RawQuery 执行器），Robolectric 钉 sessions/messages/compact_markers/provider_instances/provider_thinking_rules 表列名与插入/分支切换/compact marker/provider 配置/思考规则读写十用例；全量单测 1,585 条通过；死码 AgentTypes 族（AgentStreamEvent/AgentMessage/sanitizeToolId，HEAD 上已零引用）删除；相似度：逻辑件 21 件全部 <40%（最大 26.4%、均值 7.4%；冻结面除外——迁移 DDL、Room 列声明、parts_json 编解码、LLM 线协议 DTO、provider JSON 镜像字段名） | 血统：上游未动 163f/30,167 → 128f/24,366，上游改动 168f/100,749 → 173f/102,448，Novex 新增 394f/54,690 → 409f/58,456；死代码 0f；grep 'com.openminis.app.data.db\|com.openminis.app.data.model' src 归零；data/repository 仅改接（import/符号），真重写留 P3.2c |
 | 2026-09-30 | 本 PR（P3.3 裁军） | 产品范围裁军（用户裁决 A+B+C 全砍）：语音全家（speech/ 26f 7,733 行 + novex.android.voice/ 5f 1,509 行 + ui/chat/voice + 影子语音屏与 voice 设置项）、内置浏览器全家（browser/ 8f 3,901 行 + ui/browser/ 6f 2,012 行 + ui/preview/ 4f 1,367 行 + UrlPreviewSheet，链接点击改 ACTION_VIEW 外跳、会话内 HTML 走 FilePreviewScreen WebView、音视频走 FileProvider 外跳）、WebApp（webapp/ 5f 1,293 行 + Manifest 摘 WebAppActivity/OPEN_WEBAPP）、Shizuku/特权后端（offload/ 3f 910 行 + Offload/Shizuku/SystemPermissions 权限屏 + dev.rikka.shizuku 依赖出清 + Manifest 摘 ShizukuProvider 与 API_V23）、定时任务（scheduled/ 5f + ui/scheduled/ 4f 共 2,499 行 + Manifest 摘 AlarmReceiver + SET_ALARM/SCHEDULE_EXACT_ALARM/RECEIVE_BOOT_COMPLETED）、调试面板（debug/ 12f 5,498 行；ACRA 与 AppLogger 保留）、MCP 残件（mcp/ 4f + MCPRepository + 三处 UI 面 + ContentPaths mcp-servers 桶）、内嵌媒体播放器（ui/media 653 行）、minis-config 体系（config/ 20f 4,785 行 + ConfigAudit/ConfigConfirm 屏；自定义思考规则机器随葬：CUSTOM 席位/读写 DAO/ThinkingContractsCollection 删除，前尘预设规则收编内置席 qianchen-relay-gemini，Room 表 provider_thinking_rules 保留 schema 冻结）；死参数/死路由/deep-link 动作清扫（SHADOW_VOICE/PERMISSIONS/SHIZUKU/SYSTEM_PERMISSIONS/SCHEDULED_TASKS/MCP 路由、OpenHtmlPreview/NewVoiceChat/OpenAlarmList/OpenPermissionSettings 动作、settings/sessions 死参数、voice_chat 桌面捷径）；孤儿串 695 键出清（七语言文件共 -3,903 条）；裁军孤儿（shared 分词四件 + BringIntoViewOnFocus）随葬 | 血统：上游未动 128f/24,366 → 60f/11,827，上游改动 173f/102,448 → 118f/74,802，Novex 新增 409f/58,456 → 402f/56,627（编辑过的原上游未动件移入改动桶）；随葬测试（config/debug/mcp/offload/speech/自定义思考规则回路 + shared 分词件）删除；死代码 0f；砍单符号 grep 仅墓碑注释命中；RECORD_AUDIO/SET_ALARM 零残留 |
 | 2026-09-30 | 本 PR（P3.4） | 审计工具第四维：混合件与上游基线同路径文件的文本相似度（剥注释+空白归一+大小写折叠、行级 SequenceMatcher autojunk 关；基线 blob 单进程 cat-file --batch 流式取件逐块即弃；--json 新增 mixed_similarity 键，既有键不动）；3 件人工核对（100%/3.1%/46% 全部与 git diff 吻合）；净眼 PR#70 六建议顺手清（qianchen-relay 内置席 resolver 级测试、FilePreviewScreen 外跳按钮文案走 R.string 八语言包、browser_use 外跳措辞与日志改口、THIRD_PARTY AndroidX 汇总行去 webkit、ChatLinkDiag 逐链接 Log.w 清除、MinisApp 一次性清扫已删 receiver 的旧定时 alarm）；docs 补「P3.4 混合件余量量化」小节与战线重排 | 改动桶 118f/74,890 相似度三档：≥80% 86f/41,497（55.4%）、40-80% 27f/32,905（43.9%）、<40% 5f/488（0.7%）；全仓上游血统存量 = 41,497 + 未动桶 11,827 = **53,324 行（146 件）**，比名义合计少 38.5%；ui.sessions/ui.sandbox/auth 三块「名义混合实则纯上游」升为整刀候选，deeplink/navigation/app根/theme 全落半血档移出绞杀名单 |
+| 2026-09-30 | 本 PR（P3.5a） | 战线重划（UI 移交 feat/ui-rikkahub，本线专打非 UI 底层）；data/repository 三件真重写：实现层拆入新包 novex.android.repo 12 件（技能 4 + 会话 3 + 供应商 5），公共 API 门面钉旧路径（ui 嵌套类型/全限定引用不可经 typealias 或继承桥透传，调用方零改动、与 UI 战线零冲突）；冻结面逐字保留（skills.db DDL 与升级、目录与虚拟挂载布局、SKILL.md 格式与解析容忍度、提示协议文本、导出 zip/TTL、GitHub 重试纪律、prefs 名与键集、导出导入 JSON 键集与模态位域、DAO 面零改动、API 签名含参数名）；既有测试零断言改动全过 + 新增 repository 层 16 例 + 全量单测 1,369 条通过 | 旧路径三件相似度 95%→25.7%、69%→18.9%、70%→10.8%（全部 <40% 达标）；新包 12 件对上游原件 <16%；血统：上游未动 60f/11,827 不变，上游改动 118f/74,890→118f/71,618（-3,272 行），Novex 新增 402f/56,627→413f/59,146；改动桶三档 85f/39,732、25f/29,330、8f/2,556（<40% 档 +3 件即本轮三件）；P3.5 小节落款含给 UI 战线的移交清单 |
