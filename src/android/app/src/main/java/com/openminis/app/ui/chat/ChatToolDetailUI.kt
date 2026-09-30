@@ -329,17 +329,14 @@ internal fun ToolDetailSheet(
                         .clip(CircleShape)
                         .clickable {
                             if (hasBrowserUrl) {
-                                // Mirror iOS ToolLiveSheet: nav-bar globe
-                                // routes back into the Session WebView pool
-                                // (BrowserTabPool.selectOrCreateTabForURL)
-                                // so an existing browser_use tab for this
-                                // URL is reused; otherwise a new tab is
-                                // spawned and loaded. Avoids dumping the
-                                // user into a system chooser for what is
-                                // already a live in-app browser session.
+                                // [P3.3 裁军→P3.4 净眼] 原先回跳内置浏览器
+                                // Session WebView 池（BrowserTabPool），内置
+                                // 浏览器全家退役后 onOpenUrl 由调用方
+                                // ACTION_VIEW 外跳系统浏览器——措辞与日志
+                                // 同步改口，不再提 session pool。
                                 AppLogger.info(
                                     "ChatScreen",
-                                    "browser_use action → open in session pool: ${browserActionUrl.take(160)}",
+                                    "browser_use action → open in system browser (external): ${browserActionUrl.take(160)}",
                                 )
                                 onOpenUrl(browserActionUrl)
                             } else if (block.content.isNotEmpty()) {
@@ -356,7 +353,7 @@ internal fun ToolDetailSheet(
                             else -> novex.android.ui.NovexIcons.ContentCopy
                         },
                         contentDescription = when {
-                            isBrowserTool -> "Open in session browser"
+                            isBrowserTool -> "Open in system browser"
                             else -> "Copy"
                         },
                         tint = ChatColors.primaryText,

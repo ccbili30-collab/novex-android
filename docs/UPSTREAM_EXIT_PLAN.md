@@ -15,6 +15,9 @@ python3 scripts/upstream_audit.py --json /tmp/audit.json
 - 基线 = 仓库根提交（上游 OpenMinis 整包导入 `82c2eb0`，2026-08-29）
 - 血统三分类 + Manifest 根出发的可达性闭包，覆盖 import / 同包符号 /
   全限定名内联调用三种引用方式
+- **第四维（P3.4）**：改动桶每件与基线同路径文件的文本相似度（剥注释 +
+  空白归一 + 大小写折叠的行级比对），三档量化真实剩余重写量——见
+  「P3.4 混合件余量量化」小节
 - **已知盲区（fail-open 方向保守）**：反射、按名字的 DI、纯字符串类名发现
   不出来，一律按「活」处理。删除执行前仍须编译 + 全量测试 + 冒烟兜底。
 - **历史教训一**：初版工具漏了 FQN 内联调用，把 102 个活文件（含
@@ -464,6 +467,63 @@ P3.3 产品范围裁军轮（用户裁决 A+B+C 全砍单，2026-09-30）——*
   审计死代码 0f（血统数字见进度日志行）。
 
 
+### P3.4 · 混合件余量量化（审计工具第四维） — 绿档（工具+度量，零行为变化） — [x]
+
+净眼三轮揪出的盲区：路径三分类数不出「改名换路径的直译件」（落 Novex 新增
+桶），也数不出「改动桶里其实已经基本自有」的文件。本轮给审计工具加第四维
+——每个血统文件与上游基线（根提交 `82c2eb0`）同路径文件的文本相似度，把
+「上游改动」桶的 118 个混合件精确量化。
+
+口径（保守估计，净眼同源）：剥注释（// 与可嵌套的 /* */，字符串字面量内的
+注释符不剥）+ 空白归一 + 大小写折叠（标识符折叠刻意不做——太激进），行级
+difflib SequenceMatcher ratio（autojunk 关）。基线 blob 经单个
+`git cat-file --batch`（`git show 82c2eb0:<path>` 的批量等价）流式获取，
+逐块读完即弃。上游未动桶与基线逐字节一致（相似度恒 100%）不算；Novex 新增
+桶无同路径基线可比不算。自测：抽 3 件人工核对——XAIOAuthManager 报 100%
+（git diff 仅 1 行 KDoc 改动，剥注释后逐字一致）、ProviderDetailScreen 报
+3.1%（numstat +11/−1167，整体重写）、Theme.kt 报 46.0%（+274/−22 增量
+改造），数字全部合理。
+
+三档分布（118 件 74,890 行，2026-09-30 @ 本刀分支树 = next `efef545` + P3.4
+改动；重跑 `python3 scripts/upstream_audit.py` 可复现）：
+
+| 档位 | 判定 | 文件 | 行数 | 占改动桶 |
+|---|---|---|---|---|
+| ≥80% | 仍是上游主体（重写优先级高） | 86 | 41,497 | 55.4% |
+| 40-80% | 半血（逐件甄别） | 27 | 32,905 | 43.9% |
+| <40% | 基本自有（低优先，或只清洗残余片段） | 5 | 488 | 0.7% |
+
+**真实剩余重写量结论**：改动桶名义 74.9k 行里，真正还是上游主体的只有
+41.5k 行（55.4%）；加上上游未动桶 60 件 11,827 行（天然 100%），**全仓上游
+血统存量 = 53,324 行（146 件）**，比「未动+改动」名义合计 86,717 行少
+38.5%。半血 32.9k 行逐件甄别后还会有相当部分沉入自有档（P3.2c 已示范：
+repository 层改接后大半文件滑到半血以下）。基本自有 5 件（SettingsScreen
+37.1%、ProviderDetailScreen 3.1%、AgentTools 18%、SectionDropdown 19.4%、
+SectionTextField 36.5%）——设置页主体与工具注册表实际已基本自有。
+
+**战线重排建议**（按「≥80% 档行数」= 纯重写工作量排序）：
+
+| 子系统（改动桶内） | 文件/行数 | 其中≥80%档 | 建议 |
+|---|---|---|---|
+| ui.chat | 29f / 35,750 | 14,167 | 半血占多数（21.6k 已 <80%），甄别后逐屏绞杀；StreamingMarkdownText.kt（3,659 行/98.9%）是单件最大纯上游件 |
+| data（含 repository） | 10f / 7,312 | 2,892 | 大半已半血化（P3.2c 改接成效），真重写量比名义小得多 |
+| ui.settings | 23f / 9,558 | 6,956 | 主体屏已自有，剩余集中在 CheckUpdateSection/UpdateChecker 两件（1.8k）与杂项屏 |
+| ui.sessions | 4f / 4,870 | 4,870（全部） | **整包纯上游**，可整刀绞杀 |
+| ui.components | 12f / 2,615 | 1,800 | 甄别+重写混合 |
+| service | 4f / 2,576 | 2,482 | 几乎纯上游（ToolOverlayController 868 行 99.7%） |
+| ui.sandbox（三件幸存） | 3f / 2,201 | 2,201（全部） | **整包纯上游**，可整刀绞杀 |
+| provider 残根 | 9f / 1,767 | 1,554 | 小件集中清 |
+| auth | 3f / 1,162 | 1,162（全部） | **整包纯上游**（三件 OAuth/直连管理器），可整刀绞杀 |
+| tools | 8f / 1,207 | 872 | AgentTools 已自有，其余小件 |
+| ui.markdown | 1f / 939 | 939 | MarkdownText 单件纯上游 |
+| agent（ToolLoopDetector 同族） | 1f / 586 | 586 | 单刀 |
+
+实际基本自有、可移出绞杀名单的子系统：deeplink（两件 76.8%/66.7% 半血但
+量小）、ui.navigation（AppNavigation 61.5%）、app 根（MinisApp 47.5%、
+MainActivity 63.8%）、ui.theme（46.0%）——这四块全部落在半血档，无一件
+≥80%，维持现状随邻近战役顺带即可。ui.sessions/ui.sandbox/auth 三块是
+「名义混合、实则纯上游」的整刀候选，优先级应按此上调。
+
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
 MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
@@ -522,3 +582,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-28 | 本 PR（P3.2） | provider 剩余小件绞杀：删上游 provider/voice（4f）+ provider/thinking（4f）+ provider/image/ImageModelCatalog（零血统件机械搬家为 novex.android.models.ImageGenerationModels）+ data/model/VoiceProviderTemplate（自有 VoiceVendorTemplates 重写，模板数据逐字节一致）+ LargeAllocProbe/JsonExt 死码（123 行）；自有 novex.android.voice 五件（VoiceWire 值类型/VoiceClient 引擎+OpenAI 方言/VoiceClients 十二厂商/VoiceClientFactory 标记路由表/VoiceVendorTemplates）与 novex.android.thinking 四件（ThinkingWire 词表+内聚编解码/ThinkingContract/ThinkingContractResolver 座次表+决策落笔分离/ThinkingContractCoding）；DB 实体/DAO/仓库/配置集合件随消费者更名（Room 表列名不变）；净眼 PR#66 七条全清（③④代码修复 + ①②⑦测试补钉 + ⑤⑥docs 记档）；净眼退回后九件真重写（结构/分解/控制流/注释/文案全部重做，协议事实逐字节保留；剥注释+归一化标识符的语句相似度从 96-99% 降至 10.8-35.8%、均值 23.3%，对照 P3.1c GeminiWire 同口径 ~7.5%），退回附带补钉：讯飞签名 URL/WS 收流确定性测试（注入假 socket 零网络）、MiniMax legacy b64 外壳兜底用例、①Codex 工厂手工 bearer 断言；假服务器 parity 测试钉 Doubao TTS/ASR 与 OpenAI TTS 等厂商；思考金表/回归/合并/xAI 四件测试原样通过| 血统：上游未动 179f/36,228 → 163f/30,167，上游改动 163f/97,807 → 168f/100,749（含 改名换路径的血统件落 Novex 新增桶（其中 ThinkingContractsCollection 经净眼三轮揪出为改名直译，已真重写）），Novex 新增 383f/52,065 → 394f/54,690；死代码 2f/123 行 → 0f；grep 'VoiceProvider|ImageModelCatalog|ThinkingRule' src/android/app/src 归零；model-transport 零 com.openminis 不变 |
 | 2026-09-28 | 本 PR（P3.2b） | Room 数据层绞杀：删 data/db（27f）+ data/model（18f）整包，自有 novex.android.data 三十件 = 库件 4（NovexMainDatabase+MainDatabaseMigrations 38 步迁移重排为 step 注册表/NovexProviderDatabase/WebShortcutStore）+ chat 6（DAO 按读写面拆并：SessionReads/SessionWrites/FolderReads/FolderWrites/MessageDao/MarkerDao+ChatDao 门面）+ cards 6（含冻结面集中文件 CardTables）+ provider 3（快照式读写 ProviderStoreDao+行声明+编解码）+ model 11；**schema 冻结证据：Room KSP 生成物 createAllTables DDL 逐句一致（createAllTables 59 条；89 含 DROP/INSERT 口径）、provider 库 9/9 一致，identityHash 主库 6397ab3a…/8567eaad… 副库 394a39eb…/4d415b94… 重写前后字节相同，老用户库无损**；DAO 查询全部等价改形（表别名/谓词重排/截断走共享 RawQuery 执行器），Robolectric 钉 sessions/messages/compact_markers/provider_instances/provider_thinking_rules 表列名与插入/分支切换/compact marker/provider 配置/思考规则读写十用例；全量单测 1,585 条通过；死码 AgentTypes 族（AgentStreamEvent/AgentMessage/sanitizeToolId，HEAD 上已零引用）删除；相似度：逻辑件 21 件全部 <40%（最大 26.4%、均值 7.4%；冻结面除外——迁移 DDL、Room 列声明、parts_json 编解码、LLM 线协议 DTO、provider JSON 镜像字段名） | 血统：上游未动 163f/30,167 → 128f/24,366，上游改动 168f/100,749 → 173f/102,448，Novex 新增 394f/54,690 → 409f/58,456；死代码 0f；grep 'com.openminis.app.data.db\|com.openminis.app.data.model' src 归零；data/repository 仅改接（import/符号），真重写留 P3.2c |
 | 2026-09-30 | 本 PR（P3.3 裁军） | 产品范围裁军（用户裁决 A+B+C 全砍）：语音全家（speech/ 26f 7,733 行 + novex.android.voice/ 5f 1,509 行 + ui/chat/voice + 影子语音屏与 voice 设置项）、内置浏览器全家（browser/ 8f 3,901 行 + ui/browser/ 6f 2,012 行 + ui/preview/ 4f 1,367 行 + UrlPreviewSheet，链接点击改 ACTION_VIEW 外跳、会话内 HTML 走 FilePreviewScreen WebView、音视频走 FileProvider 外跳）、WebApp（webapp/ 5f 1,293 行 + Manifest 摘 WebAppActivity/OPEN_WEBAPP）、Shizuku/特权后端（offload/ 3f 910 行 + Offload/Shizuku/SystemPermissions 权限屏 + dev.rikka.shizuku 依赖出清 + Manifest 摘 ShizukuProvider 与 API_V23）、定时任务（scheduled/ 5f + ui/scheduled/ 4f 共 2,499 行 + Manifest 摘 AlarmReceiver + SET_ALARM/SCHEDULE_EXACT_ALARM/RECEIVE_BOOT_COMPLETED）、调试面板（debug/ 12f 5,498 行；ACRA 与 AppLogger 保留）、MCP 残件（mcp/ 4f + MCPRepository + 三处 UI 面 + ContentPaths mcp-servers 桶）、内嵌媒体播放器（ui/media 653 行）、minis-config 体系（config/ 20f 4,785 行 + ConfigAudit/ConfigConfirm 屏；自定义思考规则机器随葬：CUSTOM 席位/读写 DAO/ThinkingContractsCollection 删除，前尘预设规则收编内置席 qianchen-relay-gemini，Room 表 provider_thinking_rules 保留 schema 冻结）；死参数/死路由/deep-link 动作清扫（SHADOW_VOICE/PERMISSIONS/SHIZUKU/SYSTEM_PERMISSIONS/SCHEDULED_TASKS/MCP 路由、OpenHtmlPreview/NewVoiceChat/OpenAlarmList/OpenPermissionSettings 动作、settings/sessions 死参数、voice_chat 桌面捷径）；孤儿串 695 键出清（七语言文件共 -3,903 条）；裁军孤儿（shared 分词四件 + BringIntoViewOnFocus）随葬 | 血统：上游未动 128f/24,366 → 60f/11,827，上游改动 173f/102,448 → 118f/74,802，Novex 新增 409f/58,456 → 402f/56,627（编辑过的原上游未动件移入改动桶）；随葬测试（config/debug/mcp/offload/speech/自定义思考规则回路 + shared 分词件）删除；死代码 0f；砍单符号 grep 仅墓碑注释命中；RECORD_AUDIO/SET_ALARM 零残留 |
+| 2026-09-30 | 本 PR（P3.4） | 审计工具第四维：混合件与上游基线同路径文件的文本相似度（剥注释+空白归一+大小写折叠、行级 SequenceMatcher autojunk 关；基线 blob 单进程 cat-file --batch 流式取件逐块即弃；--json 新增 mixed_similarity 键，既有键不动）；3 件人工核对（100%/3.1%/46% 全部与 git diff 吻合）；净眼 PR#70 六建议顺手清（qianchen-relay 内置席 resolver 级测试、FilePreviewScreen 外跳按钮文案走 R.string 八语言包、browser_use 外跳措辞与日志改口、THIRD_PARTY AndroidX 汇总行去 webkit、ChatLinkDiag 逐链接 Log.w 清除、MinisApp 一次性清扫已删 receiver 的旧定时 alarm）；docs 补「P3.4 混合件余量量化」小节与战线重排 | 改动桶 118f/74,890 相似度三档：≥80% 86f/41,497（55.4%）、40-80% 27f/32,905（43.9%）、<40% 5f/488（0.7%）；全仓上游血统存量 = 41,497 + 未动桶 11,827 = **53,324 行（146 件）**，比名义合计少 38.5%；ui.sessions/ui.sandbox/auth 三块「名义混合实则纯上游」升为整刀候选，deeplink/navigation/app根/theme 全落半血档移出绞杀名单 |

@@ -83,6 +83,7 @@
     <string name="filepreview_loading_pdf">正在載入 PDF…</string>
     <string name="filepreview_loading_archive">正在讀取壓縮檔…</string>
     <string name="filepreview_open_externally">使用外部應用開啟</string>
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Office 文件需要使用外部應用預覽。</string>
     <string name="filepreview_pdf_render_failed">無法渲染 PDF：%1$s</string>
     <string name="filepreview_pdf_empty">空文件</string>

@@ -410,6 +410,7 @@
     <string name="filepreview_loading_pdf">PDF を読み込んでいます…</string>
     <string name="filepreview_loading_archive">アーカイブを読み込み中…</string>
     <string name="filepreview_open_externally">外部アプリで開く</string>
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Office ドキュメントは外部ビューアでプレビューします。</string>
     <string name="filepreview_pdf_render_failed">PDF をレンダリングできません：%1$s</string>
     <string name="filepreview_pdf_empty">空のドキュメント</string>

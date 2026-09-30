@@ -240,6 +240,7 @@
     <string name="filepreview_loading_pdf">Загрузка PDF…</string>
     <string name="filepreview_loading_archive">Чтение архива…</string>
     <string name="filepreview_open_externally">Открыть во внешнем приложении</string>
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Офисные документы открываются для просмотра во внешнем приложении.</string>
     <string name="filepreview_pdf_render_failed">Не удалось отобразить PDF: %1$s</string>
     <string name="filepreview_pdf_empty">Пустой документ</string>

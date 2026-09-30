@@ -514,7 +514,9 @@ private fun ExternalOpenMediaFallback(item: FileItem) {
         )
         Spacer(modifier = Modifier.height(16.dp))
         novex.android.ui.Button(onClick = { openMediaFileExternally(context, item.file) }) {
-            Text("用其他应用打开")
+            // [P3.3 裁军→P3.4 净眼] 文案走 R.string（八语言包补键；
+            // 原先硬编码中文「用其他应用打开」）。
+            Text(stringResource(R.string.filepreview_open_with_other_apps))
         }
     }
 }

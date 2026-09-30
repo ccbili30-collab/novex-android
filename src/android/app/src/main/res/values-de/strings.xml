@@ -410,6 +410,7 @@
     <string name="filepreview_loading_pdf">PDF wird geladen…</string>
     <string name="filepreview_loading_archive">Archiv wird gelesen…</string>
     <string name="filepreview_open_externally">Extern öffnen</string>
+    <string name="filepreview_open_with_other_apps">Open with another app</string>
     <string name="filepreview_office_subtitle">Office-Dokumente werden in einem externen Viewer angezeigt.</string>
     <string name="filepreview_pdf_render_failed">PDF konnte nicht gerendert werden: %1$s</string>
     <string name="filepreview_pdf_empty">Leeres Dokument</string>
