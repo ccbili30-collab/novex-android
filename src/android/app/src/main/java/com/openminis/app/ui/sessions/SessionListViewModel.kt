@@ -398,6 +398,15 @@ class SessionListViewModel(
             android.widget.Toast.LENGTH_LONG).show()
     }
 
+    fun deleteSession(id: String) {
+        viewModelScope.launch {
+            try {
+                deleteConversation(id)
+            } catch (cancelled: kotlinx.coroutines.CancellationException) { throw cancelled }
+            catch (failure: Exception) { reportDeleteFailure(failure) }
+        }
+    }
+
     fun deleteSelected() {
         val ids = selectedIds.value.toList()
         viewModelScope.launch {

@@ -17,10 +17,10 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
-import com.openminis.app.ui.novex.AlertDialog
-import com.openminis.app.ui.novex.NovexDimensions
-import com.openminis.app.ui.novex.NovexIconAction
-import com.openminis.app.ui.novex.NovexIcons
+import novex.android.ui.AlertDialog
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIconAction
+import novex.android.ui.NovexIcons
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
@@ -62,7 +62,7 @@ import com.openminis.app.data.UpdateChecker
 import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.ui.markdown.MarkdownText
 import androidx.compose.foundation.shape.CircleShape
-import com.openminis.app.ui.novex.NovexColors
+import novex.android.ui.NovexColors
 import com.openminis.app.ui.bulletin.BulletinStackFace
 import com.openminis.app.ui.bulletin.BulletinHubPage
 import kotlinx.coroutines.launch
@@ -212,7 +212,7 @@ fun CheckUpdateSection() {
             )
         }
         SettingsRow(
-            icon = com.openminis.app.ui.novex.NovexIcons.SystemUpdate,
+            icon = novex.android.ui.NovexIcons.SystemUpdate,
             iconColor = NovexColors.Text,
             title = stringResource(
                 if (checking) R.string.check_update_checking

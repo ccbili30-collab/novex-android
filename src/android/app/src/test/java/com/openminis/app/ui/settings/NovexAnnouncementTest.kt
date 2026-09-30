@@ -45,9 +45,9 @@ class NovexAnnouncementTest {
         assertTrue(entry.contains("ic_phosphor_bell"))
         assertFalse(source.contains("ic_phosphor_bell"))
         // 组件来源：全部从 Novex 视觉模块取件；私造件/旧 Minis 层回流即红
-        assertTrue(entry.contains("com.openminis.app.ui.novex.PillButton"))
-        assertTrue(entry.contains("com.openminis.app.ui.novex.GhostIconButton"))
-        assertTrue(entry.contains("com.openminis.app.ui.novex.SegmentedTabs"))
+        assertTrue(entry.contains("novex.android.ui.PillButton"))
+        assertTrue(entry.contains("novex.android.ui.GhostIconButton"))
+        assertTrue(entry.contains("novex.android.ui.SegmentedTabs"))
         assertFalse(entry.contains("private fun PillButton"))
         assertFalse(entry.contains("MinisButton"))
         assertFalse(source.contains("AnnouncementDialog"))

@@ -135,9 +135,6 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                         },
                         onAddProviderClick = { openLegacy(Routes.ADD_PROVIDER) },
                         onSelectModelsClick = { openLegacy(Routes.ONBOARDING_MODELS) },
-                        onScheduledTasksClick = { openLegacy(Routes.SCHEDULED_TASKS) },
-                        onTerminalClick = { openLegacy(Routes.terminal()) },
-                        onRootfsClick = { openLegacy(Routes.ROOTFS_MANAGEMENT) },
                         onContentLoaded = {
                             NovexStartupMetrics.reportStage("home_content_ready")
                         },

@@ -4,6 +4,12 @@ import novex.android.data.chat.SessionRow
 import java.util.Calendar
 import java.util.TimeZone
 
+internal enum class SessionHomeFilter {
+    RECENT,
+    CONTEXT_FREE,
+    WITH_CONTEXT,
+}
+
 internal enum class SessionHomeRecency {
     TODAY,
     EARLIER,

@@ -126,8 +126,8 @@ import com.openminis.app.R
 import novex.android.data.chat.SessionRow
 import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.data.character.WorldEntity
-import com.openminis.app.data.model.ProviderConfig
-import com.openminis.app.data.model.hasUsableNovexModel
+import novex.android.data.model.ProviderConfig
+import novex.android.data.model.hasUsableNovexModel
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.ProviderRepository
 import novex.android.ui.rememberNovexWorkspace
@@ -333,11 +333,11 @@ fun SessionListScreen(
     // provider 运行时可用：null → 隐藏 AI 标题重生成 / AI 分组建议 / onboarding。
     val providerRuntimeAvailable = providerRepository != null
     val scope = rememberCoroutineScope()
-    val novex = rememberNovexWorkspace()
+    val novexWorkspace = rememberNovexWorkspace()
     var worlds by remember { mutableStateOf<List<WorldEntity>>(emptyList()) }
     var worldsLoaded by remember { mutableStateOf(false) }
     LaunchedEffect(Unit) {
-        worlds = novex.worlds().map { it.world }
+        worlds = novexWorkspace.worlds().map { it.world }
         worldsLoaded = true
     }
     // home-v2：底栏常驻，仅多选时隐藏。
@@ -1143,7 +1143,7 @@ fun SessionListScreen(
                     DialogTextFieldFrame {
                         SectionTextField(
                             value = desc,
-                            onValueChange = { desc = it.take(SessionFolderRow.DESC_MAX_CHARS) },
+                            onValueChange = { desc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
                             placeholder = stringResource(R.string.group_desc_hint),
                         )
                     }

@@ -3781,7 +3781,13 @@ fun ChatScreen(
 
                     // [P3.3 裁军] 语音会话波形/InlineVoiceInputPanel（语音
                     // 输入面板整块）随语音全家退役；输入区恒为文本框。
-                    // Text field (iOS: placeholder "Message Minis", no border)
+                    // [feat/ui-rikkahub] 胶囊单行：文本区 + 内嵌发送/回传钮；
+                    // +、/、文游、麦克风、上下文计排第二行按钮区。
+                    Row(
+                        verticalAlignment = Alignment.CenterVertically,
+                        modifier = Modifier.fillMaxWidth().padding(start = 12.dp, end = 6.dp),
+                    ) {
+                    Box(Modifier.weight(1f)) {
                     run {
                         // [T-android-enter-to-send-broken] Live read of the
                         // "Return key sends" preference. Bound here (not
@@ -4156,101 +4162,6 @@ fun ChatScreen(
                             )
                         }
 
-                        // 侧边页回传（决策 16/17；状态机 2026-09-15 下沉 ViewModel）：
-                        // 符号入口——让侧边模型产出增量交接简报并并入主线；
-                        // 全程反馈见输入栏上方的回传状态条。
-                        val handoffRunning = sideHandoffState is ChatViewModel.SideHandoffState.Running
-                        if (sideParentId != null) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        if (handoffRunning) ChatColors.sendButtonDisabled else ChatColors.sendButton,
-                                        CircleShape,
-                                    )
-                                    .clip(CircleShape)
-                                    .clickable(enabled = !handoffRunning && !isStreaming) { startHandoff() },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    novex.android.ui.NovexIcons.KeyboardReturn,
-                                    contentDescription = "回传主对话",
-                                    tint = if (handoffRunning) ChatColors.primaryText.copy(alpha = 0.5f) else Color.White,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                            Spacer(modifier = Modifier.width(8.dp))
-                        }
-
-                        // Right: 3-state Send / Enqueue / Stop button (mirrors iOS sendButton).
-                        //   • streaming + hasText  → SEND (routes through viewModel.sendMessage,
-                        //     which dispatches to enqueuePrompt since _isStreaming is true).
-                        //     Visual feedback for the queued prompt comes from the dashed
-                        //     bubble that ChatViewModel.enqueuePrompt appends to the message
-                        //     list — no extra button badge needed (matches iOS).
-                        //   • streaming + !hasText → STOP (cancel current run).
-                        //   • !streaming           → SEND (full color when hasText, dimmed
-                        //     when empty; same as before).
-                        // T180: an attachments-only send (no caption) is a
-                        // valid message — mirrors iOS where !attachments.isEmpty
-                        // satisfies the composer's send guard. Without this an
-                        // image-only "look at this" send is impossible.
-                        val hasText = inputText.isNotBlank()
-                        val hasContent = hasText || attachments.isNotEmpty()
-                        val showStop = isStreaming && !hasContent
-                        if (showStop) {
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(Color(0xFFFF3B30), CircleShape)
-                                    .clip(CircleShape)
-                                    .clickable { viewModel.cancelStream() },
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    novex.android.ui.NovexIcons.Stop,
-                                    contentDescription = "Stop",
-                                    tint = Color.White,
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                        } else {
-                            // Streaming with content → Send-into-queue; Idle with content → Send.
-                            // Idle without text or attachments → disabled.
-                            val canActivate = hasContent
-                            Box(
-                                modifier = Modifier
-                                    .size(38.dp)
-                                    .background(
-                                        if (canActivate) ChatColors.sendButton
-                                        else ChatColors.sendButtonDisabled,
-                                        CircleShape,
-                                    )
-                                    .clip(CircleShape)
-                                    // [T-longpress-stop] 2026-09-16 用户批④：生成中
-                                    // 长按发送键=立即打断（不用去够停止键）；平时行为不变。
-                                    .combinedClickable(
-                                        enabled = canActivate || isStreaming,
-                                        onLongClick = {
-                                            if (isStreaming) {
-                                                viewModel.cancelStream()
-                                            }
-                                        },
-                                        // T-drag-send-queue: 点击走共享 send-or-enqueue
-                                        // 处理器（斜杠短路、快照文本、清输入，发送中入队）。
-                                        onClick = { performSendOrEnqueue(inputText) },
-                                    ),
-                                contentAlignment = Alignment.Center,
-                            ) {
-                                Icon(
-                                    novex.android.ui.NovexIcons.ArrowUpward,
-                                    contentDescription = "Send",
-                                    tint = if (canActivate) ChatColors.background
-                                    else ChatColors.primaryText.copy(alpha = 0.5f),
-                                    modifier = Modifier.size(20.dp),
-                                )
-                            }
-                        }
                         // [A2c-expand] 全屏编写入口——长文输入是创作产品的常态，
                         // 价值高于常驻的额度环。
                         ComposerGlyphButton(onClick = { showComposerExpanded = true }) {
@@ -4567,7 +4478,6 @@ fun ChatScreen(
             chromeCollapsed = chromeCollapsed,
         )
         }
-    }
 
     // [P3.3 裁军] 内置浏览器底部 Sheet（BrowserSheet/BrowserTabPool）随
     // browser/ + ui/browser/ 整包退役删除。
@@ -4798,6 +4708,8 @@ fun ChatScreen(
     } // CompositionLocalProvider
 }
 
+}
+
 private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
     is PlaythroughValue.Text -> value
     is PlaythroughValue.Number -> if (value % 1.0 == 0.0) value.toLong().toString() else value.toString()
@@ -4837,3 +4749,4 @@ private fun PlaythroughValue.novexDisplayValue(): String = when (this) {
 // CompactSummarySheet / parseInlineMarkdown / rememberBrowserLiveSnapshot /
 // ResumeBanner / SwipeToSendHint moved verbatim to ChatMiscViews.kt.
 // Sun May 24 11:01:25 CST 2026
+

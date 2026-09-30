@@ -462,7 +462,6 @@ fun AppNavigation(
                             navController.safeNavigate(Routes.ONBOARDING_MODELS)
                         },
                         // [P3.3 裁军] onScheduledTasksClick 随定时任务退役摘除。
-                        showBottomActions = false,
                         onRootNavigationVisibilityChange = onRootNavigationVisibilityChange,
                     )
                 },

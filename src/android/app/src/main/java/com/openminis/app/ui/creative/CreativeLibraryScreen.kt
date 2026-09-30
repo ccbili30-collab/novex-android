@@ -230,7 +230,7 @@ fun CreativeLibraryScreen(
         runCatching {
             withContext(Dispatchers.IO) {
                 (context.applicationContext as com.openminis.app.MinisApp).database
-                    .chatDao().listSessions().associate { it.id to (it.title?.takeIf { t -> t.isNotBlank() } ?: "未命名对话") }
+                    .chatDao().primarySessions().associate { it.id to (it.title?.takeIf { t -> t.isNotBlank() } ?: "未命名对话") }
             }
         }.onSuccess { conversationTitles = it }
     }

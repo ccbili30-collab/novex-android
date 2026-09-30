@@ -73,7 +73,7 @@ import novex.storage.CardSummary
 /**
  * 我的 tab（04.png）：整页 staggered grid，顶部 full-span 资料头 +
  * 世界/角色/创作库页签。统计数字全部来自真实数据：会话引用数来自
- * ChatRepository.observeSessions()，没有的口径一律写 0。
+ * ChatRepository.observeSessionIndex()，没有的口径一律写 0。
  */
 @Composable
 internal fun NovenMeScreen(
@@ -108,7 +108,7 @@ internal fun NovenMeScreen(
     }
 
     // 会话引用计数：每张根卡被多少段会话引用（primary/背景/管理任一）。
-    val sessions by (chatRepository?.observeSessions()
+    val sessions by (chatRepository?.observeSessionIndex()
         ?: kotlinx.coroutines.flow.flowOf<List<SessionRow>>(emptyList()))
         .collectAsState(initial = emptyList())
     val referenceCounts = remember(sessions) { cardSessionReferenceCounts(sessions) }
