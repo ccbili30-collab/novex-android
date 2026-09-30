@@ -35,7 +35,8 @@ import com.openminis.app.ui.components.openExternalUrl
 @Composable
 fun AboutScreen(onBack: () -> Unit) {
     val context = LocalContext.current
-    val tileBlue = Color(0xFF007AFF)
+    // 中性图标规则：链接图标用正文色，不用品牌/强调色。
+    val iconTint = MaterialTheme.colorScheme.onSurface
 
     SettingsScaffold(title = stringResource(R.string.about_title), onBack = onBack) {
         Column(
@@ -97,7 +98,7 @@ fun AboutScreen(onBack: () -> Unit) {
         SettingsSection(header = stringResource(R.string.about_links)) {
             SettingsRow(
                 icon = com.openminis.app.ui.novex.NovexIcons.Code,
-                iconColor = tileBlue,
+                iconColor = iconTint,
                 title = stringResource(R.string.about_github_repository),
                 // Settings → ABOUT siblings (Privacy Policy / Submit GitHub
                 // Issues) all use openExternalUrl directly. The

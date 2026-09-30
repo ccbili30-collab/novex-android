@@ -75,10 +75,11 @@ object ThemeColorPresets {
 
     val default = preset(
         id = "novex",
-        lightAccent = 0xFF528AD2.toInt(),
+        // 品牌薄荷：浅色态用深一档保证 3.0+ 对比度，深色态回到亮薄荷。
+        lightAccent = 0xFF0E9F6E.toInt(),
         lightBackground = 0xFFFFFFFF.toInt(),
         lightForeground = 0xFF171D1C.toInt(),
-        darkAccent = 0xFF6A94CE.toInt(),
+        darkAccent = 0xFF34D399.toInt(),
         darkBackground = 0xFF000000.toInt(),
         darkForeground = 0xFFDEE4E2.toInt(),
     )

@@ -237,7 +237,7 @@ private fun UpdateFaceCard(
             }
             Text("关闭后不再弹窗，入口红点保留到安装完成。", style = NovexType.Metadata, color = NovexColors.SecondaryText)
         }
-        FaceActions(secondary = "稍后", primary = "去更新", onSecondary = onLater, onPrimary = onUpdate)
+        FaceActions(secondary = "稍后", primary = "更新", onSecondary = onLater, onPrimary = onUpdate)
     }
 }
 
@@ -268,6 +268,8 @@ internal fun BulletinHubPage(
     onRetry: (String) -> Unit,
     onCheckUpdate: () -> Unit,
     onUpdateAction: (UpdateChecker.CheckResult.UpdateAvailable?) -> Unit,
+    downloadState: com.openminis.app.data.NovexUpdateDownload.State,
+    onInstallAction: () -> Unit,
 ) {
     Dialog(onDismissRequest = onDismiss) {
         Column(
@@ -307,7 +309,7 @@ internal fun BulletinHubPage(
                 if (tab == 0) {
                     AnnouncementsTab(state, onToggle, onRetry)
                 } else {
-                    UpdatesTab(state, onToggle, onRetry, onCheckUpdate, onUpdateAction)
+                    UpdatesTab(state, onToggle, onRetry, onCheckUpdate, onUpdateAction, downloadState, onInstallAction)
                 }
             }
             state.refreshNotice?.let {
@@ -359,6 +361,8 @@ private fun UpdatesTab(
     onRetry: (String) -> Unit,
     onCheckUpdate: () -> Unit,
     onUpdateAction: (UpdateChecker.CheckResult.UpdateAvailable?) -> Unit,
+    downloadState: com.openminis.app.data.NovexUpdateDownload.State,
+    onInstallAction: () -> Unit,
 ) {
     val manifest = state.manifest
     val past = manifest?.releaseNotes.orEmpty()
@@ -423,11 +427,44 @@ private fun UpdatesTab(
                 onToggle = { onToggle(rowId) },
                 onRetry = {},
                 trailingContent = {
-                    Row(
-                        Modifier.fillMaxWidth().padding(top = 10.dp),
-                        horizontalArrangement = Arrangement.End,
-                    ) {
-                        PillButton(label = "去更新", onClick = { onUpdateAction(available) })
+                    // 行内下载态：点「更新」就地变进度条，下完变「安装」。
+                    // 关掉公告中心不取消——下载挂在 NovexUpdateDownload（进程级）。
+                    when (val dl = downloadState) {
+                        is com.openminis.app.data.NovexUpdateDownload.State.Downloading -> Row(
+                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            androidx.compose.material3.LinearProgressIndicator(
+                                progress = { dl.progress.coerceIn(0f, 1f) },
+                                modifier = Modifier.weight(1f),
+                            )
+                            Spacer(Modifier.size(10.dp))
+                            Text(
+                                "${(dl.progress.coerceIn(0f, 1f) * 100).toInt()}%",
+                                style = NovexType.Metadata,
+                                color = NovexColors.SecondaryText,
+                            )
+                        }
+                        is com.openminis.app.data.NovexUpdateDownload.State.Downloaded -> Row(
+                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            horizontalArrangement = Arrangement.End,
+                        ) {
+                            PillButton(label = "安装", onClick = onInstallAction)
+                        }
+                        else -> Column(
+                            Modifier.fillMaxWidth().padding(top = 10.dp),
+                            horizontalAlignment = Alignment.End,
+                        ) {
+                            PillButton(label = "更新", onClick = { onUpdateAction(available) })
+                            (dl as? com.openminis.app.data.NovexUpdateDownload.State.Failed)?.let {
+                                Text(
+                                    "下载未完成：${it.message}",
+                                    style = NovexType.Metadata,
+                                    color = NovexColors.Danger,
+                                    modifier = Modifier.padding(top = 6.dp),
+                                )
+                            }
+                        }
                     }
                 },
             )

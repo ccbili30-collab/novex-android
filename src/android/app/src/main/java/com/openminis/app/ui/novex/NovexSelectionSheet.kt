@@ -93,7 +93,8 @@ private fun NovexSelectionSurface(
                         horizontalArrangement = Arrangement.spacedBy(12.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {
-                        action.icon?.let { Icon(painterResource(it), null, Modifier.size(22.dp), tint = NovexColors.Primary) }
+                        // 中性图标规则：选择行图标用正文色，颜色只给选中指示（NovexCheckIndicator）。
+                        action.icon?.let { Icon(painterResource(it), null, Modifier.size(22.dp), tint = NovexColors.Text) }
                         Column(Modifier.weight(1f)) {
                             Text(action.label, style = NovexType.Body, color = NovexColors.Text, maxLines = 2, overflow = androidx.compose.ui.text.style.TextOverflow.Ellipsis)
                             val detail = if (!action.enabled && action.disabledReason.isNotBlank()) action.disabledReason else action.description

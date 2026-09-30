@@ -20,25 +20,25 @@ internal fun ConversationSettingsOverview(
     perTurnSet: Boolean = false, styleSet: Boolean = false, onTokenUsage: () -> Unit = {},
 ) {
     NovexEditorSection(header = "身份与回答") {
-        NovexSummaryRow("回答身份", answer, onClick = { onOpen("answer") })
-        NovexSummaryRow("我的身份", player, onClick = { onOpen("player") })
-        NovexSummaryRow("对话提示词", if (promptChanged) "已设置" else "默认", onClick = { onOpen("prompt") })
+        NovexSummaryRow("回答身份", answer, summaryTinted = answer.isNotBlank() && answer != "未设置", onClick = { onOpen("answer") })
+        NovexSummaryRow("我的身份", player, summaryTinted = player.isNotBlank() && player != "未设置", onClick = { onOpen("player") })
+        NovexSummaryRow("对话提示词", if (promptChanged) "已设置" else "默认", summaryTinted = promptChanged, onClick = { onOpen("prompt") })
     }
     NovexEditorSection(header = "使用的设定") {
-        NovexSummaryRow("背景资料", if (backgroundCount == 0) "未添加" else "$backgroundCount 项", onClick = { onOpen("background") })
-        NovexSummaryRow("每轮注入", if (perTurnSet) "已设置" else "未设置", onClick = { onOpen("perTurn") })
-        NovexSummaryRow("文字文风", if (styleSet) "已设置" else "未设置", onClick = { onOpen("textStyle") })
-        if(!integrated)NovexSummaryRow("当前文游", game, onClick = { onOpen("game") })
+        NovexSummaryRow("背景资料", if (backgroundCount == 0) "未添加" else "$backgroundCount 项", summaryTinted = backgroundCount > 0, onClick = { onOpen("background") })
+        NovexSummaryRow("每轮注入", if (perTurnSet) "已设置" else "未设置", summaryTinted = perTurnSet, onClick = { onOpen("perTurn") })
+        NovexSummaryRow("文字文风", if (styleSet) "已设置" else "未设置", summaryTinted = styleSet, onClick = { onOpen("textStyle") })
+        if(!integrated)NovexSummaryRow("当前文游", game, summaryTinted = game.isNotBlank() && game != "未设置", onClick = { onOpen("game") })
     }
     NovexEditorSection(header = "内容与工具") {
         NovexSummaryRow("对话空间", "文件与成果", onClick = { onOpen("workspace") })
-        NovexSummaryRow("可管理内容", if (managedCount == 0) "未添加" else "$managedCount 项", onClick = { onOpen("manage") })
+        NovexSummaryRow("可管理内容", if (managedCount == 0) "未添加" else "$managedCount 项", summaryTinted = managedCount > 0, onClick = { onOpen("manage") })
         NovexSummaryRow("上下文与用量", "请求占用与每轮明细", onClick = onTokenUsage)
-        NovexSummaryRow("工具权限", permission, onClick = onPermission)
+        NovexSummaryRow("工具权限", permission, summaryTinted = permission.isNotBlank(), onClick = onPermission)
     }
-    NovexEditorSection(header = "其他设置") {
+    NovexEditorSection(header = "外观与操作") {
         NovexSummaryRow("显示方式", "头像与气泡", onClick = { onOpen("display") })
-        NovexSummaryRow("对话背景", if (backgroundOverridden) "已单独设置" else "跟随来源", onClick = { onOpen("conversationBackground") })
+        NovexSummaryRow("对话背景", if (backgroundOverridden) "已单独设置" else "跟随来源", summaryTinted = backgroundOverridden, onClick = { onOpen("conversationBackground") })
         NovexSummaryRow("快捷操作", "查看与行动", onClick = { onOpen("controls") })
         NovexSummaryRow("图片生成提示词", "风格与要求", onClick = { onOpen("image") })
     }

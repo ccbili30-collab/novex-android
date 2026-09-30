@@ -240,9 +240,12 @@ internal fun NovexSummaryRow(
     title: String,
     summary: String,
     modifier: Modifier = Modifier,
+    // [状态值配色规则] true = 已配置/有内容 → accent（薄荷）；false = 未配置 → 灰。
+    summaryTinted: Boolean = false,
     onClick: (() -> Unit)? = null,
 ) {
     val interaction = if (onClick == null) modifier else modifier.clickable(onClick = onClick)
+    val summaryColor = if (summaryTinted) NovexColors.Primary else NovexColors.SecondaryText
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = interaction
@@ -253,13 +256,13 @@ internal fun NovexSummaryRow(
             Column(Modifier.weight(1f)) {
                 Text(title, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium,
                     maxLines = 2, overflow = TextOverflow.Ellipsis)
-                Text(summary, color = NovexColors.SecondaryText, style = NovexType.Metadata,
+                Text(summary, color = summaryColor, style = NovexType.Metadata,
                     modifier = Modifier.padding(top = 4.dp), maxLines = 2, overflow = TextOverflow.Ellipsis)
             }
         } else {
             Text(title, color = NovexColors.Text, style = NovexType.Body, fontWeight = FontWeight.Medium,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, modifier = Modifier.weight(1.2f))
-            Text(summary, color = NovexColors.SecondaryText, style = NovexType.Metadata,
+            Text(summary, color = summaryColor, style = NovexType.Metadata,
                 maxLines = 2, overflow = TextOverflow.Ellipsis, textAlign = androidx.compose.ui.text.style.TextAlign.End,
                 modifier = Modifier.weight(1f).padding(start = 12.dp))
         }

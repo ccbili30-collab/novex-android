@@ -47,11 +47,10 @@ internal val PanelMinWidth = 240.dp
 internal val PanelMinHeight = 220.dp
 
 /**
- * 本局状态面板（2026-09-15 第三轮）：L 形拐角缩放（把手固定右缘 → 面板贴屏幕
- * 右侧 → 缩放手柄在**左下角**自由角）；文字大小不变，拉窄后自动换行、竖向折
- * 叠、内部滚动；数值带可选上限的渲染成进度条（AI 声明 max 即成条，如血条）；
- * 小节可折叠。宽度固定/高度自适应（未缩放）或宽高都记住（缩放过后，由宿主
- * 持久化）。不做标签页导航。
+ * 本局状态面板（edge-v1/03 定稿）：右缘锚定白卡、固定宽度、内容内部滚动——
+ * 定位是"拉开看一眼的抽屉"，不做缩放柄/窗口管理（手机屏没有空地可拖）。
+ * 数值带可选上限的渲染成进度条（AI 声明 max 即成条，如血条）；小节可折叠；
+ * 不做标签页导航。
  */
 @Composable
 internal fun NovexPlaythroughPanel(
@@ -59,14 +58,10 @@ internal fun NovexPlaythroughPanel(
     update: NovexDataUpdateEvent?,
     onDismissUpdate: () -> Unit,
     onCollapse: () -> Unit,
-    width: Dp,
-    height: Dp?,
+    width: Dp = PanelDefaultWidth,
     maxHeight: Dp,
     modifier: Modifier = Modifier,
-    onResize: (deltaWidthDp: Float, deltaHeightDp: Float) -> Unit = { _, _ -> },
-    onResizeEnd: () -> Unit = {},
 ) {
-    val density = LocalDensity.current
     val collapsedSections = remember { mutableStateMapOf<String, Boolean>() }
     val preview = state.values.entries.firstNotNullOfOrNull { entry ->
         (entry.value as? PlaythroughValue.Number)?.let { entry.key to it.value }
@@ -76,14 +71,9 @@ internal fun NovexPlaythroughPanel(
             .shadow(4.dp, RoundedCornerShape(16.dp))
             .clip(RoundedCornerShape(16.dp))
             .background(NovexColors.Surface, RoundedCornerShape(16.dp))
-            .width(width)
-            .then(if (height != null) Modifier.height(height) else Modifier),
+            .width(width),
     ) {
-        Column(
-            Modifier
-                .then(if (height != null) Modifier.fillMaxHeight() else Modifier)
-                .then(if (height == null) Modifier.heightIn(max = maxHeight) else Modifier),
-        ) {
+        Column(Modifier.heightIn(max = maxHeight)) {
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 modifier = Modifier.padding(start = 16.dp, top = 14.dp, end = 8.dp, bottom = 6.dp),
@@ -101,7 +91,7 @@ internal fun NovexPlaythroughPanel(
             }
             Column(
                 Modifier
-                    .then(if (height != null) Modifier.weight(1f) else Modifier.heightIn(max = maxHeight))
+                    .heightIn(max = maxHeight)
                     .verticalScroll(rememberScrollState())
                     .padding(start = 16.dp, end = 16.dp, bottom = 14.dp),
             ) {
@@ -174,30 +164,6 @@ internal fun NovexPlaythroughPanel(
                     )
                 }
             }
-        }
-        // L-shaped resize grip on the FREE corner (bottom-left — the panel hugs
-        // the screen's right edge because the state handle is fixed right).
-        // Token hoisted: the draw lambda is not a composition context.
-        val gripColor = NovexColors.SecondaryText
-        Canvas(
-            Modifier
-                .align(Alignment.BottomStart)
-                .padding(4.dp)
-                .size(24.dp)
-                .pointerInput(Unit) {
-                    detectDragGestures(
-                        onDrag = { change, amount ->
-                            change.consume()
-                            with(density) { onResize(-amount.x.toDp().value, amount.y.toDp().value) }
-                        },
-                        onDragEnd = { onResizeEnd() },
-                        onDragCancel = { onResizeEnd() },
-                    )
-                },
-        ) {
-            val stroke = 2.dp.toPx()
-            drawLine(gripColor, Offset(0f, 0f), Offset(0f, size.height - stroke), stroke)
-            drawLine(gripColor, Offset(0f, size.height - stroke / 2f), Offset(size.width, size.height - stroke / 2f), stroke)
         }
     }
 }

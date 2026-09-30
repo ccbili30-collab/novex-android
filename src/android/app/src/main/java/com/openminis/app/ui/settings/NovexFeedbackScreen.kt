@@ -61,7 +61,7 @@ fun NovexFeedbackScreen(onBack: () -> Unit) {
                 .padding(horizontal = 20.dp),
         ) {
             Text(
-                text = "反馈您在使用过程中遇到的问题和优化建议。可以大胆提出新功能，也可以联系作者定制私人界面皮肤。 注释 1",
+                text = "反馈您在使用过程中遇到的问题和优化建议，也欢迎大胆提出新功能。",
                 style = MaterialTheme.typography.bodyLarge,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
                 modifier = Modifier.padding(vertical = 20.dp),

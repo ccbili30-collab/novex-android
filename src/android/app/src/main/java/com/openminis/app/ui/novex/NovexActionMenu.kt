@@ -88,7 +88,8 @@ internal fun NovexActionMenu(
 
 @Composable
 private fun NovexActionMenuRow(action: NovexMenuAction, onClick: () -> Unit) {
-    val tint = if (action.destructive) NovexColors.Danger else NovexColors.Primary
+    // 中性图标规则：菜单图标去色块底、用正文色；destructive 保持红。
+    val tint = if (action.destructive) NovexColors.Danger else NovexColors.Text
     Row(
         verticalAlignment = Alignment.CenterVertically,
         modifier = Modifier
@@ -106,7 +107,7 @@ private fun NovexActionMenuRow(action: NovexMenuAction, onClick: () -> Unit) {
                     if (action.destructive) {
                         NovexColors.Danger.copy(alpha = 0.12f)
                     } else {
-                        NovexColors.PrimarySoft
+                        NovexColors.SurfaceMuted
                     },
                 ),
         ) {

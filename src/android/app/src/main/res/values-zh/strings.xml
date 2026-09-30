@@ -195,7 +195,7 @@
     <string name="settings_submit_github_issues">提交 GitHub Issue</string>
     <string name="settings_feedback_email">反馈 (邮件)</string>
     <string name="about_title">关于</string>
-    <string name="about_minis_tagline">Novex 是完全本地、完全私密的设备端 Agent。</string>
+    <string name="about_minis_tagline">让每一个灵魂成为创作者</string>
     <string name="about_links">链接</string>
     <string name="about_github_repository">GitHub 仓库</string>
     <string name="about_version_format">版本 %1$s (%2$s)</string>

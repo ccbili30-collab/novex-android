@@ -33,7 +33,7 @@ import androidx.compose.ui.unit.sp
 //
 // Names keep the `Teal` prefix only to avoid churning 90+ call sites; the
 // value is the contract, not the name.
-private val TealPrimary = Color(0xFF528AD2)
+private val TealPrimary = Color(0xFF0E9F6E)
 private val TealOnPrimary = Color(0xFFFFFFFF)
 private val TealPrimaryContainer = Color(0xFFB2DFDB)
 private val TealOnPrimaryContainer = Color(0xFF00332F)
@@ -53,7 +53,7 @@ private val TealSurfaceVariant = Color(0xFFDAE5E2)
 private val TealOnSurfaceVariant = Color(0xFF3F4947)
 private val TealOutline = Color(0xFF6F7977)
 
-private val TealDarkPrimary = Color(0xFF6A94CE)
+private val TealDarkPrimary = Color(0xFF34D399)
 private val TealDarkOnPrimary = Color(0xFF003737)
 private val TealDarkPrimaryContainer = Color(0xFF1A6B6B)
 private val TealDarkOnPrimaryContainer = Color(0xFFB2DFDB)

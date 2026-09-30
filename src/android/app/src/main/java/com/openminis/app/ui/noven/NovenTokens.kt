@@ -47,11 +47,17 @@ internal object NovenColors {
         @ReadOnlyComposable
         get() = Muted
 
-    /** 品牌薄荷绿，只用于选中态与关键动作 */
-    val Mint = Color(0xFF34D399)
+    /** 品牌薄荷绿 = 主题 accent（默认预设为薄荷系），只用于选中态与关键动作 */
+    val Mint: Color
+        @Composable
+        @ReadOnlyComposable
+        get() = MaterialTheme.colorScheme.primary
 
     /** 薄荷绿上的文字 */
-    val OnMint = Color(0xFF0E3B2E)
+    val OnMint: Color
+        @Composable
+        @ReadOnlyComposable
+        get() = MaterialTheme.colorScheme.onPrimary
 
     val ChipSelectedBg: Color
         @Composable

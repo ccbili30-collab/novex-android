@@ -154,6 +154,8 @@ fun CreativeLibraryScreen(
     }
     var pendingDelete by remember { mutableStateOf<CreativeArtifactRecord?>(null) }
     var pendingExport by remember { mutableStateOf<CreativeArtifactRecord?>(null) }
+    // 来源会话名（行副标用）：创作库跨会话聚合，逐条查会话不现实，一次拉全表映射。
+    var conversationTitles by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
 
     fun refresh() {
         refreshKey += 1
@@ -222,6 +224,15 @@ fun CreativeLibraryScreen(
     LaunchedEffect(workspace) {
         runCatching { withContext(Dispatchers.IO) { workspace.creativeArtifactOwnerOptions() } }
             .onSuccess { ownerOptions = it }
+    }
+
+    LaunchedEffect(Unit) {
+        runCatching {
+            withContext(Dispatchers.IO) {
+                (context.applicationContext as com.openminis.app.MinisApp).database
+                    .chatDao().listSessions().associate { it.id to (it.title?.takeIf { t -> t.isNotBlank() } ?: "未命名对话") }
+            }
+        }.onSuccess { conversationTitles = it }
     }
 
     LaunchedEffect(librarySnapshot, refreshKey) {
@@ -407,7 +418,15 @@ fun CreativeLibraryScreen(
             selected = libraryScope,
             label = { it.label },
             onSelect = { libraryScope = it },
-            modifier = Modifier.padding(top = 5.dp, bottom = 10.dp),
+            modifier = Modifier.padding(top = 5.dp),
+        )
+        // 一级类型页签（design-system §11）：找产出通常按类型找，归属当辅助信息。
+        NovexFilterTabs(
+            items = artifactKindFilters,
+            selected = kindFilter,
+            label = { it.label },
+            onSelect = { kindFilter = it },
+            modifier = Modifier.padding(top = 2.dp, bottom = 10.dp),
         )
         when {
             conversationId == null && librarySnapshot?.selectedGroup != null && libraryScope == LibraryScope.ALL && kindFilter.kind == null && ownerFilter == null && associationFilter == ArtifactAssociationFilter.ALL ->
@@ -457,6 +476,9 @@ fun CreativeLibraryScreen(
                         val record = visibleRecords[index]
                         ArtifactRow(
                             record = record,
+                            sourceLabel = if (conversationId == null) {
+                                conversationTitles[record.artifact.origin.conversationId]
+                            } else null,
                             showDivider = index < visibleRecords.lastIndex,
                             onOpen = {
                                 scope.launch {
@@ -551,6 +573,7 @@ fun CreativeLibraryScreen(
 @Composable
 private fun ArtifactRow(
     record: CreativeArtifactRecord,
+    sourceLabel: String?,
     showDivider: Boolean,
     onOpen: () -> Unit,
     onFavorite: () -> Unit,
@@ -564,6 +587,7 @@ private fun ArtifactRow(
     val revision = record.revisions.lastOrNull()
     val metadata = buildList {
         add(kindLabel(record.artifact.kind))
+        sourceLabel?.let { add("来自「$it」") }
         revision?.let { add(Formatter.formatShortFileSize(LocalContext.current, it.sizeBytes)) }
         add(DateFormat.getDateInstance(DateFormat.SHORT).format(Date(record.artifact.updatedAt)))
     }.joinToString(" · ")
@@ -574,10 +598,11 @@ private fun ArtifactRow(
         showDivider = showDivider,
         onClick = onOpen,
         leading = {
+            // 图标中性色：薄荷只给动作/选中态，列表图标保持扫描辅助。
             Icon(
                 painter = painterResource(kindIcon(record.artifact.kind)),
                 contentDescription = null,
-                tint = NovexColors.Primary,
+                tint = NovexColors.SecondaryText,
                 modifier = Modifier.size(21.dp),
             )
         },

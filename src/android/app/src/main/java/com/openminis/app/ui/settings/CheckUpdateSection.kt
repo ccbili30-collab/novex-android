@@ -110,8 +110,12 @@ fun CheckUpdateSection() {
     // geo-block know what to do without hunting for the URL themselves.
     var showReleasesLink by remember { mutableStateOf(false) }
     var update by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
-    var downloadProgress by remember { mutableStateOf<Float?>(null) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
+    // 下载态来自进程级 NovexUpdateDownload——离开本页/关弹窗不取消下载。
+    val downloadState by com.openminis.app.data.NovexUpdateDownload.state.collectAsState()
+    val downloadProgress = (downloadState as? com.openminis.app.data.NovexUpdateDownload.State.Downloading)?.progress
+    var installError by remember { mutableStateOf<String?>(null) }
+    val downloadError = installError
+        ?: (downloadState as? com.openminis.app.data.NovexUpdateDownload.State.Failed)?.message
     var awaitingInstallPerm by remember { mutableStateOf(false) }
 
     // Resume the install flow on every ON_RESUME. There are two cases:
@@ -142,11 +146,25 @@ fun CheckUpdateSection() {
                 // Dismiss any leftover dialog state; the system installer is
                 // now in charge.
                 update = null
-                downloadProgress = null
-                downloadError = null
+                installError = null
+                com.openminis.app.data.NovexUpdateDownload.reset()
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+    }
+
+    // 下载完成 → 自动续接安装：有权直接拉起安装器，没权弹权限提示。
+    LaunchedEffect(downloadState) {
+        if (downloadState !is com.openminis.app.data.NovexUpdateDownload.State.Downloaded) return@LaunchedEffect
+        if (update == null) return@LaunchedEffect
+        if (com.openminis.app.data.NovexUpdateDownload.install(context)) {
+            update = null
+            installError = null
+        } else if (!UpdateChecker.canInstall(context)) {
+            awaitingInstallPerm = true
+        } else {
+            installError = context.getString(R.string.check_update_install_launch_failed)
+        }
     }
 
     SettingsSection(
@@ -280,40 +298,14 @@ fun CheckUpdateSection() {
             downloadError = downloadError,
             needsInstallPerm = awaitingInstallPerm,
             onDownload = {
-                downloadError = null
-                downloadProgress = 0f
-                scope.launch {
-                    val result = UpdateChecker.download(
-                        context = context,
-                        url = u.apkUrl,
-                        versionName = u.versionName,
-                    ) { p -> downloadProgress = p }
-                    when (result) {
-                        is UpdateChecker.DownloadResult.Success -> {
-                            downloadProgress = null
-                            if (UpdateChecker.canInstall(context)) {
-                                val ok = UpdateChecker.installApk(context, result.file)
-                                if (ok) {
-                                    update = null
-                                } else {
-                                    downloadError = context.getString(R.string.check_update_install_launch_failed)
-                                }
-                            } else {
-                                awaitingInstallPerm = true
-                            }
-                        }
-                        is UpdateChecker.DownloadResult.Error -> {
-                            downloadProgress = null
-                            downloadError = result.message
-                        }
-                    }
-                }
+                installError = null
+                com.openminis.app.data.NovexUpdateDownload.start(context, u)
             },
             onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
             onDismiss = {
                 if (downloadProgress == null) {
                     update = null
-                    downloadError = null
+                    installError = null
                     awaitingInstallPerm = false
                 }
             },
@@ -376,16 +368,13 @@ internal fun NovexUpdateEntry(hub: NovexUpdateHub) {
 @Composable
 internal fun NovexUpdateHost(hub: NovexUpdateHub) {
     val context = LocalContext.current
-    val scope = rememberCoroutineScope()
     val bulletin by com.openminis.app.data.NovexBulletinMonitor.state.collectAsState()
-    var dialogUpdate by remember { mutableStateOf<UpdateChecker.CheckResult.UpdateAvailable?>(null) }
-    var downloadProgress by remember { mutableStateOf<Float?>(null) }
-    var downloadError by remember { mutableStateOf<String?>(null) }
-    var awaitingInstallPermission by remember { mutableStateOf(false) }
+    // 应用级下载态：关公告不取消、重开可见「安装」。
+    val downloadState by com.openminis.app.data.NovexUpdateDownload.state.collectAsState()
 
-    fun openUpdateDialog(available: UpdateChecker.CheckResult.UpdateAvailable) {
-        dialogUpdate = available
-        NovexUpdateAnnouncementStore.markShown(context, available)
+    // 冷启动恢复：上轮已下完未装的 APK → 公告中心重开直接显示「安装」。
+    LaunchedEffect(Unit) {
+        com.openminis.app.data.NovexUpdateDownload.hydrateFromPending(context)
     }
 
     // Resume the install flow on ON_RESUME (permission granted or pending APK intact).
@@ -395,11 +384,10 @@ internal fun NovexUpdateHost(hub: NovexUpdateHub) {
             if (event != Lifecycle.Event.ON_RESUME || !UpdateChecker.canInstall(context)) {
                 return@LifecycleEventObserver
             }
-            awaitingInstallPermission = false
             UpdateChecker.resumablePendingFile(context)?.let { file ->
                 if (UpdateChecker.installApk(context, file)) {
-                    dialogUpdate = null
                     NovexUpdateMonitor.clearAvailable()
+                    com.openminis.app.data.NovexUpdateDownload.reset()
                 }
             }
         }
@@ -412,7 +400,9 @@ internal fun NovexUpdateHost(hub: NovexUpdateHub) {
             onDismissFront = { com.openminis.app.data.NovexBulletinMonitor.dismissFront() },
             onUpdateAction = { available ->
                 com.openminis.app.data.NovexBulletinMonitor.dismissFront()
-                openUpdateDialog(available)
+                NovexUpdateAnnouncementStore.markShown(context, available)
+                // 跳脸卡「更新」= 直接开下，进度在公告中心「更新」页签行内看。
+                com.openminis.app.data.NovexUpdateDownload.start(context, available)
             },
             onOpenHub = { hub.hubOpen = true },
         )
@@ -426,50 +416,17 @@ internal fun NovexUpdateHost(hub: NovexUpdateHub) {
             onToggle = { com.openminis.app.data.NovexBulletinMonitor.toggleExpand(it) },
             onRetry = { com.openminis.app.data.NovexBulletinMonitor.ensureBody(it) },
             onCheckUpdate = { com.openminis.app.data.NovexBulletinMonitor.manualCheckUpdate() },
-            onUpdateAction = { available -> available?.let(::openUpdateDialog) },
-        )
-    }
-
-    dialogUpdate?.let { available ->
-        UpdateDialog(
-            update = available,
-            downloadProgress = downloadProgress,
-            downloadError = downloadError,
-            needsInstallPerm = awaitingInstallPermission,
-            onDownload = {
-                downloadError = null
-                downloadProgress = 0f
-                scope.launch {
-                    when (val result = UpdateChecker.download(
-                        context = context,
-                        url = available.apkUrl,
-                        versionName = available.versionName,
-                    ) { downloadProgress = it }) {
-                        is UpdateChecker.DownloadResult.Success -> {
-                            downloadProgress = null
-                            if (UpdateChecker.canInstall(context)) {
-                                if (UpdateChecker.installApk(context, result.file)) {
-                                    dialogUpdate = null
-                                    NovexUpdateMonitor.clearAvailable()
-                                }
-                                else downloadError = "无法打开安装界面"
-                            } else {
-                                awaitingInstallPermission = true
-                            }
-                        }
-                        is UpdateChecker.DownloadResult.Error -> {
-                            downloadProgress = null
-                            downloadError = result.message
-                        }
-                    }
+            onUpdateAction = { available ->
+                available?.let {
+                    NovexUpdateAnnouncementStore.markShown(context, it)
+                    com.openminis.app.data.NovexUpdateDownload.start(context, it)
                 }
             },
-            onOpenSettings = { UpdateChecker.openInstallPermissionSettings(context) },
-            onDismiss = {
-                if (downloadProgress == null) {
-                    dialogUpdate = null
-                    downloadError = null
-                    awaitingInstallPermission = false
+            downloadState = downloadState,
+            onInstallAction = {
+                // 未授权时引导去开权限；返回后 ON_RESUME 观察器会自动拉起安装器。
+                if (!com.openminis.app.data.NovexUpdateDownload.install(context)) {
+                    UpdateChecker.openInstallPermissionSettings(context)
                 }
             },
         )

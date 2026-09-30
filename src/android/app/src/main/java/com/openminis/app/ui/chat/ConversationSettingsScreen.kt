@@ -110,7 +110,8 @@ fun ConversationSettingsScreen(
     skillRepository: SkillRepository? = null,
     mcpRepository: com.openminis.app.data.repository.MCPRepository? = null,
     onBack: () -> Unit,
-    onCardSettings: () -> Unit = {},
+    // [§9d] 三仓分离：answer|background|manage 各自路由到独立绑定页
+    onCardSettings: (String) -> Unit = {},
 ) {
     var settingsPage by rememberSaveable(sessionId) { mutableStateOf("") }
     var showingTokenUsage by remember { mutableStateOf(false) }
@@ -268,7 +269,7 @@ fun ConversationSettingsScreen(
             return@NovexEditorScaffold
         }
         val cardBinding=viewModel.integratedCardBinding()
-        if(settingsPage.isEmpty() && cardBinding==null)NovexSummaryRow("采用新版卡片", "历史设定仍保留，选择新版互动对象与管理范围",onClick=onCardSettings)
+        if(settingsPage.isEmpty() && cardBinding==null)NovexSummaryRow("采用新版卡片", "历史设定仍保留，选择新版互动对象与管理范围",onClick={onCardSettings("answer")})
         if (settingsPage.isEmpty()) ConversationSettingsOverview(
             answer = if(cardBinding?.primary!=null)"已采用卡片" else answerLabel,
             integrated=cardBinding!=null,
@@ -283,7 +284,8 @@ fun ConversationSettingsScreen(
             backgroundOverridden = draft.settings.backgroundPath != null,
             perTurnSet = draft.settings.perTurnPrompt.isNotBlank(),
             styleSet = draft.settings.textStylePrompt.isNotBlank(),
-            onOpen = { if(it in setOf("answer","background","game","manage","images"))onCardSettings() else settingsPage = it }, onPermission = { choosingExecutionMode = true },
+            // [§9d] 绑定会话只有三仓走卡片页；"game" 对绑定会话隐藏、"image" 是本页内页（旧 "images" 是笔误死键）。
+            onOpen = { if(it in setOf("answer","background","manage"))onCardSettings(it) else settingsPage = it }, onPermission = { choosingExecutionMode = true },
             onTokenUsage = { showingTokenUsage = true },
         )
         if (settingsPage == "workspace") {

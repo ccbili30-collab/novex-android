@@ -151,7 +151,7 @@
     <string name="settings_submit_github_issues">GitHub Issue 제출</string>
     <string name="settings_feedback_email">피드백 (이메일)</string>
     <string name="about_title">정보</string>
-    <string name="about_minis_tagline">Novex는 완전히 로컬에서 동작하며 완전히 프라이빗한 온디바이스 에이전트입니다.</string>
+    <string name="about_minis_tagline">모든 영혼이 크리에이터가 되도록.</string>
     <string name="about_links">링크</string>
     <string name="about_github_repository">GitHub 저장소</string>
     <string name="about_version_format">버전 %1$s (%2$s)</string>

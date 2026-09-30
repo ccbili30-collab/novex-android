@@ -698,10 +698,15 @@ fun ChatScreen(
     if (showHistoryNavigation) {
         com.openminis.app.ui.novex.NovexSearchableSelectionSheet(
             title = "对话历史", searchPlaceholder = "搜索原文",
-            actions = viewModel.historyNavigationMessages().map { message ->
+            actions = viewModel.historyNavigationMessages().mapIndexed { index, message ->
+                // 行升级（design-system §13）：序号 + 角色 + 内容预览；ChatMessage
+                // 不带时间戳，时间以序号近似定位。
+                val roleLabel = if (message.role == "user") "我" else "AI"
                 com.openminis.app.ui.novex.NovexSelectionAction(
-                    label = message.content.take(80).ifBlank { if (message.role == "user") "用户消息" else "回复与执行记录" },
-                    description = message.content,
+                    label = "#${index + 1} $roleLabel",
+                    description = message.content.take(200).ifBlank {
+                        if (message.role == "user") "（无文字内容）" else "回复与执行记录"
+                    },
                     onClick = {
                         viewModel.revealHistoryMessage(message.id)
                         compactedHistoryExpanded = true
@@ -713,6 +718,7 @@ fun ChatScreen(
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     var showMcpsSheet by remember { mutableStateOf(false) }
     var requestSideConversation by remember { mutableStateOf(false) }
+    var requestSidePanel by remember { mutableStateOf(false) }
     // ── 侧边对话页状态（决策 12/16）──────────────────────────────────────
     // 非空 = 当前会话是侧边会话：顶栏只放删除、输入区放回传符号、不渲染
     // 书签列与状态把手（防嵌套；状态只属于主线）。
@@ -2027,7 +2033,7 @@ fun ChatScreen(
                                 },
                             )
                             add(NovexMenuAction("侧边对话", R.drawable.ic_phosphor_arrow_left) {
-                                requestSideConversation = true
+                                requestSidePanel = true
                             })
                             add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
                                 onClick = { showConversationRecords = true }))
@@ -4994,7 +5000,9 @@ fun ChatScreen(
                     title = "资料与存档",
                     onDismissRequest = { showConversationRecords = false },
                     actions = listOf(
-                        com.openminis.app.ui.novex.NovexSelectionAction("本对话文件") {
+                        // 「本对话成果」而非「本对话文件」——进的是创作件库，
+                        // 与会话设置里「对话空间」的原始文件浏览器拉开语义。
+                        com.openminis.app.ui.novex.NovexSelectionAction("本对话成果") {
                             showConversationRecords = false
                             viewModel.prepareNovexLearningFiles(onBrowseChatFiles)
                         },
@@ -5094,6 +5102,8 @@ fun ChatScreen(
             chatRepository = chatRepository,
             requestNewSide = requestSideConversation,
             onNewSideConsumed = { requestSideConversation = false },
+            requestSidePanel = requestSidePanel,
+            onSidePanelConsumed = { requestSidePanel = false },
             onOpenSide = onOpenSideSession,
             handle = if (sideParentId == null) {
                 val railState = playthroughState

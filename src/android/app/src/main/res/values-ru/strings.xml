@@ -189,7 +189,7 @@
     <string name="settings_submit_github_issues">Создать issue на GitHub</string>
     <string name="settings_feedback_email">Обратная связь (Email)</string>
     <string name="about_title">О приложении</string>
-    <string name="about_minis_tagline">Novex — ваш полностью локальный и приватный Агент прямо на устройстве.</string>
+    <string name="about_minis_tagline">Пусть каждая душа станет творцом.</string>
     <string name="about_links">Ссылки</string>
     <string name="about_github_repository">Репозиторий GitHub</string>
     <string name="about_version_format">Версия %1$s (%2$s)</string>

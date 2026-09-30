@@ -511,8 +511,9 @@ fun AppNavigation(
             com.openminis.app.cards.IntegratedCardHost(kind=if(entry.arguments?.getBoolean("world")==true)novex.content.CardKind.WORLD else novex.content.CardKind.CHARACTER,
                 importUri=entry.arguments?.getString("uri"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
         }
-        composable("integrated-card-settings/{chat}",arguments=listOf(navArgument("chat"){type=NavType.StringType})) {entry->
-            com.openminis.app.cards.IntegratedCardSettings(requireNotNull(entry.arguments?.getString("chat")),onBack={navController.safePopBackStack()})
+        // [§9d 卡绑定三仓分离] page ∈ answer|background|manage，三页共写一个 CardBinding
+        composable("integrated-card-settings/{chat}/{page}",arguments=listOf(navArgument("chat"){type=NavType.StringType},navArgument("page"){type=NavType.StringType})) {entry->
+            com.openminis.app.cards.IntegratedCardSettings(requireNotNull(entry.arguments?.getString("chat")),page=entry.arguments?.getString("page"),onBack={navController.safePopBackStack()})
         }
         composable("integrated-card?root={root}&target={target}",arguments=listOf(navArgument("root"){type=NavType.StringType;defaultValue=""},navArgument("target"){type=NavType.StringType;defaultValue=""})) {entry->
             com.openminis.app.cards.IntegratedCardHost(root=entry.arguments?.getString("root"),target=entry.arguments?.getString("target"),onChat={navController.safeNavigate(Routes.chat(it))},onBack={returnFromCard()})
@@ -688,7 +689,7 @@ fun AppNavigation(
                 memoryRepository = memoryRepository,
                 skillRepository = skillRepository,
                 mcpRepository = mcpRepository,
-                onCardSettings = {navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}")},
+                onCardSettings = { page -> navController.safeNavigate("integrated-card-settings/${android.net.Uri.encode(sessionId)}/$page") },
                 onBack = { navController.safePopBackStack() },
             )
         }

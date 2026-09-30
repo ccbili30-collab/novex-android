@@ -151,7 +151,7 @@
     <string name="settings_submit_github_issues">GitHub に Issue を提出</string>
     <string name="settings_feedback_email">フィードバック (メール)</string>
     <string name="about_title">情報</string>
-    <string name="about_minis_tagline">Novex は完全にローカルで完全にプライベートなオンデバイスエージェントです。</string>
+    <string name="about_minis_tagline">すべての魂をクリエイターに。</string>
     <string name="about_links">リンク</string>
     <string name="about_github_repository">GitHub リポジトリ</string>
     <string name="about_version_format">バージョン %1$s (%2$s)</string>

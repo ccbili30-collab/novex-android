@@ -151,7 +151,7 @@
     <string name="settings_submit_github_issues">Soumettre un GitHub Issue</string>
     <string name="settings_feedback_email">Retour (e-mail)</string>
     <string name="about_title">À propos</string>
-    <string name="about_minis_tagline">Novex est votre agent on-device entièrement local et entièrement privé.</string>
+    <string name="about_minis_tagline">Faites de chaque âme un créateur.</string>
     <string name="about_links">Liens</string>
     <string name="about_github_repository">Dépôt GitHub</string>
     <string name="about_version_format">Version %1$s (%2$s)</string>

@@ -12,10 +12,10 @@ class AppThemeColorsTest {
     fun `default preset preserves the existing Novex color contract`() {
         val colors = ThemeColorPresets.default.colors
 
-        assertEquals(0xFF528AD2.toInt(), colors.light.accent)
+        assertEquals(0xFF0E9F6E.toInt(), colors.light.accent)
         assertEquals(0xFFFFFFFF.toInt(), colors.light.background)
         assertEquals(0xFF171D1C.toInt(), colors.light.foreground)
-        assertEquals(0xFF6A94CE.toInt(), colors.dark.accent)
+        assertEquals(0xFF34D399.toInt(), colors.dark.accent)
         assertEquals(0xFF000000.toInt(), colors.dark.background)
         assertEquals(0xFFDEE4E2.toInt(), colors.dark.foreground)
     }

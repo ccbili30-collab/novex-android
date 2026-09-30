@@ -44,11 +44,13 @@ class LibraryModel(application:Application):AndroidViewModel(application) {
         }
     }
     fun create(name:String,kind:CardKind) {
-        if(name.isBlank() || state.busy)return
+        if(state.busy)return
+        // [§9c] 直进编辑器：空名给默认名「未命名世界/角色」，名字在编辑器里再改。
+        val title=name.trim().ifBlank {if(kind==CardKind.WORLD)"未命名世界" else "未命名角色"}
         val id=UUID.randomUUID().toString()
         work { storage ->
             withContext(Dispatchers.IO) {
-                CardCreation(storage).create(id,name.trim(),kind,ChangeSource.HUMAN,UUID.randomUUID().toString())
+                CardCreation(storage).create(id,title,kind,ChangeSource.HUMAN,UUID.randomUUID().toString())
             }
             // 保存回执不依赖后续列表读取；列表失败也不能诱使用户重复创建。
             state=state.copy(createdId=id)
@@ -64,6 +66,17 @@ class LibraryModel(application:Application):AndroidViewModel(application) {
         }
     }
     fun acknowledgeCreation(){state=state.copy(createdId=null)}
+
+    /** [§9c] 空卡回收：打开仍是初始空白态（名字未改、无模块/资源/内部角色）→ 静默删除。 */
+    fun deleteIfPristine(id:String,isPristine:(ContentDocument)->Boolean) {
+        work { storage ->
+            val saved=withContext(Dispatchers.IO){storage.open(id)}?:return@work
+            if(!isPristine(saved.content))return@work
+            withContext(Dispatchers.IO){storage.delete(id,saved.revision)}
+            state=state.copy(cards=state.cards.filterNot {it.id==id})
+            refreshPending=true
+        }
+    }
 
     private suspend fun storage():CardStore {
         store?.let {return it}

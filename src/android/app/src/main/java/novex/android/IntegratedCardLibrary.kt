@@ -5,10 +5,8 @@ import com.openminis.app.ui.novex.NovexColors
 import com.openminis.app.ui.novex.NovexIcons
 import com.openminis.app.ui.novex.NovexSearchField
 
-import com.openminis.app.ui.novex.AlertDialog
 import com.openminis.app.ui.novex.Button
 import com.openminis.app.ui.novex.TextButton
-import com.openminis.app.ui.novex.OutlinedTextField
 import com.openminis.app.ui.novex.Scaffold
 
 import androidx.compose.runtime.*
@@ -44,9 +42,7 @@ import novex.content.CardKind
     }
     val listState=androidx.compose.foundation.lazy.rememberLazyListState()
     var selected by rememberSaveable(key){mutableStateOf(initialRoot)}
-    var creating by rememberSaveable(key){mutableStateOf(createOnly)}
     var query by rememberSaveable(key){mutableStateOf("")}
-    var name by rememberSaveable(key){mutableStateOf("")}
     var exportRoot by rememberSaveable(key){mutableStateOf<String?>(null)}
     var exportTarget by rememberSaveable(key){mutableStateOf<String?>(null)}
     val picker=rememberLauncherForActivityResult(ActivityResultContracts.OpenDocument()){it?.let {uri->files.prepare(uri,kind?:CardKind.CHARACTER)}}
@@ -62,10 +58,31 @@ import novex.content.CardKind
         if(onOpenCard!=null)onOpenCard(id) else selected=id
     }
     LaunchedEffect(selected){selected?.let {session.open(it,if(it==initialRoot)initialTarget?:it else it)}}
-    LaunchedEffect(library.state.createdId){library.state.createdId?.let {creating=false;name="";library.acknowledgeCreation();openCard(it)}}
+    // [§9c] 直进编辑器：新建不弹「名称」对话框，空名落默认名，编辑器里再补。
+    var autoCreated by rememberSaveable(key){mutableStateOf(false)}
+    var pristineCreateId by rememberSaveable(key){mutableStateOf<String?>(null)}
+    LaunchedEffect(createOnly,library.state.busy){
+        if(createOnly && !autoCreated && !library.state.busy && library.state.createdId==null){
+            autoCreated=true
+            library.create("",kind?:CardKind.CHARACTER)
+        }
+    }
+    LaunchedEffect(library.state.createdId){library.state.createdId?.let {pristineCreateId=it;library.acknowledgeCreation();openCard(it)}}
     LaunchedEffect(files.state.importedId){files.state.importedId?.let {files.acknowledge();library.refresh();openCard(it)}}
     if(files.state.visible){ImportPage(files,session){library.refresh()};return}
-    val exit:()->Unit={session.dismissOpening();if(initialRoot!=null || showBack)onBack() else {selected=null;library.refresh()}}
+    // [§9c] 空卡回收：本次新建且退出时仍是空白态 → 静默删。
+    val exit:()->Unit={
+        val dropPristine=pristineCreateId!=null && session.state.saved?.let {
+            it.id==pristineCreateId && pristineContentDocument(it)
+        }==true
+        session.dismissOpening()
+        if(dropPristine){
+            if(session.state.draft!=null)session.discardDraft()
+            library.deleteIfPristine(requireNotNull(pristineCreateId),::pristineContentDocument)
+        }
+        pristineCreateId=null
+        if(initialRoot!=null || showBack)onBack() else {selected=null;library.refresh()}
+    }
     if(selected!=null) {
         val opening=session.opening
         if(opening!=null || session.state.saved?.id!=selected)CardOpeningPage(opening?.error,session.state.busy || opening==null,
@@ -81,7 +98,7 @@ import novex.content.CardKind
     }
     Scaffold(containerColor=NovexColors.Canvas,topBar={NovexPageTopBar(onBack=if(showBack)onBack else null,title=if(createOnly)"新建${if(kind==CardKind.WORLD)"世界" else "角色"}" else if(kind==CardKind.WORLD)"世界" else "角色",actions={if(!createOnly) {
         TextButton(onClick={picker.launch(arrayOf("*/*"))},enabled=!files.state.busy){Text("导入")}
-        CardAction(NovexIcons.Add,"新建",!library.state.busy){creating=true}
+        CardAction(NovexIcons.Add,"新建",!library.state.busy){library.create("",kind?:CardKind.CHARACTER)}
     }})}) {padding->LazyColumn(Modifier.fillMaxSize().padding(padding),state=listState,contentPadding=PaddingValues(bottom=80.dp)) {
         if(!createOnly) {
         item {NovexSearchField(query,{query=it},"搜索作品",onClear={query=""})}
@@ -89,8 +106,11 @@ import novex.content.CardKind
         items(library.state.imports,key={"pending-${it.id}"}){draft->CardRow(headlineContent={Text(draft.name)},supportingContent={Text("待确认导入")},modifier=Modifier.clickable {files.resume(draft.id)})}
         items(library.state.cards.filter {kind==null || it.kind==kind}.filter {it.name.contains(query,ignoreCase=true)},key={it.id}){card->CardRow(headlineContent={Text(card.name)},leadingContent={Icon(if(card.kind==CardKind.WORLD)NovexIcons.Public else NovexIcons.Person,null,Modifier.size(24.dp),tint=NovexColors.Primary)},trailingContent={Icon(NovexIcons.ChevronRight,null,Modifier.size(18.dp))},modifier=Modifier.clickable {openCard(card.id)});CardDivider(Modifier.padding(horizontal=16.dp))}
     }}}
-    if(creating)AlertDialog(onDismissRequest={if(!library.state.busy){creating=false;if(createOnly)onBack()}},title={Text("新建作品")},text={Column {
-        OutlinedTextField(value=name,onValueChange={name=it},label={Text("名称")},enabled=!library.state.busy)
-        library.state.error?.let {Text(it)}
-    }},confirmButton={TextButton(enabled=!library.state.busy && name.isNotBlank(),onClick={library.create(name,kind?:CardKind.CHARACTER)}){Text("创建")}},dismissButton={TextButton(enabled=!library.state.busy,onClick={creating=false;if(createOnly)onBack()}){Text("取消")}})
+}
+
+/** [§9c] 初始空白态判定：名字未改、无模块/资源/内部角色、外观默认。 */
+private fun pristineContentDocument(doc:novex.content.ContentDocument):Boolean {
+    val defaultName=if(doc.kind==CardKind.WORLD)"未命名世界" else "未命名角色"
+    return doc.name==defaultName && doc.modules.isEmpty() && doc.resources.isEmpty() &&
+        doc.internalCharacters.isEmpty() && doc.extensions.isEmpty() && doc.appearance==novex.content.CardAppearance()
 }

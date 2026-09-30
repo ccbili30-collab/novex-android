@@ -20,17 +20,41 @@ import androidx.compose.runtime.*
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.runtime.saveable.Saver
 import androidx.compose.material3.*
+import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyColumn
 import androidx.compose.foundation.lazy.items
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.foundation.background
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.*
 import novex.runtime.*
+import com.openminis.app.ui.novex.NovexEditorSection
+import com.openminis.app.ui.novex.NovexDimensions
+import com.openminis.app.ui.novex.NovexType
 
-@OptIn(ExperimentalMaterial3Api::class,ExperimentalLayoutApi::class)
-@Composable fun IntegratedCardSettings(chat:String,onBack:()->Unit) {
+/**
+ * 卡绑定设置：同一 CardBinding 的三个语义页（§9d）。
+ * page ∈ answer | background | manage，各页只写自己的字段。
+ */
+enum class CardBindingPage(val routeKey: String, val title: String, val footer: String) {
+    ANSWER("answer", "回答身份", "选一个回答者：世界作为 GM 叙述（讲述世界并扮演其中人物），角色以该角色身份回答。不选则由 Nova 默认回答。"),
+    BACKGROUND("background", "背景资料", "多选。选中的卡作为设定注入上下文；展开「模块携带」可控制单模块的默认/必带/不带。"),
+    MANAGE("manage", "可管理内容", "多选。被管理的卡允许 AI 在对话中修改；未选中的卡只能读。管理不等于背景。"),
+    ;
+
+    companion object {
+        fun fromRoute(value: String?): CardBindingPage =
+            entries.firstOrNull { it.routeKey == value } ?: ANSWER
+    }
+}
+
+@OptIn(ExperimentalMaterial3Api::class, ExperimentalLayoutApi::class)
+@Composable fun IntegratedCardSettings(chat:String,page:String?=null,onBack:()->Unit) {
+    val bindingPage = CardBindingPage.fromRoute(page)
     val context=LocalContext.current
     val scope=rememberCoroutineScope()
     val app=context.applicationContext as com.openminis.app.MinisApp
@@ -79,49 +103,190 @@ import novex.runtime.*
     if(discard)AlertDialog(onDismissRequest={discard=false},title={Text("放弃未保存的设置？")},
         confirmButton={TextButton(onClick={discard=false;onBack()}){Text("放弃更改")}},
         dismissButton={TextButton(onClick={discard=false}){Text("继续设置")}})
-    Scaffold(containerColor=NovexColors.Canvas,topBar={NovexPageTopBar(title="卡片采用与管理",onBack=back)},bottomBar={
+    Scaffold(containerColor=NovexColors.Canvas,topBar={NovexPageTopBar(title=bindingPage.title,onBack=back)},bottomBar={
         Button(enabled=!busy && draft!=null,onClick={busy=true;scope.launch {
             try {model.saveIntegratedCardBinding(requireNotNull(draft),baseline);onBack()}
             catch(failure:Exception){error=failure.message}finally{busy=false}
         }},modifier=Modifier.fillMaxWidth().navigationBarsPadding().padding(16.dp)){Text("保存")}
-    }) {padding->LazyColumn(Modifier.fillMaxSize().padding(padding),contentPadding=PaddingValues(16.dp)) {
-        error?.let {item {Text(it,color=MaterialTheme.colorScheme.error)}}
-        item {Text("互动对象只选一个；背景可多选；允许管理不等于作为背景。工具权限继续使用对话设置。选「扮演」以该角色身份回答；选「GM 叙述」讲述世界并扮演其中人物。")}
-        item {TextButton(enabled=!busy,onClick={draft=draft?.copy(primary=null)}){Text("清除主要互动对象")}}
-        items(choices,key={it.first.rootId+":"+it.first.targetId}){(target,name,interactLabel)->
-            val current=draft
-            Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically) {
-                Text(name,style=MaterialTheme.typography.titleMedium)
-                // 类型徽标：一眼分清这张卡选为互动时意味着什么
-                interactLabel?.let {label->
-                    Text("  "+if(label=="GM 叙述")"世界" else "角色",
-                        style=MaterialTheme.typography.labelSmall,
-                        color=MaterialTheme.colorScheme.primary)
-                }
-            }
-            androidx.compose.foundation.layout.FlowRow {
-                Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){RadioButton(selected=current?.primary==target,enabled=!busy,onClick={draft=current?.copy(primary=target)})
-                Text(interactLabel ?: "互动")}
-                Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(checked=current?.backgrounds?.contains(target)==true,enabled=!busy,onCheckedChange={yes->draft=current?.copy(backgrounds=if(yes)(current.backgrounds+target).distinct() else current.backgrounds-target)})
-                Text("背景")}
-                val managed=ManagementTarget(target.rootId,target.targetId)
-                Row(verticalAlignment=androidx.compose.ui.Alignment.CenterVertically){Checkbox(checked=current?.managed?.contains(managed)==true,enabled=!busy,onCheckedChange={yes->draft=current?.copy(managed=if(yes)current.managed+managed else current.managed-managed)})
-                Text("管理")}
-            }
-            if(current?.primary==target || current?.backgrounds?.contains(target)==true) {
-                TextButton(onClick={expanded=if(expanded==target)null else target}){Text("模块携带")}
-                if(expanded==target)modules[target].orEmpty().forEach {(id,label)->
-                    Text(label,style=MaterialTheme.typography.bodyMedium)
-                    Row {
-                        listOf(null to "默认",true to "必带",false to "不带").forEach {(rule,title)->
-                            TextButton(enabled=!busy,onClick={draft=draft?.let {d->d.copy(overrides=if(rule==null)d.overrides-id else d.overrides+(id to rule))}}) {
-                                Text((if(current?.overrides?.get(id)==rule)"✓ " else "")+title)
+    }) {padding->LazyColumn(Modifier.fillMaxSize().padding(padding)) {
+        error?.let {item {Text(it,color=MaterialTheme.colorScheme.error,modifier=Modifier.padding(16.dp))}}
+        item {
+            NovexEditorSection(header = bindingPage.title, footer = bindingPage.footer) {
+                when (bindingPage) {
+                    CardBindingPage.ANSWER -> {
+                        // Nova 默认项：primary = null
+                        CardChoiceRow(
+                            name = "Nova（默认）",
+                            badge = "内置",
+                            trailing = {
+                                RadioButton(
+                                    selected = draft?.primary == null,
+                                    enabled = !busy,
+                                    onClick = { draft = draft?.copy(primary = null) },
+                                )
+                            },
+                            onClick = { if (!busy) draft = draft?.copy(primary = null) },
+                        )
+                        choices.forEach { (target, name, interactLabel) ->
+                            CardChoiceRow(
+                                name = name,
+                                badge = interactLabel?.let { if (it == "GM 叙述") "世界 · $it" else "角色 · $it" },
+                                trailing = {
+                                    RadioButton(
+                                        selected = draft?.primary == target,
+                                        enabled = !busy,
+                                        onClick = { draft = draft?.copy(primary = target) },
+                                    )
+                                },
+                                onClick = { if (!busy) draft = draft?.copy(primary = target) },
+                            )
+                        }
+                    }
+                    CardBindingPage.BACKGROUND -> {
+                        choices.forEach { (target, name, interactLabel) ->
+                            val selected = draft?.backgrounds?.contains(target) == true
+                            Column {
+                                CardChoiceRow(
+                                    name = name,
+                                    badge = interactLabel?.let { if (it == "GM 叙述") "世界" else "角色" },
+                                    trailing = {
+                                        Checkbox(
+                                            checked = selected,
+                                            enabled = !busy,
+                                            onCheckedChange = { yes ->
+                                                draft = draft?.copy(backgrounds = if (yes) (draft!!.backgrounds + target).distinct() else draft!!.backgrounds - target)
+                                            },
+                                        )
+                                    },
+                                    onClick = {
+                                        if (!busy) draft = draft?.let { d ->
+                                            d.copy(backgrounds = if (selected) d.backgrounds - target else (d.backgrounds + target).distinct())
+                                        }
+                                    },
+                                )
+                                if (selected) {
+                                    Column(Modifier.padding(start = 16.dp, end = 16.dp, bottom = 10.dp)) {
+                                        TextButton(onClick = { expanded = if (expanded == target) null else target }) {
+                                            Text(if (expanded == target) "收起模块携带" else "模块携带")
+                                        }
+                                        if (expanded == target) {
+                                            modules[target].orEmpty().forEach { (id, label) ->
+                                                ModuleRuleRow(
+                                                    label = label,
+                                                    current = draft?.overrides?.get(id),
+                                                    enabled = !busy,
+                                                    onPick = { rule ->
+                                                        draft = draft?.let { d ->
+                                                            d.copy(overrides = if (rule == null) d.overrides - id else d.overrides + (id to rule))
+                                                        }
+                                                    },
+                                                )
+                                            }
+                                        }
+                                    }
+                                }
                             }
+                        }
+                    }
+                    CardBindingPage.MANAGE -> {
+                        choices.forEach { (target, name, interactLabel) ->
+                            val managed = ManagementTarget(target.rootId, target.targetId)
+                            val selected = draft?.managed?.contains(managed) == true
+                            CardChoiceRow(
+                                name = name,
+                                badge = interactLabel?.let { if (it == "GM 叙述") "世界" else "角色" },
+                                trailing = {
+                                    Checkbox(
+                                        checked = selected,
+                                        enabled = !busy,
+                                        onCheckedChange = { yes ->
+                                            draft = draft?.copy(managed = if (yes) draft!!.managed + managed else draft!!.managed - managed)
+                                        },
+                                    )
+                                },
+                                onClick = {
+                                    if (!busy) draft = draft?.let { d ->
+                                        d.copy(managed = if (selected) d.managed - managed else d.managed + managed)
+                                    }
+                                },
+                            )
                         }
                     }
                 }
             }
-            HorizontalDivider()
         }
     }}
+}
+
+/** 三仓页共用行：卡名 + 类型徽标 + 右端控件；整行可点。 */
+@Composable
+private fun CardChoiceRow(
+    name: String,
+    badge: String?,
+    trailing: @Composable () -> Unit,
+    onClick: () -> Unit,
+) {
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Column(Modifier.weight(1f)) {
+            Text(name, style = NovexType.Body, color = NovexColors.Text)
+            badge?.let {
+                Text(it, style = NovexType.Metadata, color = NovexColors.SecondaryText)
+            }
+        }
+        trailing()
+    }
+}
+
+/**
+ * 模块携带三态段控：默认 | 必带 | 不带。
+ * C 档新组件——选中块 accent 填充。
+ */
+@Composable
+private fun ModuleRuleRow(
+    label: String,
+    current: Boolean?,
+    enabled: Boolean,
+    onPick: (Boolean?) -> Unit,
+) {
+    val options = listOf<Pair<Boolean?, String>>(null to "默认", true to "必带", false to "不带")
+    Row(
+        verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        modifier = Modifier.fillMaxWidth().padding(vertical = 6.dp),
+    ) {
+        Text(
+            label,
+            style = NovexType.Metadata,
+            color = NovexColors.Text,
+            modifier = Modifier.weight(1f),
+            maxLines = 2,
+        )
+        Row(
+            Modifier
+                .clip(RoundedCornerShape(NovexDimensions.SmallRadius))
+                .background(NovexColors.SurfaceMuted),
+        ) {
+            options.forEach { (rule, title) ->
+                val active = current == rule
+                Box(
+                    Modifier
+                        .clip(RoundedCornerShape(NovexDimensions.SmallRadius))
+                        .background(if (active) NovexColors.Primary else androidx.compose.ui.graphics.Color.Transparent)
+                        .clickable(enabled = enabled) { onPick(rule) }
+                        .padding(horizontal = 10.dp, vertical = 6.dp),
+                ) {
+                    Text(
+                        title,
+                        style = NovexType.Metadata,
+                        color = if (active) MaterialTheme.colorScheme.onPrimary else NovexColors.SecondaryText,
+                    )
+                }
+            }
+        }
+    }
 }

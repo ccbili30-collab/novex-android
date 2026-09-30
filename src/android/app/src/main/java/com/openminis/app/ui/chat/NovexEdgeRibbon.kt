@@ -140,45 +140,19 @@ internal fun NovexEdgeGestureSurface(
 }
 
 /**
- * 长条书签形状（横向版，2026-09-15 用户确认：横着从左缘探出）：贴屏幕的左端
- * 两角圆角、探出的右端收成一个小尖角（书签尾巴朝屏幕内）。
+ * 书签凸耳形状（edge-v1/01）：左缘探出的白色圆角小卡，贴屏侧直角、
+ * 屏内侧上下圆角——像书页边露出的一枚标签。半出屏由调用方 offset 控制。
  */
-internal fun bookmarkTabShape(tipFraction: Float = 0.16f): Shape = object : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val path = Path()
-        val r = size.height / 2f
-        val tip = size.width * tipFraction
-        path.moveTo(0f, r)
-        path.quadraticBezierTo(0f, 0f, r, 0f)
-        path.lineTo(size.width - tip, 0f)
-        path.lineTo(size.width, size.height / 2f)
-        path.lineTo(size.width - tip, size.height)
-        path.lineTo(r, size.height)
-        path.quadraticBezierTo(0f, size.height, 0f, size.height - r)
-        path.close()
-        return Outline.Generic(path)
-    }
-}
+internal fun bookmarkEarShape(corner: Dp = 10.dp): Shape =
+    androidx.compose.foundation.shape.RoundedCornerShape(
+        topStart = 0.dp, topEnd = corner, bottomEnd = corner, bottomStart = 0.dp,
+    )
 
-/** 半圆把手形状：平面贴右缘、圆弧朝屏幕内。宽 24 × 高 48（半径 24 的圆的左半）。 */
-internal fun semicircleShape(): Shape = object : Shape {
-    override fun createOutline(size: Size, layoutDirection: LayoutDirection, density: Density): Outline {
-        val path = Path()
-        // Circle centered at (w, h/2) radius w (24×48 → 2w == h). Screen angles
-        // with Y-down: 270° = top (w,0), 180° = leftmost (deepest into the
-        // screen), 90° = bottom (w,h). Sweep −180 walks top→left→bottom; the
-        // closing line is the flat right edge = the screen edge.
-        path.moveTo(size.width, 0f)
-        path.arcTo(
-            rect = Rect(0f, 0f, size.width * 2f, size.height),
-            startAngleDegrees = 270f,
-            sweepAngleDegrees = -180f,
-            forceMoveTo = false,
-        )
-        path.close()
-        return Outline.Generic(path)
-    }
-}
+/** 状态条凸耳形状：右缘探出的圆角小卡（与书签耳镜像）。 */
+internal fun statusEarShape(corner: Dp = 10.dp): Shape =
+    androidx.compose.foundation.shape.RoundedCornerShape(
+        topStart = corner, topEnd = 0.dp, bottomEnd = 0.dp, bottomStart = corner,
+    )
 
 /** 沿边位置 / 顺序 / 面板尺寸持久化。兼容旧"RIGHT:0.35"格式（取冒号后比例）。 */
 internal object NovexEdgePrefs {
@@ -221,16 +195,17 @@ internal object NovexEdgePrefs {
 internal const val EDGE_PREFS_HUD = "novex_playthrough_hud"
 internal const val EDGE_PREFS_SIDES = "novex_side_conversations"
 
-/** 书签横条尺寸（2026-09-15）：从左缘横向探出；当前所在侧边变长变厚。 */
-internal val BookmarkStripLength = 96.dp
-internal val BookmarkStripThickness = 22.dp
-internal val BookmarkStripCurrentLength = 120.dp
-internal val BookmarkStripCurrentThickness = 28.dp
-internal val BookmarkStripGap = 8.dp
+/** 书签凸耳尺寸（edge-v1/01）：半出屏白卡，屏内只露右半段与编号。 */
+internal val BookmarkEarLength = 52.dp
+internal val BookmarkEarHeight = 34.dp
+internal val BookmarkEarCurrentLength = 58.dp
+internal val BookmarkEarCurrentHeight = 40.dp
+internal val BookmarkEarGap = 6.dp
 
-/** 半圆把手尺寸（突出 24dp）。 */
-internal val StateHandleWidth = 24.dp
-internal val StateHandleHeight = 48.dp
+/** 状态条凸耳：宽度固定、高度随格数（每格 30dp），最多 4 格 + 溢出指示。 */
+internal val StatusEarWidth = 54.dp
+internal val StatusEarCellHeight = 30.dp
+internal const val StatusEarMaxCells = 4
 
 /** 设计令牌的取值入口——必须从组合环境调用（getter 是 @Composable）。 */
 @Composable
