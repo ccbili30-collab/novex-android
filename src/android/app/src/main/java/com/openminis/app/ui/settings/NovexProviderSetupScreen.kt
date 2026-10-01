@@ -170,6 +170,7 @@ internal fun novexProviderInstanceForSave(
     base: String,
     appendV1Suffix: Boolean,
     direction: NovexProviderDirection = NovexProviderDirection.CHAT,
+    keyHelpUrl: String? = null,
 ): ProviderInstance {
     val fallbackLabel = when (direction) {
         NovexProviderDirection.CHAT -> "OpenAI 兼容接口"
@@ -189,7 +190,50 @@ internal fun novexProviderInstanceForSave(
         appendV1Suffix = appendV1Suffix,
         useResponsesAPI = direction == NovexProviderDirection.RESPONSES,
         isEnabled = true,
+        // 官方预设的取钥链接随实例落库（编辑既有实例时保留原值，不冲掉）。
+        keyHelpUrl = keyHelpUrl ?: existing?.keyHelpUrl,
     )
+}
+
+/** 官方预设规格（[ProviderOnboardingScreen] 三卡带入）：预填字段 + 静态模型目录。 */
+internal data class NovexPresetSpec(
+    val label: String,
+    val headerTitle: String,
+    val headerSubtitle: String,
+    val keyHelpLabel: String,
+    val base: String,
+    val keyHelpUrl: String,
+    /** 智谱基址已是终态路径（/api/paas/v4），绝不能追加 /v1。 */
+    val appendV1: Boolean,
+    val staticModels: List<LLMModel>,
+    /** 静态表的角色：智谱是唯一目录（无 /models 端点）；DeepSeek 仅兜底。 */
+    val staticOnly: Boolean,
+)
+
+internal fun novexPresetSpec(preset: String?): NovexPresetSpec? = when (preset) {
+    novex.android.data.model.NovexProviderPresets.PRESET_ZHIPU -> NovexPresetSpec(
+        label = novex.android.data.model.NovexProviderPresets.ZHIPU_LABEL,
+        headerTitle = "连接智谱（Z.ai）接口",
+        headerSubtitle = "GLM 系列官方接口；地址与模型目录已预填（官方无模型列表接口），填入密钥即可保存启用。",
+        keyHelpLabel = "前往智谱开放平台（bigmodel.cn）获取密钥",
+        base = novex.android.data.model.NovexProviderPresets.ZHIPU_BASE_URL,
+        keyHelpUrl = novex.android.data.model.NovexProviderPresets.ZHIPU_KEY_HELP_URL,
+        appendV1 = false,
+        staticModels = novex.android.data.model.NovexProviderPresets.zhipuStaticModels,
+        staticOnly = true,
+    )
+    novex.android.data.model.NovexProviderPresets.PRESET_DEEPSEEK -> NovexPresetSpec(
+        label = novex.android.data.model.NovexProviderPresets.DEEPSEEK_LABEL,
+        headerTitle = "连接深度求索（DeepSeek）接口",
+        headerSubtitle = "官方接口；地址已预填，可拉取模型目录，拉取失败时用内置兜底列表。",
+        keyHelpLabel = "前往 DeepSeek（深度求索）获取密钥",
+        base = novex.android.data.model.NovexProviderPresets.DEEPSEEK_BASE_URL,
+        keyHelpUrl = novex.android.data.model.NovexProviderPresets.DEEPSEEK_KEY_HELP_URL,
+        appendV1 = true,
+        staticModels = novex.android.data.model.NovexProviderPresets.deepSeekFallbackModels,
+        staticOnly = false,
+    )
+    else -> null
 }
 
 /** Novex 的单一 OpenAI（开放人工智能）兼容接口设置页。 */
@@ -200,26 +244,36 @@ fun NovexProviderSetupScreen(
     onBack: () -> Unit,
     onSaved: () -> Unit,
     instanceId: String? = null,
+    // [T-provider-onboarding] 官方预设键（zhipu/deepseek）；null = 手动流程。
+    preset: String? = null,
 ) {
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
+    val presetSpec = remember(preset) { novexPresetSpec(preset) }
     val existing = remember(instanceId) { instanceId?.let(providerRepository::instance) }
-    var label by remember { mutableStateOf(existing?.label ?: "DeepSeek") }
-    var apiBase by remember { mutableStateOf(existing?.customBaseURL ?: "https://api.deepseek.com") }
+    var label by remember { mutableStateOf(existing?.label ?: presetSpec?.label ?: "DeepSeek") }
+    var apiBase by remember { mutableStateOf(existing?.customBaseURL ?: presetSpec?.base ?: "https://api.deepseek.com") }
     var apiKey by remember { mutableStateOf(existing?.id?.let(providerRepository::loadApiKey) ?: "") }
     var appendV1Suffix by remember(instanceId) {
-        mutableStateOf(existing?.appendV1Suffix ?: true)
+        mutableStateOf(existing?.appendV1Suffix ?: presetSpec?.appendV1 ?: true)
     }
     // [T-provider-direction] 接口方向：编辑时按实例反显，新建默认 Chat。
+    // [T-provider-onboarding] 官方预设锁 Chat 方向——预填不可改成别的供应商。
     var direction by remember(instanceId) { mutableStateOf(novexDirectionOf(existing)) }
     var deleteConfirm by remember(instanceId) { mutableStateOf(false) }
     val existingEntries = remember(instanceId) { providerRepository.entriesFor(instanceId ?: "") }
-    val initialModels = remember(instanceId) {
+    val initialModels = remember(instanceId, preset) {
         existingEntries.filterNot { novex.android.data.model.ChatModelSelection.imageOutput(it.model) || novex.android.data.model.ChatModelSelection.imageOutput(it.baseModel) }
             .map { it.model.id }.distinct()
-            .ifEmpty { if (existing == null) listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL) else emptyList() }
+            .ifEmpty {
+                when {
+                    existing != null -> emptyList()
+                    presetSpec != null -> presetSpec.staticModels.map { it.id }
+                    else -> listOf(NOVEX_DEFAULT_DEEPSEEK_MODEL)
+                }
+            }
     }
-    val selectedModels = remember(instanceId) { mutableStateListOf<String>().apply { addAll(initialModels) } }
+    val selectedModels = remember(instanceId, preset) { mutableStateListOf<String>().apply { addAll(initialModels) } }
     val modelToolsEnabled = remember(instanceId) {
         mutableStateMapOf<String, Boolean>().apply {
             existingEntries
@@ -233,8 +287,12 @@ fun NovexProviderSetupScreen(
     var checkingModelId by remember { mutableStateOf<String?>(null) }
     var verificationJob by remember { mutableStateOf<Job?>(null) }
     val verificationResults = remember { mutableStateMapOf<String, ModelVerificationUiResult>() }
-    val fetchedModels = remember { mutableStateListOf<String>() }
-    val fetchedMetadata = remember { mutableStateMapOf<String, LLMModel>() }
+    val fetchedModels = remember(preset) {
+        mutableStateListOf<String>().apply { addAll(presetSpec?.staticModels?.map { it.id } ?: emptyList()) }
+    }
+    val fetchedMetadata = remember(preset) {
+        mutableStateMapOf<String, LLMModel>().apply { presetSpec?.staticModels?.forEach { put(it.id, it) } }
+    }
     var fetchedMetadataSource by remember { mutableStateOf<Pair<String, String>?>(null) }
     fun invalidateVerification() {
         verificationJob?.cancel()
@@ -266,6 +324,21 @@ fun NovexProviderSetupScreen(
         selectedModels.addAll(models.map(String::trim).filter(String::isNotEmpty).distinct())
     }
     fun toolsEnabled(modelId: String): Boolean = modelToolsEnabled[modelId] != false
+    // [T-provider-onboarding] 保存时的容量元数据：拉取结果（地址+密钥对得上才
+    // 可信）之外，智谱官方 host 无条件叠加内置静态目录——静态表就是该端点
+    // 唯一的目录来源，不依赖用户有没有点过「拉取」。
+    fun metadataForSave(values: SetupValues): Map<String, LLMModel> {
+        val live = if (fetchedMetadataSource == (novexCanonicalBase(values.base, appendV1Suffix) to values.key)) {
+            fetchedMetadata.toMap()
+        } else {
+            emptyMap()
+        }
+        return if (novex.android.data.model.NovexProviderPresets.isZhipuBase(values.base)) {
+            live + novex.android.data.model.NovexProviderPresets.zhipuStaticModels.associateBy { it.id }
+        } else {
+            live
+        }
+    }
     fun validate(requireModels: Boolean = true): SetupValues? {
         val base = apiBase.trim().trimEnd('/')
         val key = apiKey.trim()
@@ -352,29 +425,36 @@ fun NovexProviderSetupScreen(
             Modifier.fillMaxSize().padding(padding).verticalScroll(rememberScrollState()).padding(horizontal = 20.dp),
             verticalArrangement = Arrangement.spacedBy(10.dp),
         ) {
-            Text(direction.headerTitle, style = MaterialTheme.typography.headlineSmall)
-            Text(direction.headerSubtitle, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text(presetSpec?.headerTitle ?: direction.headerTitle, style = MaterialTheme.typography.headlineSmall)
+            Text(
+                presetSpec?.headerSubtitle ?: direction.headerSubtitle,
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
             OutlinedTextField(label = { Text("名称") }, value = label, onValueChange = { label = it }, modifier = Modifier.fillMaxWidth(), singleLine = true)
             // [T-provider-direction] 接口方向三选一：选中项实底、其余描边。
-            Column {
-                Text("接口方向", style = MaterialTheme.typography.titleMedium)
-                Row(
-                    modifier = Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(8.dp),
-                ) {
-                    NovexProviderDirection.values().forEach { option ->
-                        if (option == direction) {
-                            Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
-                        } else {
-                            OutlinedButton(onClick = { switchDirection(option) }, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
+            // [T-provider-onboarding] 官方预设不设方向开关——预填不可改成别的
+            // 供应商（智谱/DeepSeek 均为 Chat 方向）。
+            if (presetSpec == null) {
+                Column {
+                    Text("接口方向", style = MaterialTheme.typography.titleMedium)
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(8.dp),
+                    ) {
+                        NovexProviderDirection.values().forEach { option ->
+                            if (option == direction) {
+                                Button(onClick = {}, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
+                            } else {
+                                OutlinedButton(onClick = { switchDirection(option) }, modifier = Modifier.weight(1f)) { Text(option.buttonLabel) }
+                            }
                         }
                     }
+                    Text(
+                        direction.hint,
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
                 }
-                Text(
-                    direction.hint,
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
             }
             OutlinedTextField(label = { Text("接口地址") }, value = apiBase, onValueChange = { apiBase = it; invalidateVerification() }, modifier = Modifier.fillMaxWidth(), singleLine = true, keyboardOptions = KeyboardOptions(keyboardType = KeyboardType.Uri))
             Row(
@@ -421,6 +501,21 @@ fun NovexProviderSetupScreen(
                 }
                 OutlinedButton(enabled = !fetchingModels && checkingModelId == null, onClick = {
                     val values = validate(requireModels = false) ?: return@OutlinedButton
+                    // [T-provider-onboarding] 智谱官方无 /models 端点：「拉取」=
+                    // 重铺内置静态目录，不打网络。
+                    if (presetSpec?.staticOnly == true ||
+                        novex.android.data.model.NovexProviderPresets.isZhipuBase(values.base)
+                    ) {
+                        fetchedModels.clear()
+                        fetchedModels.addAll(novex.android.data.model.NovexProviderPresets.zhipuStaticModels.map { it.id })
+                        fetchedMetadata.clear()
+                        novex.android.data.model.NovexProviderPresets.zhipuStaticModels.forEach { fetchedMetadata[it.id] = it }
+                        fetchedMetadataSource = novexCanonicalBase(values.base, appendV1Suffix) to values.key
+                        if (selectedModels.none { it in fetchedModels }) {
+                            setSelectedModels(listOf(fetchedModels.first()))
+                        }
+                        return@OutlinedButton
+                    }
                     fetchingModels = true
                     val metadataBase = novexCanonicalBase(values.base, appendV1Suffix)
                     scope.launch {
@@ -576,10 +671,11 @@ fun NovexProviderSetupScreen(
                         base = values.base,
                         appendV1Suffix = appendV1Suffix,
                         direction = direction,
+                        keyHelpUrl = presetSpec?.keyHelpUrl,
                         key = values.key,
                         modelIds = values.models,
                         modelToolsEnabled = values.models.associateWith(::toolsEnabled),
-                        metadata = if (fetchedMetadataSource == (novexCanonicalBase(values.base, appendV1Suffix) to values.key)) fetchedMetadata.toMap() else emptyMap(),
+                        metadata = metadataForSave(values),
                     )
                 }.onSuccess {
                     onSaved()
@@ -588,9 +684,12 @@ fun NovexProviderSetupScreen(
                 }
             }, modifier = Modifier.fillMaxWidth()) { Text("保存并启用（${selectedModels.size}）") }
             // 取钥链接按实例自适应：带 keyHelpUrl 的实例显示取钥入口（通用机制）
-            // （前尘 API → proxy.qianc.ltd）；其余按接口方向给默认指引。
-            val helpUrl = existing?.keyHelpUrl ?: direction.defaultKeyHelpUrl
+            // （前尘 API → proxy.qianc.ltd）；[T-provider-onboarding] 官方预设
+            //（智谱 → bigmodel.cn、DeepSeek → platform.deepseek.com）优先于方向默认；
+            // 其余按接口方向给默认指引。
+            val helpUrl = existing?.keyHelpUrl ?: presetSpec?.keyHelpUrl ?: direction.defaultKeyHelpUrl
             val helpLabel = existing?.keyHelpUrl?.let { "前往 ${existing.label} 官网获取密钥" }
+                ?: presetSpec?.keyHelpLabel
                 ?: direction.defaultKeyHelpLabel
             TextButton(onClick = { context.startActivity(Intent(Intent.ACTION_VIEW, Uri.parse(helpUrl))) }, modifier = Modifier.align(Alignment.CenterHorizontally)) { Text(helpLabel) }
             Spacer(Modifier.height(24.dp))
@@ -627,23 +726,33 @@ private suspend fun fetchModels(
     key: String,
     appendV1Suffix: Boolean,
     direction: NovexProviderDirection,
-): List<LLMModel> = runCatching {
-    val canonical = novexCanonicalBase(base, appendV1Suffix)
-    val models = if (direction == NovexProviderDirection.ANTHROPIC) {
-        com.openminis.app.provider.ModelsCatalogApi.fetchAnthropicModels(
-            key,
-            canonical,
-            forceRefresh = true,
-        )
+): List<LLMModel> {
+    val fetched = runCatching {
+        val canonical = novexCanonicalBase(base, appendV1Suffix)
+        val models = if (direction == NovexProviderDirection.ANTHROPIC) {
+            com.openminis.app.provider.ModelsCatalogApi.fetchAnthropicModels(
+                key,
+                canonical,
+                forceRefresh = true,
+            )
+        } else {
+            com.openminis.app.provider.ModelsCatalogApi.fetchOpenAiModels(
+                key,
+                canonical,
+                forceRefresh = true,
+            )
+        }
+        models.distinctBy { it.id }
+    }.getOrDefault(emptyList())
+    if (fetched.isNotEmpty()) return fetched
+    // [T-provider-onboarding] DeepSeek 官方 host 拉取失败（网络/密钥探活波动）
+    // → 内置兜底目录（deepseek-chat / deepseek-reasoner），别让预设卡在空列表。
+    return if (direction == NovexProviderDirection.CHAT && novex.android.data.model.NovexProviderPresets.isDeepSeekBase(base)) {
+        novex.android.data.model.NovexProviderPresets.deepSeekFallbackModels
     } else {
-        com.openminis.app.provider.ModelsCatalogApi.fetchOpenAiModels(
-            key,
-            canonical,
-            forceRefresh = true,
-        )
+        emptyList()
     }
-    models.distinctBy { it.id }
-}.getOrDefault(emptyList())
+}
 
 private suspend fun verifyConnection(
     base: String,
@@ -771,6 +880,7 @@ private fun saveConnections(
     base: String,
     appendV1Suffix: Boolean,
     direction: NovexProviderDirection,
+    keyHelpUrl: String? = null,
     key: String,
     modelIds: List<String>,
     modelToolsEnabled: Map<String, Boolean>,
@@ -779,7 +889,7 @@ private fun saveConnections(
     require(modelIds.none { looksLikeImageGenerationModel(it) || metadata[it]?.let(novex.android.data.model.ChatModelSelection::imageOutput) == true }) {
         "请选择聊天模型，生图模型不能用于此对话"
     }
-    val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix, direction)
+    val instance = novexProviderInstanceForSave(existing, label, base, appendV1Suffix, direction, keyHelpUrl)
     if (existing == null) repository.addInstance(instance) else repository.updateInstance(instance)
     repository.saveApiKey(instance.id, key)
     val previousEntries = repository.entriesFor(instance.id)

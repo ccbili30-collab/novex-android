@@ -42,6 +42,7 @@ import com.openminis.app.ui.settings.AddCustomModelScreen
 import com.openminis.app.ui.settings.BackgroundSettingsScreen
 import com.openminis.app.ui.settings.AddModelsToGroupScreen
 import com.openminis.app.ui.settings.NovexProviderSetupScreen
+import com.openminis.app.ui.settings.ProviderOnboardingScreen
 import com.openminis.app.ui.settings.ImageGenerationSettingsScreen
 import com.openminis.app.ui.settings.ImageGenerationSourceScreen
 import com.openminis.app.ui.settings.ModelEntryDetailScreen
@@ -83,7 +84,7 @@ internal fun NavGraphBuilder.registerModelDestinations(deps: NavDeps) {
             ProviderListScreen(
                 providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
-                onAddProvider = { navController.safeNavigate(Routes.ADD_PROVIDER) },
+                onAddProvider = { navController.safeNavigate(Routes.PROVIDER_ONBOARDING) },
                 onProviderClick = { instanceId ->
                     navController.safeNavigate(Routes.providerDetail(instanceId))
                 },
@@ -92,11 +93,27 @@ internal fun NavGraphBuilder.registerModelDestinations(deps: NavDeps) {
             )
         }
 
-        composable(Routes.ADD_PROVIDER) {
+        // [T-provider-onboarding] 添加供应商前置步：三卡选接入方式，
+        // 官方卡带预设进连接页，自定义卡走既有手动流程。
+        composable(Routes.PROVIDER_ONBOARDING) {
+            ProviderOnboardingScreen(
+                onBack = { navController.safePopBackStack() },
+                onPickZhipu = { navController.safeNavigate(Routes.addProvider(novex.android.data.model.NovexProviderPresets.PRESET_ZHIPU)) },
+                onPickDeepSeek = { navController.safeNavigate(Routes.addProvider(novex.android.data.model.NovexProviderPresets.PRESET_DEEPSEEK)) },
+                onPickCustom = { navController.safeNavigate(Routes.addProvider()) },
+            )
+        }
+
+        composable(
+            route = Routes.ADD_PROVIDER,
+            arguments = listOf(navArgument("preset") { type = NavType.StringType; defaultValue = "" }),
+        ) { backStackEntry ->
+            val preset = backStackEntry.arguments?.getString("preset")?.takeIf { it.isNotBlank() }
             NovexProviderSetupScreen(
                 providerRepository = providerRepository,
                 onBack = { navController.safePopBackStack() },
                 onSaved = { navController.safePopBackStack() },
+                preset = preset,
             )
         }
 

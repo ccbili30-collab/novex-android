@@ -88,7 +88,12 @@ object Routes {
     const val SETTINGS = "settings"
     const val NOVEX_FEEDBACK = "novex_feedback"
     const val PROVIDER_LIST = "providers"
-    const val ADD_PROVIDER = "add_provider"
+    /** [T-provider-onboarding] 添加供应商的前置步：选择接入方式（智谱/深度求索/自定义）。 */
+    const val PROVIDER_ONBOARDING = "provider_onboarding"
+    /** 接入方式三卡选完后进入的连接页；preset 带官方预设键（zhipu/deepseek），空=手动。 */
+    const val ADD_PROVIDER = "add_provider?preset={preset}"
+    fun addProvider(preset: String? = null): String =
+        if (preset.isNullOrBlank()) "add_provider" else "add_provider?preset=$preset"
     const val IMAGE_GENERATION_SETTINGS = "image_generation_settings"
     const val IMAGE_GENERATION_SOURCE = "image_generation_source/{sourceId}"
     fun imageGenerationSource(sourceId: String) = "image_generation_source/$sourceId"

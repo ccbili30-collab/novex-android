@@ -106,10 +106,10 @@ class NovexTransportProviderTest {
         )
         val body = JSONObject(request.encode())
         assertEquals("test-model", body.getString("model"))
-        // 非 OpenRouter 主机走上游口径：max_completion_tokens，且不带默认 max_tokens
-        // （OpenAI 对 o 系/gpt-5 拒收 max_tokens）。
-        assertEquals(777, body.getInt("max_completion_tokens"))
-        assertFalse(body.has("max_tokens"))
+        // [T-provider-onboarding] token 上限键白名单制：中转（非白名单）主机走
+        // wire() 默认 max_tokens——智谱/DeepSeek 等只认这个键。
+        assertEquals(777, body.getInt("max_tokens"))
+        assertFalse(body.has("max_completion_tokens"))
         assertTrue(body.getBoolean("stream"))
         assertTrue(body.getJSONObject("stream_options").getBoolean("include_usage"))
         val messages = body.getJSONArray("messages")
@@ -306,7 +306,7 @@ class NovexTransportProviderTest {
     }
 
     @Test
-    fun `OpenRouter 主机收 max_tokens 其余主机收 max_completion_tokens`() {
+    fun `token 上限键按主机白名单选择`() {
         val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
         val messages = listOf(LLMMessage(LLMMessage.Role.USER, "问"))
 
@@ -319,14 +319,99 @@ class NovexTransportProviderTest {
         assertEquals(64, router.getInt("max_tokens"))
         assertFalse(router.has("max_completion_tokens"))
 
-        // 其余主机（含中转）：上游口径的 max_completion_tokens，不带 max_tokens。
+        // 官方 OpenAI：白名单成员，o 系/gpt-5 收 max_tokens 会 400 → 发
+        // max_completion_tokens，不带 max_tokens。
+        val official = JSONObject(
+            provider(call = call, basePath = "https://api.openai.com/v1").buildStreamRequest(
+                messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals(64, official.getInt("max_completion_tokens"))
+        assertFalse(official.has("max_tokens"))
+
+        // 其余主机（含中转）：一律 wire() 默认 max_tokens——OpenAI 专用的
+        // max_completion_tokens 发给智谱/DeepSeek 等只认 max_tokens 的服务
+        // 会整单 400（[T-provider-onboarding] 根因①）。
         val relay = JSONObject(
             provider(call = call, basePath = "https://relay.example.com/v1").buildStreamRequest(
                 messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
             ).encode(),
         )
-        assertEquals(64, relay.getInt("max_completion_tokens"))
-        assertFalse(relay.has("max_tokens"))
+        assertEquals(64, relay.getInt("max_tokens"))
+        assertFalse(relay.has("max_completion_tokens"))
+
+        // 智谱官方直连：同上——max_tokens，绝无 max_completion_tokens。
+        val zhipu = JSONObject(
+            provider(call = call, basePath = "https://open.bigmodel.cn/api/paas/v4").buildStreamRequest(
+                messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals(64, zhipu.getInt("max_tokens"))
+        assertFalse(zhipu.has("max_completion_tokens"))
+    }
+
+    /**
+     * [T-provider-onboarding] 智谱根因②的请求侧守护：/api/paas/v4 是终态
+     * 路径，chat 端点 = 基址原样 + /chat/completions——不许出现任何 /v1 注入。
+     */
+    @Test
+    fun `智谱基址的 chat 端点保持完整路径不被追加 v1`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val zhipu = provider(call = call, basePath = "https://open.bigmodel.cn/api/paas/v4")
+        assertEquals(
+            "https://open.bigmodel.cn/api/paas/v4/chat/completions",
+            zhipu.completionUrl().toString(),
+        )
+    }
+
+    /**
+     * [T-provider-onboarding] 智谱根因④：GLM 直连思考席位——智谱官方 host +
+     * 思考开 → thinking:{"type":"enabled"} + 根级 reasoning_effort 兄弟键。
+     */
+    @Test
+    fun `智谱主机思考开时请求体含 thinking enabled 与根级 reasoning_effort`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val glm = LLMModel(
+            "glm-5.3",
+            "GLM-5.3",
+            "智谱",
+            supportsReasoning = true,
+            reasoningEffortValues = listOf("low", "high", "max"),
+        )
+        val body = JSONObject(
+            provider(model = glm, call = call, basePath = "https://open.bigmodel.cn/api/paas/v4")
+                .buildStreamRequest(
+                    listOf(LLMMessage(LLMMessage.Role.USER, "问")),
+                    null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+                ).encode(),
+        )
+        assertEquals("enabled", body.getJSONObject("thinking").getString("type"))
+        assertEquals("high", body.getString("reasoning_effort"))
+        // GLM-5.3 不支持 disabled；关档必须整个省略（发 disabled 会整单 400）。
+        val off = JSONObject(
+            provider(model = glm, call = call, basePath = "https://open.bigmodel.cn/api/paas/v4")
+                .buildStreamRequest(
+                    listOf(LLMMessage(LLMMessage.Role.USER, "问")),
+                    null, 512, emptyList(), emptyList(), ThinkingLevel.OFF,
+                ).encode(),
+        )
+        assertFalse(off.has("thinking"))
+        assertFalse(off.has("reasoning_effort"))
+    }
+
+    /** GLM 席位只设在智谱官方 host：中转上的 glm 仍走通用线（根因④不越界）。 */
+    @Test
+    fun `中转主机上的 glm 不命中智谱思考席位`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val glm = LLMModel("glm-5.3", "GLM-5.3", "中转", supportsReasoning = true)
+        val body = JSONObject(
+            provider(model = glm, call = call, basePath = "https://relay.example.com/v1")
+                .buildStreamRequest(
+                    listOf(LLMMessage(LLMMessage.Role.USER, "问")),
+                    null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+                ).encode(),
+        )
+        assertFalse(body.has("thinking"))
     }
 
     @Test

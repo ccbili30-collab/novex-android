@@ -511,10 +511,12 @@ class NovexTransportProvider(
             ToolDefinition(definition.name, definition.description, parameters.toString())
         }
         val extras = thinkingParameters(maxTokens, thinkingLevel) ?: JSONObject()
-        // token 上限键按主机选择（贴已删上游 openai 包口径）：OpenRouter 主机收
-        // max_tokens（wire() 默认键），其余一切端点收 max_completion_tokens——OpenAI
-        // 对 o 系/gpt-5 拒收 max_tokens（整线 400），中转前端同受此约束。
-        if (!isOpenRouterHost) extras.put("max_completion_tokens", maxTokens)
+        // token 上限键按主机白名单选择：只有已知拒收 max_tokens 的端点才发
+        // OpenAI 专用的 max_completion_tokens——api.openai.com 对 o 系/gpt-5 收
+        // max_tokens 直接 400，Azure deployments 线此前已走此键（保持）。其余
+        // 端点（智谱、DeepSeek、各兼容中转）只认 max_tokens（wire() 默认键，
+        // 不加附加键）：把 max_completion_tokens 发给它们同样整单 400。
+        if (requiresMaxCompletionTokensKey) extras.put("max_completion_tokens", maxTokens)
         // [OpenMinis#191] OpenRouter 不自动给 Claude 系开 Anthropic prompt caching——
         // 必须显式携带顶层 cache_control 断点，否则 cache_read/write 恒 0（3-6 倍成本
         // 超支）。门槛=主机匹配 + anthropic/ 模型前缀，其余模型请求体逐字节不变。
@@ -810,6 +812,7 @@ class NovexTransportProvider(
                 isMistral = isMistralHost,
                 isDashScope = isDashScopeHost,
                 isXAI = isXAIHost,
+                isZhipuDirect = isZhipuDirectHost,
                 offEffort = explicitOffEffort,
             ),
         )
@@ -860,6 +863,19 @@ class NovexTransportProvider(
     private val isMistralHost: Boolean get() = loweredBase.contains("mistral.ai")
     private val isDashScopeHost: Boolean get() = loweredBase.contains("dashscope")
     private val isXAIHost: Boolean get() = loweredBase.contains("api.x.ai") || loweredBase.contains("//x.ai")
+    /**
+     * 智谱官方直连（open.bigmodel.cn）：GLM 思考席位的命中门槛。只在官方
+     * host 上启用——GLM 机型走中转时思考参数形态由网关翻译，交给通用线。
+     */
+    private val isZhipuDirectHost: Boolean get() = loweredBase.contains("open.bigmodel.cn")
+    /**
+     * 已知拒收 max_tokens、必须用 OpenAI 专用 max_completion_tokens 的端点
+     * （白名单制）：api.openai.com（o 系/gpt-5 对 max_tokens 整单 400）与
+     * Azure deployments 线（此前一直发该键，口径保持）。其余端点一律走
+     * wire() 的默认 max_tokens——智谱/DeepSeek 等只认这个键。
+     */
+    private val requiresMaxCompletionTokensKey: Boolean
+        get() = isAzureLine || loweredBase.contains("api.openai.com")
     /** [P3.3 裁军→内置] 前尘 API 中转预设（gemini 系省略思考参数的内置席）。 */
     private val usesUnifiedReasoningEffort: Boolean
         get() = isAzureLine || loweredBase.contains("volces") || loweredBase.contains("ark.") ||

@@ -27,6 +27,11 @@ data class ThinkingResolveContext(
     val isDashScope: Boolean,
     /** 端点是 xAI 自家 API（api.x.ai）而非转发 grok 系机型的中转。 */
     val isXAI: Boolean = false,
+    /**
+     * 端点是智谱官方直连（open.bigmodel.cn）：GLM 系在此有专属思考席位
+     * （thinking 兄弟键形态）。中转上的 GLM 不设席，交通用线。
+     */
+    val isZhipuDirect: Boolean = false,
     /** [P3.3 裁军→内置] 端点是内置「前尘 API」中转预设（proxy.qianc.ltd）：
      * gemini 系思考参数完全省略的内置席由该标志命中。 */
     /** 端点成文的关闭档位；null = 关闭即省略字段（允许清单决策归调用方）。 */
@@ -102,6 +107,9 @@ object ThinkingContractResolver {
         { p -> if (p.dashScope) contract("qwen-dashscope", ThinkingWireFormat.QwenDual, ThinkingContract.Scope.AllModels) else null },
         { _ -> patternSeat("*qwen*", "qwen-dashscope", null, ThinkingWireFormat.QwenDual) },
         { p -> if (p.unifiedGateway) contract("unified-gateway(ark|azure|venice)", ThinkingWireFormat.ReasoningEffort(p.offEffort), ThinkingContract.Scope.AllModels) else null },
+        // 智谱官方直连的 GLM 席：thinking:{type} 兄弟键（开档同 DeepSeek 形态，
+        // 关档省略——GLM-5.3 拒收 disabled）。仅官方 host 命中，中转不设席。
+        { p -> if (p.zhipuDirect) patternSeat("*glm*", "glm-zhipu-official", null, ThinkingWireFormat.GlmZhipuSibling) else null },
         { _ -> patternSeat("*deepseek-v4*", "deepseek-v4-official", null, ThinkingWireFormat.DeepSeekSibling, echo = afterToolEcho) },
         { p -> defaultSeat(p.offEffort) },
     )
@@ -155,6 +163,7 @@ object ThinkingContractResolver {
             is ThinkingWireFormat.ReasoningEffortNested -> nestedEffort(ctx, body)
             is ThinkingWireFormat.ReasoningEffort -> rootEffort(ctx, body)
             ThinkingWireFormat.DeepSeekSibling -> deepSeekSibling(ctx, body)
+            ThinkingWireFormat.GlmZhipuSibling -> glmZhipuSibling(ctx, body)
             ThinkingWireFormat.QwenDual -> qwenDual(ctx, body)
 
             // 词表登记形态不落 OpenAI 请求体；走到这里是注册表接线错误。
@@ -243,6 +252,20 @@ object ThinkingContractResolver {
             body.put("thinking", JSONObject().put("type", "disabled"))
             return NO_CLAMP
         }
+        val want = tierOf(ctx.level)
+        val allowed = snapToDeclared(want, ctx.declaredEffortValues)
+        body.put("thinking", JSONObject().put("type", "enabled"))
+        body.put("reasoning_effort", allowed)
+        return want to allowed
+    }
+
+    /**
+     * 智谱 GLM 直连（开档与 [deepSeekSibling] 同形态）。关档差异：GLM-5.3 官方
+     * 文档明确拒收 thinking.type:"disabled"（迁移指引改发 enabled + low），这里
+     * 关闭即整个省略交给厂商默认——发 disabled 会把「思考关不掉」升级成整单 400。
+     */
+    private fun glmZhipuSibling(ctx: ThinkingResolveContext, body: JSONObject): Pair<String?, String?> {
+        if (!ctx.level.isEnabled) return NO_CLAMP
         val want = tierOf(ctx.level)
         val allowed = snapToDeclared(want, ctx.declaredEffortValues)
         body.put("thinking", JSONObject().put("type", "enabled"))
@@ -424,6 +447,7 @@ object ThinkingContractResolver {
         val openRouter: Boolean,
         val dashScope: Boolean,
         val unifiedGateway: Boolean,
+        val zhipuDirect: Boolean,
         val offEffort: String?,
     )
 
@@ -432,6 +456,7 @@ object ThinkingContractResolver {
         openRouter = ctx.isOpenRouter,
         dashScope = ctx.isDashScope,
         unifiedGateway = ctx.usesUnifiedReasoningEffort,
+        zhipuDirect = ctx.isZhipuDirect,
         offEffort = ctx.offEffort,
     )
 

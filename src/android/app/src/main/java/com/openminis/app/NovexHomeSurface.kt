@@ -133,7 +133,7 @@ internal fun ComponentActivity.installNovexHomeSurface(app: MinisApp) {
                         onNewChat = { id ->
                             openLegacy("chat/${Uri.encode(id)}")
                         },
-                        onAddProviderClick = { openLegacy(Routes.ADD_PROVIDER) },
+                        onAddProviderClick = { openLegacy(Routes.PROVIDER_ONBOARDING) },
                         onSelectModelsClick = { openLegacy(Routes.ONBOARDING_MODELS) },
                         onContentLoaded = {
                             NovexStartupMetrics.reportStage("home_content_ready")
