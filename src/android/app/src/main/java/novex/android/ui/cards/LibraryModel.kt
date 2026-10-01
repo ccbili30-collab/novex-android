@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.ui.cards
 
 import android.app.Application
 import android.os.FileObserver

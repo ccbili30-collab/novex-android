@@ -5,7 +5,7 @@ import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
 import java.io.File
-import novex.android.ContentPaths
+import novex.android.data.ContentPaths
 
 object FileReadTool {
     const val NAME = "file_read"

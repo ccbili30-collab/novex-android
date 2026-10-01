@@ -7,7 +7,7 @@ import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
-import novex.android.ContentPaths
+import novex.android.data.ContentPaths
 
 object ReadImageTool {
     const val NAME = "read_image"

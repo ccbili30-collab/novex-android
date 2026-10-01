@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.ui.cards
 
 import androidx.compose.foundation.background
 import androidx.compose.foundation.shape.RoundedCornerShape

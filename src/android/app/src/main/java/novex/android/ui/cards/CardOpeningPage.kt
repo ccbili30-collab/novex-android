@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.ui.cards
 
 import novex.android.ui.NovexPageTopBar
 import novex.android.ui.NovexColors
