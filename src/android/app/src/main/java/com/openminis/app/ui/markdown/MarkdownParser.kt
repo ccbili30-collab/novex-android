@@ -390,79 +390,87 @@ object MarkdownParser {
         }
 
         while (i < n) {
-            // 行首探测开栏。
-            if (!inFence && atLineStart(i) && openFenceAt(chars, i) != null) {
-                val (fc, fl) = openFenceAt(chars, i)!!
-                inFence = true
-                fenceChar = fc
-                fenceLen = fl
-                i = copyThroughEndOfLine(chars, i, out)
-                continue
-            }
-
-            if (inFence) {
-                if (atLineStart(i) && chars[i] == fenceChar && backtickRun(chars, i) >= fenceLen) {
-                    inFence = false
+            val cur = chars[i]
+            val next: Char? = if (i + 1 < n) chars[i + 1] else null
+            when {
+                // 行首探测开栏。
+                !inFence && atLineStart(i) && openFenceAt(chars, i) != null -> {
+                    val (fc, fl) = openFenceAt(chars, i)!!
+                    inFence = true
+                    fenceChar = fc
+                    fenceLen = fl
                     i = copyThroughEndOfLine(chars, i, out)
-                    continue
                 }
-                out.append(chars[i]); i++
-                continue
-            }
-
-            // 行内代码 span——逐字拷贝，美元符号原样在内。
-            if (chars[i] == '`') {
-                i = copyInlineCodeRun(chars, i, out)
-                continue
-            }
-
-            // \$ —— 转义美元逐字保留。
-            if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '$') {
-                out.append(chars[i]); out.append(chars[i + 1])
-                i += 2
-                continue
-            }
-
-            // \[ … \] —— 展示数学。
-            if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '[') {
-                val close = findClose(chars, i + 2, "\\]")
-                if (close != null &&
-                    capture(stripBlockquoteMarkers(chars.substring(i + 2, close)), display = true, advanceTo = close + 2)
-                ) continue
-            }
-
-            // \( … \) —— 行内数学。
-            if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '(') {
-                val close = findClose(chars, i + 2, "\\)")
-                if (close != null &&
-                    capture(chars.substring(i + 2, close), display = false, advanceTo = close + 2)
-                ) continue
-            }
-
-            // $$ … $$ —— 展示数学。
-            if (chars[i] == '$' && i + 1 < n && chars[i + 1] == '$') {
-                val close = findDoubleDollar(chars, i + 2, codeMask)
-                // [T-android-latex-code-mask] 闭符必须在代码外（上面的
-                // codeMask），且多行正文仍得像条公式——否则一个未闭合的
-                // `$$` 会吞掉整段散文。
-                if (close != null && isPlausibleDisplayBody(chars.substring(i + 2, close))) {
-                    if (capture(stripBlockquoteMarkers(chars.substring(i + 2, close)), display = true, advanceTo = close + 2)) continue
-                }
-            }
-
-            // $ … $ —— 行内数学（带货币跳过启发）。
-            if (chars[i] == '$' && i + 1 < n && chars[i + 1] != '$' && chars[i + 1] != ' ') {
-                val close = findSingleDollar(chars, i + 1, codeMask)
-                if (close != null) {
-                    val latex = chars.substring(i + 1, close)
-                    if (looksLikeMath(latex)) {
-                        if (capture(latex, display = false, advanceTo = close + 1)) continue
+                inFence -> {
+                    val closes = atLineStart(i) && cur == fenceChar && backtickRun(chars, i) >= fenceLen
+                    inFence = !closes
+                    i = if (closes) copyThroughEndOfLine(chars, i, out) else run {
+                        out.append(cur)
+                        i + 1
                     }
                 }
+                // 行内代码 span——逐字拷贝，美元符号原样在内。
+                cur == '`' -> i = copyInlineCodeRun(chars, i, out)
+                // \$ —— 转义美元逐字保留。
+                cur == '\\' && next == '$' -> {
+                    out.append(cur); out.append(next)
+                    i += 2
+                }
+                // \[ … \] —— 展示数学。
+                cur == '\\' && next == '[' ->
+                    findClose(chars, i + 2, "\\]")?.let { close ->
+                        capture(
+                            stripBlockquoteMarkers(chars.substring(i + 2, close)),
+                            display = true,
+                            advanceTo = close + 2,
+                        )
+                    } ?: run {
+                        out.append(cur)
+                        i++
+                    }
+                // \( … \) —— 行内数学。
+                cur == '\\' && next == '(' ->
+                    findClose(chars, i + 2, "\\)")?.let { close ->
+                        capture(chars.substring(i + 2, close), display = false, advanceTo = close + 2)
+                    } ?: run {
+                        out.append(cur)
+                        i++
+                    }
+                // $$ … $$ —— 展示数学。闭符必须在代码外（codeMask），且多
+                // 行正文仍得像条公式——否则一个未闭合的 `$$` 会吞掉整段散
+                // 文。[T-android-latex-code-mask]
+                cur == '$' && next == '$' ->
+                    findDoubleDollar(chars, i + 2, codeMask)
+                        ?.takeIf { close -> isPlausibleDisplayBody(chars.substring(i + 2, close)) }
+                        ?.let { close ->
+                            capture(
+                                stripBlockquoteMarkers(chars.substring(i + 2, close)),
+                                display = true,
+                                advanceTo = close + 2,
+                            )
+                        }
+                        ?: run {
+                            out.append(cur)
+                            i++
+                        }
+                // $ … $ —— 行内数学（带货币跳过启发）。
+                cur == '$' && next != null && next != '$' && next != ' ' ->
+                    findSingleDollar(chars, i + 1, codeMask)
+                        ?.let { close -> chars.substring(i + 1, close) }
+                        ?.takeIf(::looksLikeMath)
+                        ?.let { latex ->
+                            // 前进越过闭合 $：起点 + latex + 两个定界符。
+                            capture(latex, display = false, advanceTo = i + 2 + latex.length)
+                        }
+                        ?: run {
+                            out.append(cur)
+                            i++
+                        }
+                else -> {
+                    out.append(cur)
+                    i++
+                }
             }
-
-            out.append(chars[i])
-            i++
         }
 
         return out.toString() to spans
@@ -586,86 +594,72 @@ object MarkdownParser {
         val n = chars.length
         val mask = BooleanArray(n)
         var i = 0
-        var inFence = false
         var fenceChar = '`'
         var fenceLen = 0
+
+        /** 把 [from] 到行尾（含换行）标进掩码，返回新游标。 */
+        fun maskThroughLineEnd(from: Int): Int {
+            var k = from
+            while (k < n && chars[k] != '\n') {
+                mask[k] = true; k++
+            }
+            if (k < n) {
+                mask[k] = true; k++
+            }
+            return k
+        }
 
         fun atLineStart(idx: Int): Boolean =
             idx == 0 || chars[idx - 1] == '\n' || chars[idx - 1] == '\r'
 
+        var inFence = false
         while (i < n) {
-            if (!inFence && atLineStart(i)) {
-                val c = chars[i]
-                if (c == '`' || c == '~') {
-                    var fl = 0
-                    var j = i
-                    while (j < n && chars[j] == c) {
-                        fl++; j++
-                    }
-                    if (fl >= 3) {
-                        inFence = true; fenceChar = c; fenceLen = fl
-                        while (i < n && chars[i] != '\n') {
-                            mask[i] = true; i++
-                        }
-                        if (i < n) {
-                            mask[i] = true; i++
-                        }
-                        continue
-                    }
+            val opener = if (!inFence && atLineStart(i)) openFenceAt(chars, i) else null
+            val closesFence = inFence && atLineStart(i) &&
+                chars[i] == fenceChar && backtickRun(chars, i) >= fenceLen
+            when {
+                opener != null -> {
+                    val (fc, fl) = opener
+                    inFence = true; fenceChar = fc; fenceLen = fl
+                    i = maskThroughLineEnd(i)
                 }
+                closesFence -> {
+                    inFence = false
+                    i = maskThroughLineEnd(i)
+                }
+                inFence -> {
+                    mask[i] = true; i++
+                }
+                // 行内代码 span：`…` / ``…``——与主循环逐字拷贝时同一条跑
+                // 段配对规则。
+                chars[i] == '`' -> i = maskInlineCodeRun(chars, i, mask)
+                else -> i++
             }
-            if (inFence) {
-                if (atLineStart(i) && chars[i] == fenceChar) {
-                    var fl = 0
-                    var j = i
-                    while (j < n && chars[j] == fenceChar) {
-                        fl++; j++
-                    }
-                    if (fl >= fenceLen) {
-                        inFence = false
-                        while (i < n && chars[i] != '\n') {
-                            mask[i] = true; i++
-                        }
-                        if (i < n) {
-                            mask[i] = true; i++
-                        }
-                        continue
-                    }
-                }
-                mask[i] = true; i++
-                continue
-            }
-            // 行内代码 span：`…` / ``…``——与主循环逐字拷贝时同一条跑段配
-            // 对规则。
-            if (chars[i] == '`') {
-                var run = 0
-                var j = i
-                while (j < n && chars[j] == '`') {
-                    run++; j++
-                }
-                var k = j
-                var closed = -1
-                while (k < n) {
-                    if (chars[k] == '`') {
-                        var r2 = 0
-                        var m = k
-                        while (m < n && chars[m] == '`') {
-                            r2++; m++
-                        }
-                        if (r2 == run) {
-                            closed = m; break
-                        }
-                        k = m
-                    } else k++
-                }
-                val end = if (closed > 0) closed else j
-                for (idx in i until end) mask[idx] = true
-                i = end
-                continue
-            }
-            i++
         }
         return mask
+    }
+
+    /** 掩码一个行内代码跑段（含定界反引号，无闭跑则只掩开跑）；返回新游标。 */
+    private fun maskInlineCodeRun(chars: String, from: Int, mask: BooleanArray): Int {
+        val n = chars.length
+        val run = backtickRun(chars, from)
+        var k = from + run
+        var closedAt = -1
+        while (k < n) {
+            if (chars[k] == '`') {
+                val r2 = backtickRun(chars, k)
+                if (r2 == run) {
+                    closedAt = k + r2
+                    break
+                }
+                k += r2
+            } else {
+                k++
+            }
+        }
+        val end = if (closedAt > 0) closedAt else from + run
+        for (idx in from until end) mask[idx] = true
+        return end
     }
 
     /**

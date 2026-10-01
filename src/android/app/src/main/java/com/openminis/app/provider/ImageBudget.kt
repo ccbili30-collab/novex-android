@@ -128,16 +128,20 @@ object ImageBudget {
      */
     fun compressUnderBudget(input: ByteArray, targetMaxBytes: Long = MAX_PER_IMAGE_BYTES): ByteArray {
         if (input.size <= targetMaxBytes) return input
-        var smallestSoFar: ByteArray = input
+        var smallestSoFar = input
         for ((edge, quality) in DOWNSIZE_LADDER) {
             val candidate = compressBytes(input, edge, quality)
             if (candidate.size < smallestSoFar.size) smallestSoFar = candidate
-            if (candidate.size.toLong() <= targetMaxBytes) {
+            val fitsBudget = candidate.size.toLong() <= targetMaxBytes
+            if (fitsBudget) {
                 AppLogger.info(TAG, "compressUnderBudget hit: ${input.size}B → ${candidate.size}B (edge=$edge q=$quality)")
                 return candidate
             }
         }
-        AppLogger.warning(TAG, "compressUnderBudget exhausted ladder: ${input.size}B → ${smallestSoFar.size}B (target=${targetMaxBytes}B)")
+        AppLogger.warning(
+            TAG,
+            "compressUnderBudget exhausted ladder: ${input.size}B → ${smallestSoFar.size}B (target=${targetMaxBytes}B)",
+        )
         return smallestSoFar
     }
 
@@ -167,19 +171,16 @@ object ImageBudget {
         var tailDropped = 0
         var runningTotal = 0L
         for (raw in bytesIn) {
-            val sized = if (raw.size.toLong() > MAX_PER_IMAGE_BYTES) {
-                val shrunk = compressUnderBudget(raw)
-                if (shrunk.size != raw.size) recompressed += 1
-                shrunk
-            } else {
-                raw
-            }
-            if (runningTotal + sized.size.toLong() > MAX_TOTAL_BYTES) {
+            val oversize = raw.size.toLong() > MAX_PER_IMAGE_BYTES
+            val sized = if (oversize) compressUnderBudget(raw) else raw
+            if (oversize && sized.size != raw.size) recompressed += 1
+            val wouldExceed = runningTotal + sized.size.toLong() > MAX_TOTAL_BYTES
+            if (wouldExceed) {
                 tailDropped += 1
-                continue
+            } else {
+                kept.add(sized)
+                runningTotal += sized.size.toLong()
             }
-            kept.add(sized)
-            runningTotal += sized.size.toLong()
         }
         if (tailDropped > 0 || recompressed > 0) {
             AppLogger.info(
@@ -255,17 +256,18 @@ object ImageBudget {
         var elidedTotal = 0L
         // 最新 → 最老：最近的图先占预算。
         for (img in images.asReversed()) {
-            val id = ImagePartId.of(img.data)
             // 单图上限截断计——与真去调 [compressUnderBudget] 会得到的
             // 上限同一条线。
             val charge = minOf(img.data.size.toLong(), MAX_PER_IMAGE_BYTES)
-            if (keptTotal + charge <= maxBytes) {
+            val roomLeft = keptTotal + charge <= maxBytes
+            if (roomLeft) {
                 keptTotal += charge
-            } else {
-                elidedIds.add(id)
-                elidedPaths[id] = img.linuxPath
-                elidedTotal += charge
+                continue
             }
+            val id = ImagePartId.of(img.data)
+            elidedIds.add(id)
+            elidedPaths[id] = img.linuxPath
+            elidedTotal += charge
         }
         if (elidedIds.isNotEmpty()) {
             AppLogger.info(

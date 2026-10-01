@@ -404,20 +404,18 @@ class SelectionController {
         // dispose）时 positionInWindow 回落 Offset.Zero——那会把手柄 Popup
         // 摔到窗口左上角。改回 null，宿主先藏手柄等分片重挂——对齐系统选
         // 择 UX。
-        val origin = shard.positionInWindow()
-        if (origin == Offset.Zero) return null
+        val origin = shard.positionInWindow().takeIf { it != Offset.Zero } ?: return null
         val tlr = shard.textLayoutResult
         val laidOutLen = tlr.layoutInput.text.length
         if (laidOutLen <= 0) return null
-        val clampedOffset = endpoint.charOffset.coerceIn(0, laidOutLen)
         val box = runCatching {
-            tlr.getBoundingBox(anchorCharIndex(handle, clampedOffset, laidOutLen))
+            tlr.getBoundingBox(anchorCharIndex(handle, endpoint.charOffset.coerceIn(0, laidOutLen), laidOutLen))
         }.getOrNull() ?: return null
-        val (localX, bottomY) = when (handle) {
-            Handle.Start -> box.left to box.bottom
-            Handle.End -> box.right to box.bottom
+        val anchorPoint = when (handle) {
+            Handle.Start -> Offset(origin.x + box.left, origin.y + box.bottom)
+            Handle.End -> Offset(origin.x + box.right, origin.y + box.bottom)
         }
-        return Offset(origin.x + localX, origin.y + bottomY)
+        return anchorPoint
     }
 
     /** 手柄锚对应的字符下标：Start 取偏移处字符、End 取前一字符（右缘）。 */
@@ -531,15 +529,14 @@ class SelectionController {
 
         // 尾分片仍组合且在屏：直接取它的行。
         val lastShard = shards[last.shard]
-        if (lastShard != null && lastShard.positionInWindow() != Offset.Zero) {
+        val lastOrigin = lastShard?.positionInWindow()
+        if (lastShard != null && lastOrigin != Offset.Zero) {
             val tlr = lastShard.textLayoutResult
             val len = tlr.layoutInput.text.length
-            if (len > 0) {
-                val charIdx = (last.charOffset - 1).coerceIn(0, len - 1)
-                val box = runCatching { tlr.getBoundingBox(charIdx) }.getOrNull()
-                if (box != null) {
-                    return windowRectOf(lastShard.positionInWindow(), box)
-                }
+            val charIdx = (last.charOffset - 1).coerceIn(0, (len - 1).coerceAtLeast(0))
+            val box = if (len > 0) runCatching { tlr.getBoundingBox(charIdx) }.getOrNull() else null
+            if (box != null && lastOrigin != null) {
+                return windowRectOf(lastOrigin, box)
             }
         }
 
@@ -549,13 +546,12 @@ class SelectionController {
         var tailBottom = Float.NEGATIVE_INFINITY
         for ((id, shard) in shards) {
             val origin = shard.positionInWindow()
-            if (origin == Offset.Zero) continue
-            if (!shardParticipatesIn(id, first, last)) continue
+            val visible = origin != Offset.Zero && shardParticipatesIn(id, first, last)
+            if (!visible) continue
             val bottom = origin.y + shard.sizePx().height
-            if (bottom > tailBottom) {
-                tailBottom = bottom
-                tail = shard
-            }
+            if (bottom <= tailBottom) continue
+            tailBottom = bottom
+            tail = shard
         }
         val tailShard = tail ?: return null
         val tlr = tailShard.textLayoutResult
@@ -597,10 +593,9 @@ class SelectionController {
             val to = if (id == last.shard) last.charOffset.coerceIn(0, laidOutLen) else laidOutLen
             val lo = minOf(from, to)
             val hi = maxOf(from, to)
-            if (hi <= lo) continue
-            val origin = shard.positionInWindow()
             // positionInWindow 在 LayoutCoordinates 分离后回落
             // Offset.Zero——跳过那些，反正也画不出来。
+            val origin = if (hi > lo) shard.positionInWindow() else Offset.Zero
             if (origin == Offset.Zero) continue
             val startBox = runCatching {
                 tlr.getBoundingBox(lo.coerceAtMost(laidOutLen - 1).coerceAtLeast(0))

@@ -205,6 +205,66 @@ fun KaTeXRenderView(
                         setBackgroundColor(android.graphics.Color.TRANSPARENT)
 
                         addJavascriptInterface(object {
+                            /** [GH#206] 钳制因子：边长顶与像素总量顶取更紧者。 */
+                            private fun captureScale(bitmapW: Int, bitmapH: Int): Float {
+                                val edgeScale = minOf(
+                                    1f,
+                                    MAX_BITMAP_EDGE_PX.toFloat() / bitmapW,
+                                    MAX_BITMAP_EDGE_PX.toFloat() / bitmapH,
+                                )
+                                val totalPx = bitmapW.toLong() * bitmapH
+                                val pixelScale =
+                                    if (totalPx > MAX_BITMAP_PIXELS) {
+                                        kotlin.math.sqrt(MAX_BITMAP_PIXELS.toDouble() / totalPx).toFloat()
+                                    } else 1f
+                                return minOf(edgeScale, pixelScale)
+                            }
+
+                            /** 按钳制因子截屏并写缓存/组合态。 */
+                            private fun captureNow(
+                                cssW: Int,
+                                cssH: Int,
+                                bitmapW: Int,
+                                bitmapH: Int,
+                            ) {
+                                // [GH#206] 钳制捕获位图。bitmapW/H 此前无
+                                // 界——宽体展示式一条就分配数 MB NATIVE 堆。
+                                // WebView 保持完整布局尺寸（外层已设）所以
+                                // 公式布局不变；只有捕获位图按比例缩小、绝
+                                // 不裁剪，用清晰度换内存。
+                                val factor = captureScale(bitmapW, bitmapH)
+                                val capW = (bitmapW * factor).toInt().coerceAtLeast(1)
+                                val capH = (bitmapH * factor).toInt().coerceAtLeast(1)
+                                if (factor < 1f) {
+                                    AppLogger.info(
+                                        TAG,
+                                        "bitmap clamped ${bitmapW}x$bitmapH -> ${capW}x$capH " +
+                                            "(scale=$factor)",
+                                    )
+                                }
+                                val shot = Bitmap.createBitmap(capW, capH, Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(shot)
+                                if (factor < 1f) canvas.scale(factor, factor)
+                                draw(canvas)
+                                KaTeXRendererCache.cache.put(
+                                    key,
+                                    KaTeXRendererCache.CacheEntry(
+                                        // 记**实际**位图尺寸而非钳前请求
+                                        // ——`width`/`height` 描述位图物理像
+                                        // 素。显示尺寸用 cssWidth/cssHeight
+                                        // （未变），被钳的公式布局完全一致。
+                                        bitmap = shot,
+                                        width = capW,
+                                        height = capH,
+                                        cssWidth = cssW,
+                                        cssHeight = cssH,
+                                    ),
+                                )
+                                capturedCssWidth = cssW
+                                capturedCssHeight = cssH
+                                capturedBitmap = shot
+                            }
+
                             @JavascriptInterface
                             fun onRendered(width: Int, height: Int, error: String) {
                                 if (error.isNotEmpty()) {
@@ -226,60 +286,10 @@ fun KaTeXRenderView(
                                 post {
                                     layoutParams = ViewGroup.LayoutParams(bitmapW, bitmapH)
                                     requestLayout()
-                                    postDelayed({
-                                        // [GH#206] 钳制捕获位图。bitmapW/H
-                                        // 此前无界——宽体展示式一条就分配数
-                                        // MB NATIVE 堆。WebView 保持完整布局
-                                        // 尺寸（上面设的）所以公式布局不
-                                        // 变；只有捕获位图按比例缩小、绝不
-                                        // 裁剪，用清晰度换内存。
-                                        val edgeScale = minOf(
-                                            1f,
-                                            MAX_BITMAP_EDGE_PX.toFloat() / bitmapW,
-                                            MAX_BITMAP_EDGE_PX.toFloat() / bitmapH,
-                                        )
-                                        val pixelScale =
-                                            if (bitmapW.toLong() * bitmapH > MAX_BITMAP_PIXELS) {
-                                                kotlin.math.sqrt(
-                                                    MAX_BITMAP_PIXELS.toDouble() /
-                                                        (bitmapW.toDouble() * bitmapH),
-                                                ).toFloat()
-                                            } else {
-                                                1f
-                                            }
-                                        val capScale = minOf(edgeScale, pixelScale)
-                                        val capW = (bitmapW * capScale).toInt().coerceAtLeast(1)
-                                        val capH = (bitmapH * capScale).toInt().coerceAtLeast(1)
-                                        if (capScale < 1f) {
-                                            AppLogger.info(
-                                                TAG,
-                                                "bitmap clamped ${bitmapW}x$bitmapH -> ${capW}x$capH " +
-                                                    "(scale=$capScale)",
-                                            )
-                                        }
-                                        val bitmap = Bitmap.createBitmap(capW, capH, Bitmap.Config.ARGB_8888)
-                                        val canvas = android.graphics.Canvas(bitmap)
-                                        if (capScale < 1f) canvas.scale(capScale, capScale)
-                                        draw(canvas)
-                                        KaTeXRendererCache.cache.put(
-                                            key,
-                                            KaTeXRendererCache.CacheEntry(
-                                                // 记**实际**位图尺寸而非钳前
-                                                // 请求——`width`/`height` 描述
-                                                // 位图物理像素。显示尺寸用
-                                                // cssWidth/cssHeight（未变），
-                                                // 被钳的公式布局完全一致。
-                                                bitmap = bitmap,
-                                                width = capW,
-                                                height = capH,
-                                                cssWidth = width,
-                                                cssHeight = height,
-                                            ),
-                                        )
-                                        capturedCssWidth = width
-                                        capturedCssHeight = height
-                                        capturedBitmap = bitmap
-                                    }, 100)
+                                    postDelayed(
+                                        { captureNow(width, height, bitmapW, bitmapH) },
+                                        100,
+                                    )
                                 }
                             }
                         }, "AndroidBridge")

@@ -30,7 +30,10 @@ fun NavController.safeNavigate(
     builder: (NavOptionsBuilder.() -> Unit)? = null,
 ) {
     if (currentBackStackEntry?.lifecycle?.currentState != Lifecycle.State.RESUMED) return
-    if (builder == null) navigate(route) else navigate(route, builder)
+    when (builder) {
+        null -> navigate(route)
+        else -> navigate(route, builder)
+    }
 }
 
 fun NavController.safePopBackStack(): Boolean {
@@ -38,7 +41,8 @@ fun NavController.safePopBackStack(): Boolean {
     // RESUMED 太严——ModalBottomSheet / Dialog 把 chat 的 NavBackStackEntry
     // 压到 STARTED 时，返回键会变成只闪一下涟漪的空转。MIUI 反馈报告的
     // Bug 3 正是这个案例。
-    val state = currentBackStackEntry?.lifecycle?.currentState ?: return false
-    if (!state.isAtLeast(Lifecycle.State.STARTED)) return false
+    val state = currentBackStackEntry?.lifecycle?.currentState
+        ?.takeIf { it.isAtLeast(Lifecycle.State.STARTED) }
+        ?: return false
     return popBackStack()
 }

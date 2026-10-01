@@ -13,7 +13,9 @@ data class InputAttachment(
     val mimeType: String,
     val kind: Kind,
 ) {
-    enum class Kind { IMAGE, DOCUMENT }
+    /** 是否图片件（文档件走另一条预览/发送路径）。 */
+    val isImage: Boolean
+        get() = kind == Kind.IMAGE
 
-    val isImage: Boolean get() = kind == Kind.IMAGE
+    enum class Kind { IMAGE, DOCUMENT }
 }

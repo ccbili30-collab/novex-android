@@ -199,38 +199,41 @@ internal object KatexWebViewPool {
     @SuppressLint("SetJavaScriptEnabled")
     private fun createWebView(appContext: Context): WebView? {
         webView?.let { return it }
-        val wv = WebView(appContext).apply {
-            // 离屏布局——KaTeX 量公式需要真实的一帧。快照前按量得尺寸重排。
-            measure(
-                android.view.View.MeasureSpec.makeMeasureSpec(LAYOUT_PIXELS, android.view.View.MeasureSpec.EXACTLY),
-                android.view.View.MeasureSpec.makeMeasureSpec(LAYOUT_PIXELS, android.view.View.MeasureSpec.EXACTLY),
-            )
-            layout(0, 0, LAYOUT_PIXELS, LAYOUT_PIXELS)
-            // T208-6：强制软件层——硬件加速的 WebView 被 wv.draw() 画到软件
-            // Canvas 上会返回陈旧或全空像素：GPU 层的帧缓冲对软件回读不透
-            // 明。LAYER_TYPE_SOFTWARE 下 draw() 走真实显示列表、把像素画
-            // 进目标位图。（治的症状：每张捕获位图尺寸对、像素却是**上一
-            // 次**渲染的公式——积分格里冒 Σ、矩阵格的 P=[…] 丢了开头的
-            // mathbf 之类。）
-            setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
-            setBackgroundColor(Color.TRANSPARENT)
-            settings.javaScriptEnabled = true
-            settings.allowFileAccess = true
-            settings.cacheMode = WebSettings.LOAD_NO_CACHE
-            addJavascriptInterface(JsBridge { w, h, err ->
-                pendingReply?.complete(Triple(w, h, err))
-            }, "AndroidBridge")
-            webViewClient = object : WebViewClient() {
-                override fun onPageFinished(view: WebView?, url: String?) {
-                    super.onPageFinished(view, url)
-                    pageReady = true
-                    pageReadyLatch?.complete(Unit)
-                }
-            }
-            loadUrl(ASSET_HTML)
-        }
+        val wv = WebView(appContext)
+        configureOffscreen(wv)
         webView = wv
         return wv
+    }
+
+    /** 离屏布局 + 软件层 + JS 桥 + 就绪回调 + 装载 KaTeX 资产页。 */
+    private fun configureOffscreen(wv: WebView) {
+        // 离屏布局——KaTeX 量公式需要真实的一帧。快照前按量得尺寸重排。
+        val exactly = android.view.View.MeasureSpec.makeMeasureSpec(LAYOUT_PIXELS, android.view.View.MeasureSpec.EXACTLY)
+        wv.measure(exactly, exactly)
+        wv.layout(0, 0, LAYOUT_PIXELS, LAYOUT_PIXELS)
+        // T208-6：强制软件层——硬件加速的 WebView 被 wv.draw() 画到软件
+        // Canvas 上会返回陈旧或全空像素：GPU 层的帧缓冲对软件回读不透
+        // 明。LAYER_TYPE_SOFTWARE 下 draw() 走真实显示列表、把像素画
+        // 进目标位图。（治的症状：每张捕获位图尺寸对、像素却是**上一
+        // 次**渲染的公式——积分格里冒 Σ、矩阵格的 P=[…] 丢了开头的
+        // mathbf 之类。）
+        wv.setLayerType(android.view.View.LAYER_TYPE_SOFTWARE, null)
+        wv.setBackgroundColor(Color.TRANSPARENT)
+        wv.settings.javaScriptEnabled = true
+        wv.settings.allowFileAccess = true
+        wv.settings.cacheMode = WebSettings.LOAD_NO_CACHE
+        wv.addJavascriptInterface(
+            JsBridge { w, h, err -> pendingReply?.complete(Triple(w, h, err)) },
+            "AndroidBridge",
+        )
+        wv.webViewClient = object : WebViewClient() {
+            override fun onPageFinished(view: WebView?, url: String?) {
+                super.onPageFinished(view, url)
+                pageReady = true
+                pageReadyLatch?.complete(Unit)
+            }
+        }
+        wv.loadUrl(ASSET_HTML)
     }
 
     private fun snapshotFormula(wv: WebView, w: Int, h: Int): KatexRenderResult? {
@@ -248,33 +251,10 @@ internal object KatexWebViewPool {
             // 理像素的 CSS overflow-hidden 视口。
             val rawW = (w * density).toInt().coerceAtLeast(1)
             val rawH = (h * density).toInt().coerceAtLeast(1)
-
-            // [GH#206] 钳制快照。此前 rawW/rawH 直进 createBitmap、无上
-            // 限——宽展示式一条就能为数 MB NATIVE 堆。
-            //
-            // 缩**小**（绝不裁剪）：canvas 先按同因子缩放再画，整条公式仍
-            // 在，只是分辨率低了。`size` 照报 CSS 尺寸，调用方两种情况下
-            // 布局完全一致，变的只有清晰度。
-            val edgeScale = minOf(
-                1f,
-                MAX_BITMAP_EDGE_PX.toFloat() / rawW,
-                MAX_BITMAP_EDGE_PX.toFloat() / rawH,
-            )
-            val pixelScale = if (rawW.toLong() * rawH > MAX_BITMAP_PIXELS) {
-                kotlin.math.sqrt(MAX_BITMAP_PIXELS.toDouble() / (rawW.toDouble() * rawH)).toFloat()
-            } else {
-                1f
-            }
-            val scale = minOf(edgeScale, pixelScale)
-
-            val pxW = (rawW * scale).toInt().coerceAtLeast(1)
-            val pxH = (rawH * scale).toInt().coerceAtLeast(1)
+            val (pxW, pxH, scale) = clampedCaptureSize(rawW, rawH)
             if (scale < 1f) {
-                android.util.Log.i(
-                    TAG,
-                    "snapshot clamped ${rawW}x$rawH -> ${pxW}x$pxH (scale=$scale) " +
-                        "saved=${(rawW.toLong() * rawH - pxW.toLong() * pxH) * 4 / 1024}KB",
-                )
+                val savedKb = (rawW.toLong() * rawH - pxW.toLong() * pxH) * 4 / 1024
+                android.util.Log.i(TAG, "snapshot clamped ${rawW}x$rawH -> ${pxW}x$pxH (scale=$scale) saved=${savedKb}KB")
             }
             val bitmap = Bitmap.createBitmap(pxW, pxH, Bitmap.Config.ARGB_8888)
             val canvas = Canvas(bitmap)
@@ -285,6 +265,30 @@ internal object KatexWebViewPool {
             android.util.Log.w(TAG, "snapshot failed: ${e.message}")
             null
         }
+    }
+
+    /**
+     * [GH#206] 钳制快照尺寸。此前 rawW/rawH 直进 createBitmap、无上限——
+     * 宽展示式一条就能为数 MB NATIVE 堆。缩**小**（绝不裁剪）：canvas 先
+     * 按同因子缩放再画，整条公式仍在，只是分辨率低了。`size` 照报 CSS 尺
+     * 寸，调用方两种情况下布局完全一致，变的只有清晰度。
+     */
+    private fun clampedCaptureSize(rawW: Int, rawH: Int): Triple<Int, Int, Float> {
+        val edgeScale = minOf(
+            1f,
+            MAX_BITMAP_EDGE_PX.toFloat() / rawW,
+            MAX_BITMAP_EDGE_PX.toFloat() / rawH,
+        )
+        val totalPx = rawW.toLong() * rawH
+        val pixelScale =
+            if (totalPx > MAX_BITMAP_PIXELS) kotlin.math.sqrt(MAX_BITMAP_PIXELS.toDouble() / totalPx).toFloat()
+            else 1f
+        val factor = minOf(edgeScale, pixelScale)
+        return Triple(
+            (rawW * factor).toInt().coerceAtLeast(1),
+            (rawH * factor).toInt().coerceAtLeast(1),
+            factor,
+        )
     }
 
     private suspend fun awaitPageReady(): Boolean {

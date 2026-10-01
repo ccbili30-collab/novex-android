@@ -230,25 +230,41 @@ class FileMentionIndex(
             val (dir, depth) = pending.removeFirst()
             if (depth > maxDepth) continue
             val children = dir.listFiles() ?: continue
-            for (child in children) {
-                if (found.size >= budget) break
-                if (child.name.startsWith(".")) continue
-                if (child.isDirectory && child.name in SKIP_DIR_NAMES) continue
-                val relative = child.absolutePath.removePrefix(rootAbs).removePrefix("/")
-                if (relative.isEmpty()) continue
-                found += Entry(
-                    linuxPath = "$linuxRoot/$relative",
-                    scope = scope,
-                    mountName = mountName,
-                    modifiedAt = child.lastModified(),
-                    isDirectory = child.isDirectory,
-                )
-                if (child.isDirectory && depth + 1 <= maxDepth) {
-                    pending.addLast(child to depth + 1)
-                }
-            }
+            collectChildren(children, depth, maxDepth, budget, rootAbs, linuxRoot, scope, mountName, found, pending)
         }
         return found
+    }
+
+    /** 单层目录收集：预算内产出条目 + 深度限内的子目录入队下钻。 */
+    private fun collectChildren(
+        children: Array<File>,
+        depth: Int,
+        maxDepth: Int,
+        budget: Int,
+        rootAbs: String,
+        linuxRoot: String,
+        scope: Scope,
+        mountName: String?,
+        found: ArrayList<Entry>,
+        pending: ArrayDeque<Pair<File, Int>>,
+    ) {
+        for (child in children) {
+            if (found.size >= budget) return
+            val hidden = child.name.startsWith(".")
+            val skippedDir = child.isDirectory && child.name in SKIP_DIR_NAMES
+            if (hidden || skippedDir) continue
+            val relative = child.absolutePath.removePrefix(rootAbs).removePrefix("/")
+            if (relative.isEmpty()) continue
+            found += Entry(
+                linuxPath = "$linuxRoot/$relative",
+                scope = scope,
+                mountName = mountName,
+                modifiedAt = child.lastModified(),
+                isDirectory = child.isDirectory,
+            )
+            val mayDescend = child.isDirectory && depth + 1 <= maxDepth
+            if (mayDescend) pending.addLast(child to depth + 1)
+        }
     }
 
     /** 令牌双重校验后主线程落值：linuxPath 去重 + 默认序。 */
@@ -276,23 +292,20 @@ class FileMentionIndex(
         val now = System.currentTimeMillis()
         val recencyWindowMs = 56L * 24 * 60 * 60 * 1000 // 8 周 → 0..80
 
-        return pool.asSequence()
-            .map { it to nameMatchTier(it, q) }
-            .filter { it.second > 0 }
-            .map { (entry, tier) ->
-                tier + entry.scope.rankBoost +
-                    topLevelRootBonus(entry) +
-                    recencyBonus(entry, now, recencyWindowMs) to entry
-            }
-            .sortedWith(
-                compareByDescending<Pair<Int, Entry>> { it.first }
-                    .thenBy { it.second.scope.order }
-                    .thenByDescending { it.second.modifiedAt }
-                    .thenBy { it.second.linuxPath.length },
-            )
-            .take(limit)
-            .map { it.second }
-            .toList()
+        val scored = ArrayList<Pair<Int, Entry>>(pool.size)
+        for (entry in pool) {
+            val tier = nameMatchTier(entry, q)
+            if (tier == 0) continue
+            val secondary = entry.scope.rankBoost + topLevelRootBonus(entry) +
+                recencyBonus(entry, now, recencyWindowMs)
+            scored += (tier + secondary) to entry
+        }
+        val byRank = compareByDescending<Pair<Int, Entry>> { it.first }
+            // 并列裁决：先作用域优先、再新者、再短路径（更「近」的文件）。
+            .thenBy { it.second.scope.order }
+            .thenByDescending { it.second.modifiedAt }
+            .thenBy { it.second.linuxPath.length }
+        return scored.sortedWith(byRank).take(limit).map(Pair<Int, Entry>::second)
     }
 
     /** 名字匹配档：取适用的最强档，0 = 淘汰。 */

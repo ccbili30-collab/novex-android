@@ -41,7 +41,7 @@ interface LLMProvider {
         level: ThinkingLevel,
     ): ThinkingLevel {
         val ceiling = model.catalogMaxThinkingLevel
-        return if (ceiling.rank < level.rank) ceiling else level
+        return level.takeIf { it.rank <= ceiling.rank } ?: ceiling
     }
 
     /**
@@ -56,15 +56,12 @@ interface LLMProvider {
         imageParts: List<LLMMessage.ImagePart> = emptyList(),
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
-    ): LLMResponse = sendMessageClamped(
-        messages = messages,
-        systemPrompt = systemPrompt,
-        maxTokens = maxTokens,
-        temperature = temperature,
-        imageParts = imageParts,
-        tools = tools,
-        thinkingLevel = clampThinkingLevel(thinkingLevel),
-    )
+    ): LLMResponse {
+        val clamped = clampThinkingLevel(thinkingLevel)
+        return sendMessageClamped(
+            messages, systemPrompt, maxTokens, temperature, imageParts, tools, clamped,
+        )
+    }
 
     /**
      * [T-stream-stall-watchdog] 公共入口（流式）+[failOnStreamStall] 看门狗
@@ -80,15 +77,12 @@ interface LLMProvider {
         imageParts: List<LLMMessage.ImagePart> = emptyList(),
         tools: List<AgentToolDefinition> = emptyList(),
         thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
-    ): Flow<LLMStreamChunk> = streamMessageClamped(
-        messages = messages,
-        systemPrompt = systemPrompt,
-        maxTokens = maxTokens,
-        temperature = temperature,
-        imageParts = imageParts,
-        tools = tools,
-        thinkingLevel = clampThinkingLevel(thinkingLevel),
-    ).failOnStreamStall(name)
+    ): Flow<LLMStreamChunk> {
+        val clamped = clampThinkingLevel(thinkingLevel)
+        return streamMessageClamped(
+            messages, systemPrompt, maxTokens, temperature, imageParts, tools, clamped,
+        ).failOnStreamStall(name)
+    }
 
     /** 供应商实现面（非流式）——实现方覆写这个而非 [sendMessage]。 */
     suspend fun sendMessageClamped(
@@ -157,12 +151,16 @@ fun Flow<LLMStreamChunk>.failOnSilentEmptyCompletion(providerName: String): Flow
         emit(chunk)
     }
     if (witness.isEmptyRun()) {
-        android.util.Log.w(
-            "LLMProvider",
-            "$providerName: stream completed with no content and no finish reason — treating as transient upstream failure",
-        )
+        reportEmptyCompletion(providerName)
         throw LLMError.TransientError("Server returned an empty response (connection dropped or upstream error)")
     }
+}
+
+private fun reportEmptyCompletion(providerName: String) {
+    android.util.Log.w(
+        "LLMProvider",
+        "$providerName: stream completed with no content and no finish reason — treating as transient upstream failure",
+    )
 }
 
 /** 空流判定的私有记账：见过实质内容或停止原因之一即非空。 */
@@ -180,7 +178,7 @@ private class StreamWitness {
             is LLMStreamChunk.ToolInputDelta,
             is LLMStreamChunk.ToolCallComplete,
             is LLMStreamChunk.MediaAttachment -> noteContent(true)
-            is LLMStreamChunk.Finished -> if (chunk.stopReason != null) stopReasonSeen = true
+            is LLMStreamChunk.Finished -> stopReasonSeen = stopReasonSeen || chunk.stopReason != null
             else -> {}
         }
     }
@@ -188,6 +186,6 @@ private class StreamWitness {
     fun isEmptyRun(): Boolean = !contentSeen && !stopReasonSeen
 
     private fun noteContent(present: Boolean) {
-        if (present) contentSeen = true
+        contentSeen = contentSeen || present
     }
 }

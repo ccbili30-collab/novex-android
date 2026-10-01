@@ -62,14 +62,11 @@ class IosBounceOverscrollEffect(
         // 分量把橡皮筋松开，内层滚动器一粒都不见。对齐 UIScrollView 的
         // 「先放弹、再恢复滚动」。
         val stretched = offset.value
-        val unwinding = stretched != 0f && sign(delta.y) != sign(stretched)
-        val preConsumed = if (unwinding) {
-            val unwindBy = (-stretched).coerceAtMost(abs(delta.y)) * sign(delta.y)
-            scope.launch { offset.snapTo(stretched + unwindBy) }
-            Offset(0f, unwindBy)
-        } else {
-            Offset.Zero
-        }
+        val unwindBy = if (stretched != 0f && sign(delta.y) != sign(stretched)) {
+            (-stretched).coerceAtMost(abs(delta.y)) * sign(delta.y)
+        } else 0f
+        val preConsumed = Offset(0f, unwindBy)
+        if (unwindBy != 0f) scope.launch { offset.snapTo(stretched + unwindBy) }
 
         val unconsumed = delta - preConsumed
         val innerConsumed = performScroll(unconsumed)
@@ -77,8 +74,8 @@ class IosBounceOverscrollEffect(
 
         if (pastEdge.y != 0f) {
             // 拖过边了——上橡胶带。
-            val target = stretched + preConsumed.y + rubberBand(pastEdge.y, stretched + preConsumed.y)
-            scope.launch { offset.snapTo(target) }
+            val afterUnwind = stretched + unwindBy
+            scope.launch { offset.snapTo(afterUnwind + rubberBand(pastEdge.y, afterUnwind)) }
         }
 
         return preConsumed + innerConsumed
@@ -91,14 +88,11 @@ class IosBounceOverscrollEffect(
         val leftover = performFling(velocity)
         // iOS 弹感回弹：mediumBouncy + stiffnessLow ≈ 0.5 阻尼、缓慢回复力，
         // 产出 iOS 用户预期的可见过冲。
-        offset.animateTo(
-            targetValue = 0f,
-            animationSpec = spring(
-                dampingRatio = Spring.DampingRatioMediumBouncy,
-                stiffness = Spring.StiffnessLow,
-            ),
-            initialVelocity = leftover.y,
+        val bounceBack = spring<Float>(
+            dampingRatio = Spring.DampingRatioMediumBouncy,
+            stiffness = Spring.StiffnessLow,
         )
+        offset.animateTo(targetValue = 0f, animationSpec = bounceBack, initialVelocity = leftover.y)
     }
 
     /**
@@ -118,9 +112,9 @@ class IosBounceOverscrollEffect(
      */
     override val effectModifier: Modifier = Modifier.layout { measurable, constraints ->
         val placeable = measurable.measure(constraints)
-        layout(placeable.width, placeable.height) {
-            placeable.placeRelative(0, offset.value.toInt())
-        }
+        val laidWidth = placeable.width
+        val laidHeight = placeable.height
+        layout(laidWidth, laidHeight) { placeable.placeRelative(0, offset.value.toInt()) }
     }
 }
 

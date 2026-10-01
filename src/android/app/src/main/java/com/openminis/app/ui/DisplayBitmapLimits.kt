@@ -52,7 +52,8 @@ object DisplayBitmapLimits {
      * Coil 只向下缩、绝不放大，常规尺寸图片（绝大多数）解码与从前完全一
      * 样、渲染不变；受影响的只有本会越界的图。
      */
-    fun ImageRequest.Builder.limitDisplaySize(): ImageRequest.Builder =
-        size(MAX_DISPLAY_EDGE_PX, MAX_DISPLAY_EDGE_PX)
-            .precision(Precision.INEXACT)
+    fun ImageRequest.Builder.limitDisplaySize(): ImageRequest.Builder {
+        val bounded = size(MAX_DISPLAY_EDGE_PX, MAX_DISPLAY_EDGE_PX)
+        return bounded.precision(Precision.INEXACT)
+    }
 }

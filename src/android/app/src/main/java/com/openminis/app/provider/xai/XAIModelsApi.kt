@@ -20,9 +20,10 @@ object XAIModelsApi {
     private const val TAG = "XAIModelsApi"
 
     /** /v1/models 不可达或不可信时的静态回落。 */
-    fun fetchModelsOAuth(): List<LLMModel> {
-        val models = LLMModel.allXAI
-        AppLogger.info(TAG, "xAI OAuth model list (${models.size} models): ${models.joinToString { it.id }}")
-        return ModelsDevApi.enrichModels(models)
-    }
+    fun fetchModelsOAuth(): List<LLMModel> =
+        LLMModel.allXAI
+            .also { roster ->
+                AppLogger.info(TAG, "xAI OAuth model list (${roster.size} models): ${roster.joinToString { it.id }}")
+            }
+            .let(ModelsDevApi::enrichModels)
 }
