@@ -1,139 +1,56 @@
 package com.openminis.app.ui.chat
 
-// [T-android-split-chat] @-mention picker methods extracted from ChatViewModel
-// as top-level extension functions (call syntax unchanged). The 5 mention
-// state fields they touch were flipped private->internal. Verbatim logic.
-
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
-import android.net.Uri
 import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
-import androidx.compose.foundation.lazy.LazyListState
-import com.openminis.app.agent.Level
-import com.openminis.app.agent.ToolLoopDetector
-import novex.android.data.chat.MessageRow
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Extension
-import com.openminis.app.data.BPETokenizer
-import com.openminis.app.data.ContextOffload
-import com.openminis.app.data.ContextPolicy
-import com.openminis.app.logging.AppLogger
 import com.openminis.app.data.FileMentionIndex
-import novex.android.data.chat.CompactMarkerRow
-import novex.android.data.model.AgentContentPart
-import novex.android.data.model.AgentToolDefinition
-import novex.android.data.model.LLMMessage
-import novex.android.data.model.LLMModel
-import novex.android.data.model.LLMStreamChunk
-import novex.android.data.model.LLMUsage
-import novex.android.data.model.ModelGroup
-import novex.android.data.model.ThinkingLevel
-import com.openminis.app.R
-import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.data.repository.MemoryRepository
-import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.provider.ImageBudget
-import com.openminis.app.provider.LLMProvider
-import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.tools.AgentTools
-import com.openminis.app.tools.FileEditTool
-import com.openminis.app.tools.FileReadTool
-import com.openminis.app.tools.FileWriteTool
-import com.openminis.app.tools.MemoryTools
-import com.openminis.app.tools.ReadImageTool
-import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.service.SessionActivityTracker
-import com.openminis.app.service.SessionConcurrencyManager
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
-import org.json.JSONObject
-import java.io.ByteArrayOutputStream
+
+// @-mention 面板的 ViewModel 扩展：锚点探测、开合、键盘导航、回填。
+// 兼容半角 '@' 与全角 '＠'（CJK 输入法），与斜杠命令收 '／' 同理。
+
+/** 光标若落在 `@<token>` 内返回 `@` 的下标，否则 -1。`@` 前必须是行首或空白。 */
+private fun findMentionAnchor(text: String, caret: Int): Int {
+    var i = caret.coerceIn(0, text.length)
+    while (i > 0) {
+        val at = i - 1
+        when {
+            text[at].isWhitespace() -> return -1
+            text[at] == '@' || text[at] == '＠' ->
+                // 邮箱 foo@bar.com 不触发：@ 前要有空白或位于行首。
+                return if (at == 0 || text[at - 1].isWhitespace()) at else -1
+        }
+        i = at
+    }
+    return -1
+}
 
 /**
- * Inspect the input + caret position; if the caret sits inside an
- * `@<token>` (preceded by start-of-text or whitespace, no whitespace
- * between `@` and caret) open the mention picker and refresh the
- * filter. Otherwise close it. Mirrors iOS
- * [AIChatViewModel.updateMentionMenuState].
- *
- * Accepts both ASCII `@` and full-width `＠` (U+FF20) so CJK IMEs
- * substituting the full-width form still trigger the picker — same
- * convention as slash commands accepting `／`.
+ * 输入/光标变化时刷新 mention 面板状态：光标落在 `@<token>` 内则开面板
+ * 并更新过滤词，否则关面板。斜杠面板优先级更高（两者互斥）。
  */
 internal fun ChatViewModel.updateMentionMenuState(text: String, caret: Int) {
-    // The slash and mention pickers are mutually exclusive (iOS does
-    // the same). Slash takes priority.
     if (_showSlashMenu.value) {
         if (_showMentionMenu.value) dismissMentionMenu()
         return
     }
-    val safeCaret = caret.coerceIn(0, text.length)
-    // Walk back from caret to find an `@` that opens the active token.
-    var anchor = -1
-    var i = safeCaret
-    while (i > 0) {
-        val prev = i - 1
-        val ch = text[prev]
-        if (ch.isWhitespace()) break
-        if (ch == '@' || ch == '＠') {
-            // Require start-of-text or whitespace before `@` so emails
-            // ("foo@bar.com") don't pop the menu.
-            if (prev == 0 || text[prev - 1].isWhitespace()) {
-                anchor = prev
-            }
-            break
-        }
-        i = prev
-    }
+    val anchor = findMentionAnchor(text, caret)
     if (anchor < 0) {
         if (_showMentionMenu.value) dismissMentionMenu()
         return
     }
-    val filter = text.substring(anchor + 1, safeCaret)
+
+    val filter = text.substring(anchor + 1, caret.coerceIn(0, text.length))
     _mentionAnchor.value = anchor
     _mentionFilter.value = filter
-    if (!_showMentionMenu.value) {
-        _showMentionMenu.value = true
-        // Mirror iOS: pre-select row 0 so a hardware-keyboard Return
-        // commits the top match without an extra Down press.
-        _mentionSelectedIndex.value = 0
-        val sid = realSessionId.ifEmpty { sessionId }
-        if (sid.isNotEmpty()) fileMentionIndex.refreshIfNeeded(sid)
-        Log.i(ChatViewModel.TAG, "mention menu open anchor=$anchor filter=\"$filter\"")
-    } else {
-        // Filter changed while open — clamp the highlight back into range
-        // so it never points past the end of a shrunk filtered list.
-        // Async: the next combine emission for [mentionEntries] will have
-        // the new size; we only need to keep the index sane in the
-        // interim. Concretely: if the user types past the only remaining
-        // match, the filter narrows and on the next list emission the
-        // composable's LaunchedEffect resets us back into bounds.
-        val current = _mentionSelectedIndex.value
-        if (current < 0) _mentionSelectedIndex.value = 0
+    if (_showMentionMenu.value) {
+        // 过滤词变化时把高亮钳回界内；列表实际收窄后由组合侧复位。
+        if (_mentionSelectedIndex.value < 0) _mentionSelectedIndex.value = 0
+        return
     }
+    _showMentionMenu.value = true
+    // 预选首行，硬件键盘回车可直接提交首个命中。
+    _mentionSelectedIndex.value = 0
+    val sid = realSessionId.ifEmpty { sessionId }
+    if (sid.isNotEmpty()) fileMentionIndex.refreshIfNeeded(sid)
+    Log.i(ChatViewModel.TAG, "mention menu open anchor=$anchor filter=\"$filter\"")
 }
 
 internal fun ChatViewModel.dismissMentionMenu() {
@@ -144,29 +61,20 @@ internal fun ChatViewModel.dismissMentionMenu() {
     _mentionSelectedIndex.value = -1
 }
 
-/**
- * T-at-filepicker-keyboard: hardware-keyboard navigation helpers. Wraparound
- * matches iOS so Up at row 0 lands at the last row and vice versa.
- */
-internal fun ChatViewModel.mentionMenuUp() {
-    val count = mentionEntries.value.size
-    if (count <= 0) return
-    val idx = _mentionSelectedIndex.value
-    _mentionSelectedIndex.value = if (idx <= 0) count - 1 else idx - 1
-}
+/** 键盘上下导航（到头回绕）。 */
+internal fun ChatViewModel.mentionMenuUp() = mentionMenuMove(-1)
 
-internal fun ChatViewModel.mentionMenuDown() {
+internal fun ChatViewModel.mentionMenuDown() = mentionMenuMove(+1)
+
+private fun ChatViewModel.mentionMenuMove(delta: Int) {
     val count = mentionEntries.value.size
     if (count <= 0) return
-    val idx = _mentionSelectedIndex.value
-    _mentionSelectedIndex.value = if (idx >= count - 1) 0 else idx + 1
+    _mentionSelectedIndex.value = Math.floorMod(_mentionSelectedIndex.value + delta, count)
 }
 
 /**
- * Commit the highlighted entry (or the first match) into [currentText],
- * returning the new (text, caret). Returns null when the menu has no
- * matches to commit, so the caller can fall through to its default
- * Return-key handler (e.g. send-on-enter).
+ * 把高亮项（或首个命中）回填进 [currentText]，返回新 (文本, 光标)。
+ * 面板无命中时返 null，调用方回落到自己的回车处理。
  */
 internal fun ChatViewModel.executeSelectedMention(
     currentText: String,
@@ -174,21 +82,13 @@ internal fun ChatViewModel.executeSelectedMention(
 ): Pair<String, Int>? {
     val entries = mentionEntries.value
     if (entries.isEmpty()) return null
-    val idx = _mentionSelectedIndex.value.let {
-        if (it in entries.indices) it else 0
-    }
-    return selectMention(entries[idx], currentText, currentCaret)
+    val index = _mentionSelectedIndex.value.takeIf { it in entries.indices } ?: 0
+    return selectMention(entries[index], currentText, currentCaret)
 }
 
 /**
- * Replace the active `@<token>` in [currentText] with `@<linuxPath> ` and
- * return the new text + caret position. The caller writes both back into
- * its TextFieldValue so the cursor lands right after the inserted space
- * — exactly mirroring iOS [AIChatViewModel.selectMention] which sets
- * `inputText` and `pendingCaret` in lockstep.
- *
- * If the menu is not open the call is a no-op and returns the original
- * (text, caret).
+ * 把 `@<token>` 换成 `@<linuxPath> ` 并返回新 (文本, 光标)，光标落在
+ * 插入的空格之后。面板未开时是 no-op，原样返回。
  */
 internal fun ChatViewModel.selectMention(
     entry: FileMentionIndex.Entry,
@@ -200,19 +100,13 @@ internal fun ChatViewModel.selectMention(
         dismissMentionMenu()
         return currentText to currentCaret
     }
-    // Replacement span: from `@` up to next whitespace (or end).
-    var endOffset = anchor + 1
-    while (endOffset < currentText.length && !currentText[endOffset].isWhitespace()) {
-        endOffset++
-    }
+    // token 终点：@ 之后到下一个空白或文本末。
+    val tokenEnd = generateSequence(anchor + 1) { it + 1 }
+        .firstOrNull { it >= currentText.length || currentText[it].isWhitespace() }
+        ?: currentText.length
     val replacement = "@${entry.linuxPath} "
-    val newText = currentText.substring(0, anchor) +
-        replacement +
-        currentText.substring(endOffset)
-    val newCaret = anchor + replacement.length
-    // Dismiss before announcing the new text so the consumer's
-    // updateMentionMenuState callback (fired on text change) doesn't
-    // re-open the menu against the inserted path.
+    val newText = currentText.replaceRange(anchor, tokenEnd, replacement)
+    // 先关面板再让文本回流，避免 updateMentionMenuState 对插入的路径重新开面板。
     dismissMentionMenu()
-    return newText to newCaret
+    return newText to anchor + replacement.length
 }

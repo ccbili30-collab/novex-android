@@ -1,9 +1,11 @@
 package com.openminis.app.ui.chat
 
+import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FastOutSlowInEasing
+import androidx.compose.animation.core.InfiniteTransition
 import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -11,13 +13,14 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Row
+import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.shape.CircleShape
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
@@ -30,82 +33,87 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.ui.theme.ChatColors
+import kotlinx.coroutines.delay
 
-// [T-android-split-chat] Self-contained "thinking / streaming" dot indicators
-// extracted verbatim from ChatScreen.kt. `internal` so the chat package can
-// still reference them. No logic change — code moved as-is.
+// 聊天里的等待动效：一枚 transition 驱动多枚点，每个调用方只描述点的长相。
 
+private class DotMotion(
+    val target: Float,
+    val stepDelay: Int,
+    val duration: Int,
+    val easing: Easing,
+)
+
+/** 驱动 [count] 枚点的错相位往复升降；[dot] 收到当前偏移量自绘。 */
+@Composable
+private fun AnimatedDots(
+    transition: InfiniteTransition,
+    count: Int,
+    motion: DotMotion,
+    dot: @Composable RowScope.(index: Int, lift: Float) -> Unit,
+) {
+    Row {
+        repeat(count) { i ->
+            val lift by transition.animateFloat(
+                initialValue = 0f,
+                targetValue = motion.target,
+                animationSpec = infiniteRepeatable(
+                    animation = tween(motion.duration, delayMillis = i * motion.stepDelay, easing = motion.easing),
+                    repeatMode = RepeatMode.Reverse,
+                ),
+                label = "dot_lift_$i",
+            )
+            dot(i, lift)
+        }
+    }
+}
+
+/** 三枚圆点依次起伏（工具卡上的「执行中」标志）。 */
 @Composable
 internal fun BouncingDots(color: Color) {
-    val infiniteTransition = rememberInfiniteTransition(label = "bounce")
-    Row(horizontalArrangement = Arrangement.spacedBy(2.dp)) {
-        repeat(3) { i ->
-            val offset by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = -2f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(350, delayMillis = i * 120),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "dot_$i",
-            )
-            Box(
-                modifier = Modifier
-                    .size(4.dp)
-                    .padding(top = (-offset).dp.coerceAtLeast(0.dp))
-                    .background(color, CircleShape),
-            )
-        }
+    AnimatedDots(
+        transition = rememberInfiniteTransition(label = "dots"),
+        count = 3,
+        motion = DotMotion(target = -2f, stepDelay = 120, duration = 350, easing = LinearEasing),
+    ) { _, lift ->
+        Box(
+            Modifier
+                .size(4.dp)
+                .padding(top = (-lift).dp.coerceAtLeast(0.dp))
+                .background(color, CircleShape),
+        )
     }
 }
 
-// iOS-style streaming "..." after tool title — 3 dots bouncing inline with text
+/** 跟在文字后面的行内跳动 "."（流式输出中）。 */
 @Composable
 internal fun StreamingDotsText() {
-    val infiniteTransition = rememberInfiniteTransition(label = "streamDots")
-    Row {
-        repeat(3) { i ->
-            val offset by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = -3f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(350, delayMillis = i * 120, easing = FastOutSlowInEasing),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "sdot_$i",
-            )
-            Text(
-                text = ".",
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
-                modifier = Modifier.offset(y = offset.dp),
-            )
-        }
+    AnimatedDots(
+        transition = rememberInfiniteTransition(label = "stream"),
+        count = 3,
+        motion = DotMotion(target = -3f, stepDelay = 120, duration = 350, easing = FastOutSlowInEasing),
+    ) { _, lift ->
+        DotGlyph(lift, fontSize = 13.sp, weight = FontWeight.Medium, color = ChatColors.primaryText, useOffset = true)
     }
 }
 
-// ─── Typing Indicator (three dots pulsing) ────────────────────────────────────
+// ── 等待提示 ────────────────────────────────────────────────────────────────
 
 /**
- * [T-stream-stall-watchdog] Epoch millis of the in-flight request whose FIRST
- * stream chunk has not arrived yet; null when not waiting. Provided by
- * ChatScreen from ChatViewModel.streamAwaitingSince and read by
- * [TypingIndicator] so the "thinking…" dots never sit silent for minutes
- * without telling the user how long the connection has been quiet
- * (conversation-f899bf05: 51-minute hole with zero feedback).
+ * 首个流式分片尚未到达的请求的开始时间（epoch ms）；null = 没有在等。
+ * 由 ChatScreen 从 ChatViewModel.streamAwaitingSince 喂进来，让
+ * "正在想" 不会在连接静默时一句反馈都没有。
  */
 internal val LocalStreamAwaitingSince = compositionLocalOf<Long?> { null }
 
 /**
- * [T-stream-stall-watchdog] Wait-time hint text for [TypingIndicator].
- * null = don't render yet (first 3 s are normal latency, no hint); under a
- * minute = plain seconds; at/over a minute the copy adds the auto-reconnect
- * note so the user knows the 5-minute stall watchdog is armed.
+ * 等待时长提示文案：3 秒内算正常延迟不显示；一分钟内只报秒数；满一分钟
+ * 追加"卡住将自动重连"，告诉用户看门狗已在看着。
  */
 internal fun streamAwaitingHintText(seconds: Long): String? = when {
     seconds < 3 -> null
@@ -114,64 +122,53 @@ internal fun streamAwaitingHintText(seconds: Long): String? = when {
 }
 
 @Composable
+private fun DotGlyph(lift: Float, fontSize: TextUnit, weight: FontWeight, color: Color, useOffset: Boolean) {
+    Text(
+        ".",
+        fontSize = fontSize,
+        fontWeight = weight,
+        color = color,
+        modifier = if (useOffset) Modifier.offset(y = lift.dp)
+        else Modifier.graphicsLayer { translationY = lift },
+    )
+}
+
+@Composable
 internal fun TypingIndicator() {
-    val infiniteTransition = rememberInfiniteTransition(label = "typing")
-    // Live Soul name → "<custom name> is thinking…" when the user renamed
-    // the assistant in Soul settings. SoulStore.cachedMetadata is a StateFlow
-    // that's updated on save (SoulSettingsScreen) and at app start
-    // (MinisApp.onCreate via refreshCache); collectAsState makes Compose
-    // recompose the indicator immediately when it changes.
+    // Soul 改名后读 cachedMetadata（保存即更新），指示器立刻换名。
     val soulMeta by com.openminis.app.agent.SoulStore.cachedMetadata.collectAsState()
     val soulName = soulMeta.name.trim().ifEmpty { "Nova" }
-    // [T-stream-stall-watchdog] Elapsed-seconds ticker while awaiting the
-    // first chunk; recomposes at most once per second. elapsedTick only
-    // drives recomposition — the age itself is computed from the wall clock
-    // on each recomposition.
+
+    // 等待秒数每秒重计一次；无等待时不启动 ticker。
     val awaitingSince = LocalStreamAwaitingSince.current
-    var elapsedTick by remember(awaitingSince) { mutableLongStateOf(0L) }
-    androidx.compose.runtime.LaunchedEffect(awaitingSince) {
+    var tick by remember(awaitingSince) { mutableLongStateOf(0L) }
+    LaunchedEffect(awaitingSince) {
         while (awaitingSince != null) {
-            kotlinx.coroutines.delay(1_000)
-            elapsedTick++
+            delay(1_000)
+            tick++
         }
     }
-    val awaitingSeconds = awaitingSince?.let { (System.currentTimeMillis() - it) / 1000 }
+    val waitedSeconds = awaitingSince?.let { (System.currentTimeMillis() - it) / 1000 }
 
     Row(
-        modifier = Modifier.padding(top = 2.dp, bottom = 8.dp),
+        Modifier.padding(top = 2.dp, bottom = 8.dp),
         verticalAlignment = Alignment.Bottom,
     ) {
         Text(
-            text = stringResource(R.string.chat_typing_indicator, soulName),
+            stringResource(R.string.chat_typing_indicator, soulName),
             fontSize = 15.sp,
             color = ChatColors.tertiaryText,
         )
-        // Animated bouncing dots
-        val dots = listOf(".", ".", ".")
-        dots.forEachIndexed { index, dot ->
-            val offsetY by infiniteTransition.animateFloat(
-                initialValue = 0f,
-                targetValue = -6f,
-                animationSpec = infiniteRepeatable(
-                    animation = tween(400, delayMillis = index * 150, easing = LinearEasing),
-                    repeatMode = RepeatMode.Reverse,
-                ),
-                label = "dot_bounce_$index",
-            )
-            Text(
-                text = dot,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.Bold,
-                color = ChatColors.tertiaryText,
-                modifier = Modifier.graphicsLayer { translationY = offsetY },
-            )
+        AnimatedDots(
+            transition = rememberInfiniteTransition(label = "typing"),
+            count = 3,
+            motion = DotMotion(target = -6f, stepDelay = 150, duration = 400, easing = LinearEasing),
+        ) { _, lift ->
+            DotGlyph(lift, fontSize = 15.sp, weight = FontWeight.Bold, color = ChatColors.tertiaryText, useOffset = false)
         }
-        // [T-stream-stall-watchdog] Wait-time hint next to the dots — copy
-        // thresholds in [streamAwaitingHintText] (3 s grace, 60 s adds the
-        // auto-reconnect note so a dead relay reads as "armed", not "frozen").
-        streamAwaitingHintText(awaitingSeconds ?: -1)?.let { hint ->
+        streamAwaitingHintText(waitedSeconds ?: -1)?.let { hint ->
             Text(
-                text = hint,
+                hint,
                 fontSize = 13.sp,
                 color = ChatColors.tertiaryText,
                 modifier = Modifier.padding(start = 8.dp, bottom = 1.dp),

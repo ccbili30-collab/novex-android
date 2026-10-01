@@ -12,16 +12,12 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
 import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
@@ -32,30 +28,61 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.tools.isImageGenerationEntry
-import com.openminis.app.ui.components.modelEntryPickerItems
 import com.openminis.app.ui.components.MinisButton
 import com.openminis.app.ui.components.MinisTextButton
+import com.openminis.app.ui.components.modelEntryPickerItems
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
+import novex.android.ui.Scaffold
+import novex.android.ui.TopAppBar
 
 /**
- * T185 — full-screen picker for adding model entries to the agent-loop
- * usable set. Replaces the T182 ModalBottomSheet with the same
- * Scaffold + sectioned multi-select shape `AddModelsToGroupScreen` uses,
- * via the shared [modelEntryPickerItems] in `ui/components/`. Mirrors
- * iOS `AddAgentLoopModelsSheet` (which is a NavigationStack-wrapped
- * sheet content — same sectioned-list visual we land here).
- *
- * Multi-select with a confirm button in the top bar (vs the pre-T185
- * tap-and-add-immediately bottom sheet) so a user adding 5 models from
- * the same provider doesn't bounce in and out of the picker.
+ * 多选挑选页骨架（Agent 循环添加页 + 模型组添加页共用）：
+ * 顶栏 = 返回 + 取消 + 「添加 N」，主体留给各页自己填。
  */
 @OptIn(ExperimentalMaterial3Api::class)
+@Composable
+internal fun AgentLoopPickerScaffold(
+    titleRes: Int,
+    confirmCount: Int,
+    onBack: () -> Unit,
+    onConfirm: () -> Unit,
+    body: @Composable (padding: androidx.compose.foundation.layout.PaddingValues) -> Unit,
+) {
+    Scaffold(
+        topBar = {
+            TopAppBar(
+                title = { Text(stringResource(titleRes), fontWeight = FontWeight.SemiBold) },
+                navigationIcon = {
+                    IconButton(onClick = onBack) {
+                        Icon(NovexIcons.ArrowBack, stringResource(R.string.model_group_detail_back))
+                    }
+                },
+                actions = {
+                    MinisTextButton(onClick = onBack) { Text(stringResource(R.string.common_cancel)) }
+                    MinisButton(
+                        onClick = onConfirm,
+                        enabled = confirmCount > 0,
+                        modifier = Modifier.padding(end = 8.dp),
+                    ) {
+                        Text(stringResource(R.string.add_models_to_group_add_count, confirmCount))
+                    }
+                },
+                colors = TopAppBarDefaults.topAppBarColors(containerColor = NovexColors.Background),
+            )
+        },
+        containerColor = NovexColors.Background,
+    ) { padding -> body(padding) }
+}
+
+/** 往可用集加模型：多选 + 顶栏确认（不再点一个弹一次）。 */
 @Composable
 fun AddAgentLoopModelsScreen(
     providerRepository: ProviderRepository,
@@ -63,17 +90,14 @@ fun AddAgentLoopModelsScreen(
 ) {
     val config by providerRepository.config.collectAsState()
 
-    val pinnedEntries = config.agentLoopModelEntryIds.toSet()
-    // Skip entries already reachable through a pinned group — adding a
-    // direct pin on top of group membership would be a no-op for the
-    // resolved usable set and just clutters the section UI.
-    val groupBackedEntries: Set<String> = config.agentLoopGroupIds
+    val pinned = config.agentLoopModelEntryIds.toSet()
+    // 已被置顶组覆盖的条目不再直钉——对 resolved 集是空操作，只会弄脏界面。
+    val groupBacked: Set<String> = config.agentLoopGroupIds
         .mapNotNull { gid -> config.modelGroups.find { it.id == gid } }
         .flatMap { it.memberEntryIds }
         .toSet()
-    val availableEntries = config.modelEntries.filter {
-        !it.isHidden && !isImageGenerationEntry(it) &&
-            it.id !in pinnedEntries && it.id !in groupBackedEntries
+    val available = config.modelEntries.filter {
+        !it.isHidden && !isImageGenerationEntry(it) && it.id !in pinned && it.id !in groupBacked
     }
 
     val searchQuery = remember { mutableStateOf("") }
@@ -82,59 +106,21 @@ fun AddAgentLoopModelsScreen(
         mutableStateOf(config.instances.map { it.id }.toSet())
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.agent_loop_section_add_models_title),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            novex.android.ui.NovexIcons.ArrowBack,
-                            contentDescription = stringResource(R.string.model_group_detail_back),
-                        )
-                    }
-                },
-                actions = {
-                    MinisTextButton(onClick = onBack) { Text(stringResource(R.string.common_cancel)) }
-                    MinisButton(
-                        onClick = {
-                            // Add in stable order so the section renders
-                            // pinned items in the order the user saw them
-                            // in the picker, not insertion-set order.
-                            val orderedToAdd = availableEntries
-                                .map { it.id }
-                                .filter { it in selectedIds }
-                            for (id in orderedToAdd) {
-                                providerRepository.addAgentLoopEntry(id)
-                            }
-                            onBack()
-                        },
-                        enabled = selectedIds.isNotEmpty(),
-                        modifier = Modifier.padding(end = 8.dp),
-                    ) {
-                        Text(stringResource(R.string.add_models_to_group_add_count, selectedIds.size))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+    AgentLoopPickerScaffold(
+        titleRes = R.string.agent_loop_section_add_models_title,
+        confirmCount = selectedIds.size,
+        onBack = onBack,
+        onConfirm = {
+            // 按列表顺序加，置顶区呈现的顺序就是用户在 picker 里看到的顺序。
+            available.map { it.id }.filter { it in selectedIds }
+                .forEach(providerRepository::addAgentLoopEntry)
+            onBack()
         },
-        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             modelEntryPickerItems(
                 instances = config.instances,
-                availableEntries = availableEntries,
+                availableEntries = available,
                 selectedIds = selectedIds,
                 onToggleSelection = { id ->
                     selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
@@ -150,77 +136,32 @@ fun AddAgentLoopModelsScreen(
     }
 }
 
-/**
- * T185 — full-screen picker for adding model groups to the agent-loop
- * usable set. Groups don't have a per-provider grouping dimension, so
- * this screen is structurally simpler than the entries picker: a flat
- * card-style multi-select list of all groups not already pinned.
- * Visuals (selection circle, surfaceContainer card, divider treatment)
- * mirror the entries picker so both feel like one family.
- */
-@OptIn(ExperimentalMaterial3Api::class)
+/** 往可用集加模型组：平铺卡片式多选，没有按 Provider 分组的维度。 */
 @Composable
 fun AddAgentLoopGroupsScreen(
     providerRepository: ProviderRepository,
     onBack: () -> Unit,
 ) {
     val config by providerRepository.config.collectAsState()
-    val pinnedGroups = config.agentLoopGroupIds.toSet()
-    val available = remember(config, pinnedGroups) {
-        config.modelGroups.filter {
-            it.id !in pinnedGroups && it.id !in config.imageGenerationGroupIds
-        }
+    val pinned = config.agentLoopGroupIds.toSet()
+    val available = remember(config, pinned) {
+        config.modelGroups.filter { it.id !in pinned && it.id !in config.imageGenerationGroupIds }
     }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = {
-                    Text(
-                        stringResource(R.string.agent_loop_section_add_groups_title),
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(
-                            novex.android.ui.NovexIcons.ArrowBack,
-                            contentDescription = stringResource(R.string.model_group_detail_back),
-                        )
-                    }
-                },
-                actions = {
-                    MinisTextButton(onClick = onBack) { Text(stringResource(R.string.common_cancel)) }
-                    MinisButton(
-                        onClick = {
-                            // Same stable-order add policy as the entries
-                            // picker so the section ordering matches the
-                            // user's mental model.
-                            val orderedToAdd = available
-                                .map { it.id }
-                                .filter { it in selectedIds }
-                            for (id in orderedToAdd) {
-                                providerRepository.addAgentLoopGroup(id)
-                            }
-                            onBack()
-                        },
-                        enabled = selectedIds.isNotEmpty(),
-                        modifier = Modifier.padding(end = 8.dp),
-                    ) {
-                        Text(stringResource(R.string.add_models_to_group_add_count, selectedIds.size))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
-            )
+    AgentLoopPickerScaffold(
+        titleRes = R.string.agent_loop_section_add_groups_title,
+        confirmCount = selectedIds.size,
+        onBack = onBack,
+        onConfirm = {
+            available.map { it.id }.filter { it in selectedIds }
+                .forEach(providerRepository::addAgentLoopGroup)
+            onBack()
         },
-        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
         if (available.isEmpty()) {
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxSize()
                     .padding(padding)
                     .padding(16.dp),
@@ -228,89 +169,105 @@ fun AddAgentLoopGroupsScreen(
             ) {
                 Text(
                     stringResource(R.string.agent_loop_section_no_available_groups),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = NovexType.Body,
+                    color = NovexColors.SecondaryText,
                 )
             }
         } else {
-            LazyColumn(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding),
-            ) {
+            LazyColumn(Modifier.fillMaxSize().padding(padding)) {
                 item {
                     Column(
-                        modifier = Modifier
-                            .padding(horizontal = 16.dp, vertical = 16.dp)
-                            .background(
-                                MaterialTheme.colorScheme.surfaceContainer,
-                                RoundedCornerShape(12.dp),
-                            ),
+                        Modifier
+                            .padding(16.dp)
+                            .background(NovexColors.Surface, RoundedCornerShape(12.dp)),
                     ) {
-                        available.forEachIndexed { index, group ->
-                            val isSelected = group.id in selectedIds
-                            val rowShape = when {
-                                available.size == 1 -> RoundedCornerShape(12.dp)
-                                index == 0 -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
-                                index == available.size - 1 -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
-                                else -> RoundedCornerShape(0.dp)
-                            }
-                            // Compose a short member-name preview so the
-                            // user remembers what the group contains
-                            // without tapping into detail. Mirrors iOS
-                            // AddAgentLoopGroupsSheet preview row.
-                            val memberNames = group.memberEntryIds
-                                .mapNotNull { mid ->
-                                    config.modelEntries.find { it.id == mid }?.model?.displayName
-                                }
-                            val preview = when {
-                                memberNames.isEmpty() ->
-                                    stringResource(R.string.agent_loop_section_empty_group_subtitle)
-                                memberNames.size <= 3 -> memberNames.joinToString(", ")
-                                else -> memberNames.take(3).joinToString(", ") +
-                                    " +${memberNames.size - 3}"
-                            }
-                            Row(
-                                modifier = Modifier
-                                    .fillMaxWidth()
-                                    .clip(rowShape)
-                                    .clickable {
-                                        selectedIds = if (isSelected) selectedIds - group.id else selectedIds + group.id
-                                    }
-                                    .padding(horizontal = 16.dp, vertical = 13.dp),
-                                verticalAlignment = Alignment.CenterVertically,
-                            ) {
-                                Icon(
-                                    if (isSelected) novex.android.ui.NovexIcons.CheckCircle else novex.android.ui.NovexIcons.RadioButtonUnchecked,
-                                    contentDescription = null,
-                                    tint = if (isSelected) Color(0xFF007AFF)
-                                    else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.3f),
-                                    modifier = Modifier.size(20.dp),
-                                )
-                                Spacer(Modifier.width(10.dp))
-                                Column(modifier = Modifier.weight(1f)) {
-                                    Text(
-                                        group.name,
-                                        style = MaterialTheme.typography.bodyMedium,
-                                        fontWeight = FontWeight.Medium,
-                                    )
-                                    Text(
-                                        preview,
-                                        style = MaterialTheme.typography.labelSmall,
-                                        color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                                    )
-                                }
-                            }
-                            if (index < available.size - 1) {
+                        available.forEachIndexed { i, group ->
+                            AgentLoopGroupRow(
+                                name = group.name,
+                                preview = groupPreview(config, group.memberEntryIds),
+                                selected = group.id in selectedIds,
+                                position = RowPosition.of(i, available.size),
+                                onToggle = {
+                                    selectedIds =
+                                        if (group.id in selectedIds) selectedIds - group.id
+                                        else selectedIds + group.id
+                                },
+                            )
+                            if (i < available.lastIndex) {
                                 HorizontalDivider(
                                     modifier = Modifier.padding(start = 46.dp, end = 16.dp),
-                                    color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.3f),
+                                    color = NovexColors.Divider,
                                 )
                             }
                         }
                     }
                 }
             }
+        }
+    }
+}
+
+/** 组成员名预览：前 3 个名字，多出记 "+N"；空组给占位文案。 */
+@Composable
+private fun groupPreview(
+    config: novex.android.data.model.ProviderConfig,
+    memberIds: List<String>,
+): String {
+    val names = memberIds.mapNotNull { id ->
+        config.modelEntries.find { it.id == id }?.model?.displayName
+    }
+    return when {
+        names.isEmpty() -> stringResource(R.string.agent_loop_section_empty_group_subtitle)
+        names.size <= 3 -> names.joinToString(", ")
+        else -> names.take(3).joinToString(", ") + " +${names.size - 3}"
+    }
+}
+
+private enum class RowPosition {
+    Only, First, Middle, Last;
+
+    companion object {
+        fun of(index: Int, count: Int) = when {
+            count == 1 -> Only
+            index == 0 -> First
+            index == count - 1 -> Last
+            else -> Middle
+        }
+    }
+}
+
+@Composable
+private fun AgentLoopGroupRow(
+    name: String,
+    preview: String,
+    selected: Boolean,
+    position: RowPosition,
+    onToggle: () -> Unit,
+) {
+    val shape = when (position) {
+        RowPosition.Only -> RoundedCornerShape(12.dp)
+        RowPosition.First -> RoundedCornerShape(topStart = 12.dp, topEnd = 12.dp)
+        RowPosition.Last -> RoundedCornerShape(bottomStart = 12.dp, bottomEnd = 12.dp)
+        RowPosition.Middle -> RoundedCornerShape(0.dp)
+    }
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(shape)
+            .clickable(onClick = onToggle)
+            .padding(horizontal = 16.dp, vertical = 13.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(
+            if (selected) NovexIcons.CheckCircle else NovexIcons.RadioButtonUnchecked,
+            contentDescription = null,
+            tint = if (selected) NovexColors.Primary else NovexColors.TertiaryText,
+            modifier = Modifier.size(20.dp),
+        )
+        Spacer(Modifier.width(10.dp))
+        Column(Modifier.weight(1f)) {
+            Text(name, style = NovexType.ItemTitle, fontWeight = FontWeight.Medium)
+            Text(preview, style = NovexType.Metadata, color = NovexColors.TertiaryText)
         }
     }
 }

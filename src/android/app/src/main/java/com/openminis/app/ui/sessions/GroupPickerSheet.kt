@@ -1,7 +1,6 @@
 package com.openminis.app.ui.sessions
 
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -15,54 +14,49 @@ import androidx.compose.foundation.lazy.items
 import androidx.compose.material3.CircularProgressIndicator
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.stateDescription
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
-import novex.android.data.chat.SessionFolderRow
 import com.openminis.app.ui.components.MinisSmallButton
 import com.openminis.app.ui.components.SectionDesign
 import com.openminis.app.ui.components.SectionTextField
+import novex.android.data.chat.SessionFolderRow
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 
 /**
- * [T-android-session-grouping] What the user chose in the group picker.
- *
- * Ported from iOS `FolderPickerSheet.Choice`. Modelled as a sealed type rather
- * than a nullable folder id so "file into nothing" is a distinct, named
- * decision instead of an ambiguous null.
+ * 分组选择结果。「移出分组」是独立具名选择而非 null——归进空和没选是两回事。
  */
 sealed interface GroupChoice {
     data class Existing(val folderId: String) : GroupChoice
-
     data class Create(val name: String, val description: String?) : GroupChoice
 
-    /** "No Group" — detach the session(s) from whatever group they are in. */
+    /** 「不分组」——把会话从当前组摘出。 */
     data object RemoveFromGroup : GroupChoice
 }
 
 /**
- * The group picker. ONE sheet serves both the single-session context menu and
- * the multi-select toolbar, deliberately — iOS keeps them unified so the two
- * flows cannot drift apart, and the same applies here.
+ * 会话归组面板。单会话菜单和多选工具条共用同一张面板，两条入口不会漂移。
  *
- * @param sessionCount how many sessions are being filed; drives the title.
- * @param anyFiled true when at least ONE of them currently has a group. Gates
- *   the "No Group" row: offering it for an already-ungrouped session is a
- *   no-op control, which reads as broken. "Any" rather than "all" so a mixed
- *   multi-selection still gets the option.
+ * @param sessionCount 归档的会话数，决定标题。
+ * @param anyFiled 至少一个会话当前有组时才给「不分组」行——对本来就无组的
+ *   会话它是无效控件，摆出来像坏了。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -73,8 +67,6 @@ fun GroupPickerSheet(
     anyFiled: Boolean,
     onChoose: (GroupChoice) -> Unit,
     onDismiss: () -> Unit,
-    // [T-android-group-ai-suggest] AI Suggest wiring. Defaulted so the sheet
-    // still composes without it (previews / any future caller that has no VM).
     suggesting: Boolean = false,
     suggestFailed: Boolean = false,
     suggestion: SessionListViewModel.GroupSuggestion? = null,
@@ -84,24 +76,21 @@ fun GroupPickerSheet(
     var newName by remember { mutableStateOf("") }
     var newDesc by remember { mutableStateOf("") }
 
-    // A create suggestion PREFILLS the fields and waits for the user's Create
-    // tap — it never files anything on its own. Keyed on the suggestion so a
-    // re-run overwrites, while ordinary typing in between is left alone.
+    // Create 型建议只预填表单等用户点「创建」，绝不直接归档。
     val createSuggestion = suggestion as? SessionListViewModel.GroupSuggestion.Create
-    androidx.compose.runtime.LaunchedEffect(createSuggestion) {
-        if (createSuggestion != null) {
-            newName = createSuggestion.name
-            createSuggestion.description?.let { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) }
+    LaunchedEffect(createSuggestion) {
+        createSuggestion?.let {
+            newName = it.name
+            it.description?.let { d -> newDesc = d.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) }
         }
     }
 
     val trimmedName = newName.trim()
-    // Case- and whitespace-insensitive, so "Work" and "work " collide. Names
-    // are not unique in the schema, but silently minting a second identical
-    // group is never what the user meant — we offer the existing one instead.
+    // 大小写/空白不敏感查重：「Work」和「work 」撞名时不再造一个双胞胎组，
+    // 而是把同名组提示成捷径行。
     val duplicate = remember(trimmedName, folders) {
-        if (trimmedName.isEmpty()) null
-        else folders.firstOrNull { it.name.trim().equals(trimmedName, ignoreCase = true) }
+        trimmedName.takeIf { it.isNotEmpty() }
+            ?.let { n -> folders.firstOrNull { it.name.trim().equals(n, ignoreCase = true) } }
     }
 
     val title = when {
@@ -114,155 +103,58 @@ fun GroupPickerSheet(
     ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
         Column(Modifier.fillMaxWidth().padding(bottom = 24.dp)) {
             Text(
-                text = title,
-                style = MaterialTheme.typography.titleMedium,
+                title,
+                style = NovexType.PageTitle,
                 modifier = Modifier.padding(start = 20.dp, end = 20.dp, bottom = 12.dp),
             )
 
-            // ── Create a new group inline ──────────────────────────────────
-            SectionTextField(
-                value = newName,
-                onValueChange = { newName = it },
-                placeholder = stringResource(R.string.group_new_name_hint),
-                modifier = Modifier.padding(horizontal = 20.dp),
-                containerColor = SectionDesign.screenBackgroundColor(),
-            )
-            Spacer(Modifier.height(8.dp))
-            SectionTextField(
-                value = newDesc,
-                // Hard-cap at the storage limit as the user types, so the field
-                // can never hold text the repository would silently truncate.
-                onValueChange = { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
-                placeholder = stringResource(R.string.group_desc_hint),
-                modifier = Modifier.padding(horizontal = 20.dp),
-                containerColor = SectionDesign.screenBackgroundColor(),
+            NewGroupFields(
+                name = newName,
+                onNameChange = { newName = it },
+                desc = newDesc,
+                onDescChange = { newDesc = it.take(SessionFolderRow.DESCRIPTION_MAX_CHARS) },
             )
 
-            if (duplicate != null) {
-                // Not a hard block: the warning doubles as a shortcut into the
-                // group that already exists, which is what the user almost
-                // always wanted.
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onChoose(GroupChoice.Existing(duplicate.id)) }
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        novex.android.ui.NovexIcons.Warning,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.tertiary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Column {
-                        Text(
-                            stringResource(R.string.group_duplicate_exists, duplicate.name),
-                            style = MaterialTheme.typography.bodyMedium,
-                        )
-                        Text(
-                            stringResource(R.string.group_duplicate_hint),
-                            style = MaterialTheme.typography.bodySmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        )
-                    }
-                }
+            duplicate?.let { dup ->
+                HintRow(
+                    icon = NovexIcons.Warning,
+                    tint = NovexColors.Danger,
+                    title = stringResource(R.string.group_duplicate_exists, dup.name),
+                    subtitle = stringResource(R.string.group_duplicate_hint),
+                    onClick = { onChoose(GroupChoice.Existing(dup.id)) },
+                )
             }
 
-            // ── ✨ AI Suggest merge proposal ────────────────────────────────
-            // A merge is NOT prefilled into the fields (there is nothing to
-            // create), so it gets its own confirm row — one tap files into the
-            // proposed group, ignoring it costs nothing.
+            // Merge 型建议不经过表单（没有要建的东西），独立确认行一点即归档。
             (suggestion as? SessionListViewModel.GroupSuggestion.Merge)?.let { merge ->
-                Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .clickable { onChoose(GroupChoice.Existing(merge.folderId)) }
-                        .padding(horizontal = 20.dp, vertical = 10.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                ) {
-                    Icon(
-                        novex.android.ui.NovexIcons.AutoAwesome,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(Modifier.size(12.dp))
-                    Text(
-                        // Group name is user data — interpolated, not a key.
-                        stringResource(R.string.group_suggest_merge, merge.folderName),
-                        style = MaterialTheme.typography.bodyMedium,
-                    )
-                }
+                HintRow(
+                    icon = NovexIcons.AutoAwesome,
+                    tint = NovexColors.Primary,
+                    title = stringResource(R.string.group_suggest_merge, merge.folderName),
+                    onClick = { onChoose(GroupChoice.Existing(merge.folderId)) },
+                )
             }
 
-            // Bottom row of the create area: AI Suggest leading, Create
-            // trailing — same layout and same two independent tap targets as
-            // iOS FolderPickerSheet.
-            Row(
-                modifier = Modifier.fillMaxWidth().padding(horizontal = 20.dp, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                if (onSuggest != null) {
-                    Row(
-                        modifier = Modifier
-                            .clickable(enabled = !suggesting) { onSuggest() }
-                            .padding(vertical = 6.dp, horizontal = 4.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        if (suggesting) {
-                            CircularProgressIndicator(
-                                modifier = Modifier.size(16.dp),
-                                strokeWidth = 2.dp,
-                            )
-                        } else {
-                            Icon(
-                                novex.android.ui.NovexIcons.AutoAwesome,
-                                contentDescription = null,
-                                tint = MaterialTheme.colorScheme.primary,
-                                modifier = Modifier.size(18.dp),
-                            )
-                        }
-                        Spacer(Modifier.size(8.dp))
-                        Text(
-                            // Failure degrades to the manual flow (this sheet
-                            // already IS the manual flow) — the label just
-                            // invites a retry rather than blocking anything.
-                            stringResource(
-                                if (suggestFailed) R.string.group_suggest_failed
-                                else R.string.group_suggest,
-                            ),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.primary,
-                        )
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                MinisSmallButton(
-                    onClick = {
-                        onChoose(
-                            GroupChoice.Create(
-                                name = trimmedName,
-                                description = newDesc.trim().ifBlank { null },
-                            ),
-                        )
-                    },
-                    // Disabled on duplicate: the warning row above is the way
-                    // forward, so Create never produces a confusing twin.
-                    enabled = trimmedName.isNotEmpty() && duplicate == null,
-                ) { Text(stringResource(R.string.group_create)) }
-            }
+            CreateBar(
+                suggesting = suggesting,
+                suggestFailed = suggestFailed,
+                onSuggest = onSuggest,
+                createEnabled = trimmedName.isNotEmpty() && duplicate == null,
+                onCreate = {
+                    onChoose(
+                        GroupChoice.Create(
+                            name = trimmedName,
+                            description = newDesc.trim().ifBlank { null },
+                        ),
+                    )
+                },
+            )
 
-            // ── Existing groups ────────────────────────────────────────────
-            // "No Group" leads the list as its FIRST row (user request): it is
-            // a peer filing choice, not a destructive action, and trailing the
-            // whole group list buried it below the fold once the list grew.
             if (folders.isNotEmpty() || anyFiled) {
                 Text(
-                    text = stringResource(R.string.group_section_header),
-                    style = MaterialTheme.typography.labelMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    stringResource(R.string.group_section_header),
+                    style = NovexType.Metadata,
+                    color = NovexColors.SecondaryText,
                     modifier = Modifier.padding(start = 20.dp, top = 8.dp, bottom = 4.dp),
                 )
                 LazyColumn(Modifier.heightIn(max = 320.dp)) {
@@ -273,11 +165,9 @@ fun GroupPickerSheet(
                             GroupRow(
                                 title = label,
                                 subtitle = hint,
-                                icon = novex.android.ui.NovexIcons.FolderOff,
+                                icon = NovexIcons.FolderOff,
                                 onClick = { onChoose(GroupChoice.RemoveFromGroup) },
-                                // Merge the two lines for screen readers;
-                                // announced separately they read as unrelated
-                                // fragments.
+                                // 读屏时合并两行，分开播报会像两段无关碎片。
                                 modifier = Modifier.semantics(mergeDescendants = true) {
                                     contentDescription = label
                                     stateDescription = hint
@@ -288,13 +178,11 @@ fun GroupPickerSheet(
                     items(folders, key = { it.id }) { folder ->
                         val count = memberCounts[folder.id] ?: 0
                         GroupRow(
-                            // Group names are user data — rendered verbatim,
-                            // never through a string lookup.
                             title = folder.name,
                             subtitle = folder.description?.takeIf { it.isNotBlank() }
                                 ?: if (count > 0) stringResource(R.string.group_n_chats, count)
                                 else stringResource(R.string.group_empty),
-                            icon = novex.android.ui.NovexIcons.Folder,
+                            icon = NovexIcons.Folder,
                             onClick = { onChoose(GroupChoice.Existing(folder.id)) },
                         )
                     }
@@ -305,15 +193,117 @@ fun GroupPickerSheet(
 }
 
 @Composable
+private fun NewGroupFields(
+    name: String,
+    onNameChange: (String) -> Unit,
+    desc: String,
+    onDescChange: (String) -> Unit,
+) {
+    Column {
+        SectionTextField(
+            value = name,
+            onValueChange = onNameChange,
+            placeholder = stringResource(R.string.group_new_name_hint),
+            modifier = Modifier.padding(horizontal = 20.dp),
+            containerColor = SectionDesign.screenBackgroundColor(),
+        )
+        Spacer(Modifier.height(8.dp))
+        SectionTextField(
+            value = desc,
+            onValueChange = onDescChange,
+            placeholder = stringResource(R.string.group_desc_hint),
+            modifier = Modifier.padding(horizontal = 20.dp),
+            containerColor = SectionDesign.screenBackgroundColor(),
+        )
+    }
+}
+
+/** 提示型行（重名捷径 / 合并建议）：图标+主文案+可选副文案，整行可点。 */
+@Composable
+private fun HintRow(
+    icon: ImageVector,
+    tint: androidx.compose.ui.graphics.Color,
+    title: String,
+    subtitle: String? = null,
+    onClick: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(20.dp))
+        Spacer(Modifier.size(12.dp))
+        Column {
+            Text(title, style = NovexType.ItemTitle)
+            subtitle?.let {
+                Text(it, style = NovexType.Metadata, color = NovexColors.SecondaryText)
+            }
+        }
+    }
+}
+
+/** 底部行：AI 建议按钮在前，「创建」在后，两个独立点击区。 */
+@Composable
+private fun CreateBar(
+    suggesting: Boolean,
+    suggestFailed: Boolean,
+    onSuggest: (() -> Unit)?,
+    createEnabled: Boolean,
+    onCreate: () -> Unit,
+) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .padding(horizontal = 20.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        if (onSuggest != null) {
+            Row(
+                Modifier
+                    .clickable(enabled = !suggesting) { onSuggest() }
+                    .padding(vertical = 6.dp, horizontal = 4.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                if (suggesting) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
+                } else {
+                    Icon(
+                        NovexIcons.AutoAwesome,
+                        contentDescription = null,
+                        tint = NovexColors.Primary,
+                        modifier = Modifier.size(18.dp),
+                    )
+                }
+                Spacer(Modifier.size(8.dp))
+                Text(
+                    stringResource(
+                        if (suggestFailed) R.string.group_suggest_failed else R.string.group_suggest,
+                    ),
+                    style = NovexType.ItemTitle,
+                    color = NovexColors.Primary,
+                )
+            }
+        }
+        Spacer(Modifier.weight(1f))
+        MinisSmallButton(onClick = onCreate, enabled = createEnabled) {
+            Text(stringResource(R.string.group_create))
+        }
+    }
+}
+
+@Composable
 private fun GroupRow(
     title: String,
     subtitle: String,
-    icon: androidx.compose.ui.graphics.vector.ImageVector,
+    icon: ImageVector,
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
 ) {
     Row(
-        modifier = modifier
+        modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 20.dp, vertical = 12.dp),
@@ -322,17 +312,13 @@ private fun GroupRow(
         Icon(
             icon,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            tint = NovexColors.SecondaryText,
             modifier = Modifier.size(24.dp),
         )
         Spacer(Modifier.size(16.dp))
         Column(Modifier.fillMaxWidth()) {
-            Text(title, style = MaterialTheme.typography.bodyLarge)
-            Text(
-                subtitle,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(title, style = NovexType.ItemTitle)
+            Text(subtitle, style = NovexType.Metadata, color = NovexColors.SecondaryText)
         }
     }
 }

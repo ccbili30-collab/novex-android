@@ -13,10 +13,7 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.text.selection.SelectionContainer
 import androidx.compose.foundation.verticalScroll
-import novex.android.ui.AlertDialog
 import androidx.compose.material3.Icon
-import androidx.compose.material3.LocalTextStyle
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
@@ -24,33 +21,85 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
-import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.data.repository.MemoryRepository
-import com.openminis.app.ui.theme.ChatColors
 import com.openminis.app.ui.components.MinisTextButton
+import novex.android.ui.AlertDialog
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 
 /**
- * Stateless detail body composables used by [SessionMemorySheet] when a row
- * is tapped. The sheet swaps these in for the list view, swaps the header's
- * leading slot to a back-arrow, and (for write-detail) provides Edit / Save /
- * Revoke toolbar items in the trailing slot.
- *
- * All editing state lives in the parent (the sheet) so a single Save button
- * in the header can read the latest buffer without passing references around.
+ * 会话记忆面板的详情主体（无状态；编辑缓冲和保存按钮都由父级
+ * SessionMemorySheet 持有）。查看态等宽可选文本；编辑态 BasicTextField；
+ * 保存后底部弹一个"已保存"胶囊。
  */
 
-/**
- * Read-only / editable viewer for an auto-injected memory file (GLOBAL.md or
- * a daily log). Mirrors iOS `MemoryContentView`.
- *
- * When [isEditing] is true, [editedContent] is the current text and
- * [onEditedContentChange] is invoked on every keystroke. The parent owns
- * the buffer and renders the Save button.
- */
+private val MonoBody @Composable get() = NovexType.Metadata.copy(
+    fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
+    fontSize = 12.sp,
+    lineHeight = 18.sp,
+)
+
+/** 查看态：整屏可滚动的等宽文本。 */
+@Composable
+private fun MemoryTextPane(text: String, modifier: Modifier = Modifier) {
+    SelectionContainer(
+        modifier = modifier
+            .fillMaxSize()
+            .verticalScroll(rememberScrollState())
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+    ) {
+        Text(text.ifEmpty { "(empty)" }, style = MonoBody, color = NovexColors.Text)
+    }
+}
+
+/** 编辑态：等宽 BasicTextField，每次击键回写给父级缓冲。 */
+@Composable
+private fun MemoryEditPane(
+    value: String,
+    onValueChange: (String) -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    BasicTextField(
+        value = value,
+        onValueChange = onValueChange,
+        modifier = modifier
+            .fillMaxSize()
+            .padding(horizontal = 16.dp, vertical = 12.dp),
+        textStyle = MonoBody.copy(color = NovexColors.Text),
+        cursorBrush = SolidColor(NovexColors.Primary),
+    )
+}
+
+@Composable
+private fun SavedToast(modifier: Modifier = Modifier) {
+    Box(
+        modifier
+            .padding(bottom = 12.dp)
+            .background(NovexColors.Text, RoundedCornerShape(50))
+            .padding(horizontal = 14.dp, vertical = 6.dp),
+    ) {
+        Text(
+            stringResource(R.string.memory_save_toast),
+            style = NovexType.Metadata.copy(fontWeight = FontWeight.Medium),
+            color = NovexColors.Background,
+        )
+    }
+}
+
+@Composable
+private fun DetailFrame(showSavedToast: Boolean, body: @Composable () -> Unit) {
+    Box(Modifier.fillMaxSize()) {
+        body()
+        if (showSavedToast) SavedToast(Modifier.align(Alignment.BottomCenter))
+    }
+}
+
+/** GLOBAL.md / 日记类记忆文件：只读或整块编辑。 */
 @Composable
 fun MemoryFileViewerBody(
     initialContent: String,
@@ -59,69 +108,13 @@ fun MemoryFileViewerBody(
     onEditedContentChange: (String) -> Unit,
     showSavedToast: Boolean,
 ) {
-    Box(modifier = Modifier.fillMaxSize()) {
-        if (isEditing) {
-            BasicTextField(
-                value = editedContent,
-                onValueChange = onEditedContentChange,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                textStyle = LocalTextStyle.current.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = ChatColors.primaryText,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            )
-        } else {
-            SelectionContainer(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .verticalScroll(rememberScrollState())
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-            ) {
-                Text(
-                    text = initialContent.ifEmpty { "(empty)" },
-                    fontSize = 12.sp,
-                    fontFamily = FontFamily.Monospace,
-                    color = ChatColors.primaryText,
-                    lineHeight = 18.sp,
-                )
-            }
-        }
-
-        if (showSavedToast) SavedToast(modifier = Modifier.align(Alignment.BottomCenter))
+    DetailFrame(showSavedToast) {
+        if (isEditing) MemoryEditPane(editedContent, onEditedContentChange)
+        else MemoryTextPane(initialContent)
     }
 }
 
-@Composable
-private fun SavedToast(modifier: Modifier = Modifier) {
-    Box(
-        modifier = modifier
-            .padding(bottom = 12.dp)
-            .background(
-                color = MaterialTheme.colorScheme.inverseSurface,
-                shape = RoundedCornerShape(50),
-            )
-            .padding(horizontal = 14.dp, vertical = 6.dp),
-    ) {
-        Text(
-            text = stringResource(R.string.memory_save_toast),
-            color = MaterialTheme.colorScheme.inverseOnSurface,
-            fontSize = 12.sp,
-            fontWeight = FontWeight.Medium,
-        )
-    }
-}
-
-/**
- * Detail body for a memory_write op-log entry. Shows the original written
- * content plus the tool result in read mode; in edit mode swaps to a
- * BasicTextField over the written content. Mirrors iOS
- * `MemoryWriteDetailView`. Toolbar (Edit / Save / Revoke) is rendered by the
- * parent sheet.
- */
+/** memory_write 日志条目：写入内容 + 工具回执两段；编辑态只编辑写入内容。 */
 @Composable
 fun MemoryWriteDetailBody(
     record: MemoryToolRecord,
@@ -130,149 +123,95 @@ fun MemoryWriteDetailBody(
     onEditedContentChange: (String) -> Unit,
     showSavedToast: Boolean,
 ) {
-    val written = record.writtenContent ?: ""
-
-    Box(modifier = Modifier.fillMaxSize()) {
+    DetailFrame(showSavedToast) {
         if (isEditing) {
-            BasicTextField(
-                value = editedContent,
-                onValueChange = onEditedContentChange,
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(horizontal = 16.dp, vertical = 12.dp),
-                textStyle = LocalTextStyle.current.copy(
-                    fontFamily = FontFamily.Monospace,
-                    fontSize = 12.sp,
-                    color = ChatColors.primaryText,
-                ),
-                cursorBrush = SolidColor(MaterialTheme.colorScheme.primary),
-            )
+            MemoryEditPane(editedContent, onEditedContentChange)
         } else {
             Column(
-                modifier = Modifier
+                Modifier
                     .fillMaxSize()
                     .verticalScroll(rememberScrollState())
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                if (written.isNotEmpty()) {
-                    SectionHeader(text = stringResource(R.string.memory_section_written_content))
+                record.writtenContent?.takeIf { it.isNotEmpty() }?.let { written ->
+                    MemorySectionLabel(stringResource(R.string.memory_section_written_content))
                     SelectionContainer {
-                        Text(
-                            text = written,
-                            fontSize = 12.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = ChatColors.primaryText,
-                            lineHeight = 18.sp,
-                        )
+                        Text(written, style = MonoBody, color = NovexColors.Text)
                     }
                 }
-
-                SectionHeader(text = stringResource(R.string.memory_section_tool_result))
+                MemorySectionLabel(stringResource(R.string.memory_section_tool_result))
                 SelectionContainer {
-                    Text(
-                        text = record.output,
-                        fontSize = 12.sp,
-                        fontFamily = FontFamily.Monospace,
-                        color = ChatColors.secondaryText,
-                        lineHeight = 18.sp,
-                    )
+                    Text(record.output, style = MonoBody, color = NovexColors.SecondaryText)
                 }
             }
         }
-
-        if (showSavedToast) SavedToast(modifier = Modifier.align(Alignment.BottomCenter))
     }
 }
 
-/**
- * Detail body for a memory_get op-log entry. Mirrors iOS `MemoryGetDetailView`.
- */
+/** memory_get 日志条目：关键词行 + 结果文本。 */
 @Composable
 fun MemoryGetDetailBody(record: MemoryToolRecord) {
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxSize()
             .verticalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalArrangement = Arrangement.spacedBy(12.dp),
     ) {
-        val keywords = record.keywords
-        if (!keywords.isNullOrEmpty()) {
+        record.keywords?.takeIf { it.isNotEmpty() }?.let { keywords ->
             Row(
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = Arrangement.spacedBy(6.dp),
             ) {
                 Icon(
-                    imageVector = novex.android.ui.NovexIcons.Search,
+                    NovexIcons.Search,
                     contentDescription = null,
-                    tint = ChatColors.secondaryText,
+                    tint = NovexColors.SecondaryText,
                     modifier = Modifier.size(14.dp),
                 )
                 Text(
-                    text = keywords,
-                    fontSize = 13.sp,
-                    fontWeight = FontWeight.SemiBold,
-                    color = ChatColors.primaryText,
+                    keywords,
+                    style = NovexType.ItemTitle.copy(fontWeight = FontWeight.SemiBold),
+                    color = NovexColors.Text,
                 )
             }
         }
         SelectionContainer {
-            Text(
-                text = record.output,
-                fontSize = 12.sp,
-                fontFamily = FontFamily.Monospace,
-                color = ChatColors.primaryText,
-                lineHeight = 18.sp,
-            )
+            Text(record.output, style = MonoBody, color = NovexColors.Text)
         }
     }
 }
 
 @Composable
-private fun SectionHeader(text: String) {
+private fun MemorySectionLabel(text: String) {
     Text(
-        text = text.uppercase(),
-        fontSize = 11.sp,
-        fontWeight = FontWeight.Medium,
+        text.uppercase(),
+        style = NovexType.Metadata,
+        color = NovexColors.SecondaryText,
         letterSpacing = 0.5.sp,
-        color = ChatColors.secondaryText,
     )
 }
 
-/**
- * Confirmation dialog for revoking a memory_write entry. Wording matches iOS
- * `MemoryWriteDetailView` so users on both platforms see the same prompt.
- */
+/** 撤销一条 memory_write 的确认框。 */
 @Composable
-fun RevokeConfirmDialog(
-    onConfirm: () -> Unit,
-    onDismiss: () -> Unit,
-) {
+fun RevokeConfirmDialog(onConfirm: () -> Unit, onDismiss: () -> Unit) {
     AlertDialog(
         onDismissRequest = onDismiss,
         title = { Text(stringResource(R.string.memory_revoke_dialog_title)) },
         text = { Text(stringResource(R.string.memory_revoke_dialog_message)) },
         confirmButton = {
             MinisTextButton(onClick = onConfirm) {
-                Text(
-                    stringResource(R.string.memory_action_revoke),
-                    color = MaterialTheme.colorScheme.error,
-                )
+                Text(stringResource(R.string.memory_action_revoke), color = NovexColors.Danger)
             }
         },
         dismissButton = {
-            MinisTextButton(onClick = onDismiss) {
-                Text(stringResource(R.string.cancel))
-            }
+            MinisTextButton(onClick = onDismiss) { Text(stringResource(R.string.cancel)) }
         },
     )
 }
 
-/**
- * Result-of-mutation dialog: shows the success/not-found/I-O-error message
- * from [MemoryRepository.EntryMutationResult].
- */
+/** 撤销结果反馈（成功 / 找不到 / IO 错误）。 */
 @Composable
 fun MutationResultDialog(
     result: MemoryRepository.EntryMutationResult,
@@ -290,8 +229,6 @@ fun MutationResultDialog(
     AlertDialog(
         onDismissRequest = onDismiss,
         text = { Text(msg) },
-        confirmButton = {
-            MinisTextButton(onClick = onDismiss) { Text("OK") }
-        },
+        confirmButton = { MinisTextButton(onClick = onDismiss) { Text("OK") } },
     )
 }

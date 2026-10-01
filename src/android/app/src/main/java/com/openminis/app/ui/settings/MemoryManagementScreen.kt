@@ -1,32 +1,18 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.R
-import com.openminis.app.ui.components.MinisTextButton
-
-import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.shape.RoundedCornerShape
-import novex.android.ui.AlertDialog
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Scaffold
 import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,48 +21,41 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.text.style.TextOverflow
+import androidx.compose.ui.unit.dp
+import com.openminis.app.R
+import com.openminis.app.data.MemoryGlobalPrefs
 import com.openminis.app.data.repository.MemoryRepository
-import com.openminis.app.ui.components.DialogTextField
+import com.openminis.app.ui.components.MinisTextButton
+import com.openminis.app.ui.components.SectionDesign
+import novex.android.ui.AlertDialog
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 
 /**
- * Settings-level memory file management.
- * Lists GLOBAL.md + daily logs in grouped card style.
- * Tapping a file navigates to a full-page editor.
- * GLOBAL.md cannot be deleted.
- * Mirrors iOS MemoryManagementView.
+ * 设置里的记忆文件管理：全局默认开关 + GLOBAL.md/日记列表，
+ * 点行进全页编辑器。GLOBAL.md 不可删。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MemoryManagementScreen(
     memoryRepository: MemoryRepository,
     onBack: () -> Unit,
     onFileClick: (fileName: String, isGlobal: Boolean) -> Unit = { _, _ -> },
 ) {
+    val context = LocalContext.current
     var files by remember { mutableStateOf<List<MemoryRepository.MemoryFileInfo>>(emptyList()) }
-    var deleteFileName by remember { mutableStateOf<String?>(null) }
-    val context = androidx.compose.ui.platform.LocalContext.current
-    // [T-memory-global-toggle-settings-ui-android] Global default for
-    // newly-created sessions. Stored separately from per-session
-    // memoryEnabled (which lives in the sessions DB row) so toggling
-    // here never retroactively rewrites existing chats. Read once on
-    // entry; the Switch's onCheckedChange writes back synchronously
-    // and updates the local state mirror.
-    var globalMemoryOn by remember {
-        mutableStateOf(com.openminis.app.data.MemoryGlobalPrefs.isGlobalEnabled(context))
-    }
+    var pendingDelete by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
-        files = memoryRepository.listAllFiles()
-    }
+    // 新会话的默认记忆开关：与会话行上的 memoryEnabled 分库存放，
+    // 这里切换不回溯改写已存在的会话。
+    var globalEnabled by remember { mutableStateOf(MemoryGlobalPrefs.isGlobalEnabled(context)) }
+
+    LaunchedEffect(Unit) { files = memoryRepository.listAllFiles() }
 
     SettingsScaffold(title = stringResource(R.string.memory_title), onBack = onBack) {
-        // Always-visible global toggle — sits above the file list so the
-        // user finds it whether or not any memory files exist yet.
         SettingsSection(
             header = stringResource(R.string.settings_memory_global_header),
             footer = stringResource(R.string.settings_memory_global_footer),
@@ -84,30 +63,28 @@ fun MemoryManagementScreen(
             SettingsSwitchRow(
                 title = stringResource(R.string.settings_memory_global_enabled_title),
                 subtitle = stringResource(R.string.settings_memory_global_enabled_subtitle),
-                checked = globalMemoryOn,
-                onCheckedChange = { newValue ->
-                    globalMemoryOn = newValue
-                    com.openminis.app.data.MemoryGlobalPrefs.setGlobalEnabled(context, newValue)
+                checked = globalEnabled,
+                onCheckedChange = {
+                    globalEnabled = it
+                    MemoryGlobalPrefs.setGlobalEnabled(context, it)
                 },
                 showDivider = false,
             )
         }
-        Spacer(modifier = Modifier.height(16.dp))
+        Spacer(Modifier.height(16.dp))
 
         if (files.isEmpty()) {
             Column(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(32.dp),
+                Modifier.fillMaxWidth().padding(32.dp),
                 horizontalAlignment = Alignment.CenterHorizontally,
                 verticalArrangement = Arrangement.Center,
             ) {
-                Text(stringResource(R.string.memory_empty_title), style = MaterialTheme.typography.titleMedium)
-                Spacer(modifier = Modifier.height(8.dp))
+                Text(stringResource(R.string.memory_empty_title), style = NovexType.PageTitle)
+                Spacer(Modifier.height(8.dp))
                 Text(
                     stringResource(R.string.memory_empty_description),
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = NovexType.Body,
+                    color = NovexColors.SecondaryText,
                 )
             }
         } else {
@@ -115,43 +92,40 @@ fun MemoryManagementScreen(
                 header = stringResource(R.string.memory_section_files),
                 footer = stringResource(R.string.memory_section_footer),
             ) {
-                files.forEachIndexed { index, file ->
-                    MemoryFileRow(
+                files.forEachIndexed { i, file ->
+                    MemoryFileLine(
                         file = file,
                         onClick = { onFileClick(file.name, file.isGlobal) },
-                        onDelete = if (!file.isGlobal) { { deleteFileName = file.name } } else null,
+                        onDelete = if (file.isGlobal) null else ({ pendingDelete = file.name }),
                     )
-                    if (index < files.size - 1) {
+                    if (i < files.lastIndex) {
                         HorizontalDivider(
                             modifier = Modifier.padding(start = 16.dp),
-                            color = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f),
+                            color = NovexColors.Divider,
                         )
                     }
                 }
             }
-            Spacer(modifier = Modifier.height(16.dp))
+            Spacer(Modifier.height(16.dp))
         }
     }
 
-    // Delete confirmation
-    if (deleteFileName != null) {
+    pendingDelete?.let { name ->
         AlertDialog(
-            onDismissRequest = { deleteFileName = null },
-            title = { Text(stringResource(R.string.memory_delete_confirm_title, deleteFileName ?: "")) },
+            onDismissRequest = { pendingDelete = null },
+            title = { Text(stringResource(R.string.memory_delete_confirm_title, name)) },
             text = { Text(stringResource(R.string.memory_delete_confirm_text)) },
             confirmButton = {
                 MinisTextButton(onClick = {
-                    deleteFileName?.let {
-                        memoryRepository.deleteFile(it)
-                        files = memoryRepository.listAllFiles()
-                    }
-                    deleteFileName = null
+                    memoryRepository.deleteFile(name)
+                    files = memoryRepository.listAllFiles()
+                    pendingDelete = null
                 }) {
-                    Text(stringResource(R.string.common_delete), color = MaterialTheme.colorScheme.error)
+                    Text(stringResource(R.string.common_delete), color = NovexColors.Danger)
                 }
             },
             dismissButton = {
-                MinisTextButton(onClick = { deleteFileName = null }) {
+                MinisTextButton(onClick = { pendingDelete = null }) {
                     Text(stringResource(R.string.common_cancel))
                 }
             },
@@ -160,21 +134,21 @@ fun MemoryManagementScreen(
 }
 
 @Composable
-private fun MemoryFileRow(
+private fun MemoryFileLine(
     file: MemoryRepository.MemoryFileInfo,
     onClick: () -> Unit,
     onDelete: (() -> Unit)?,
 ) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .clickable(onClick = onClick)
             .padding(horizontal = 16.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Column(modifier = Modifier.weight(1f)) {
+        Column(Modifier.weight(1f)) {
             Row(
-                modifier = Modifier.fillMaxWidth(),
+                Modifier.fillMaxWidth(),
                 horizontalArrangement = Arrangement.SpaceBetween,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
@@ -182,22 +156,19 @@ private fun MemoryFileRow(
                     verticalAlignment = Alignment.CenterVertically,
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
                 ) {
-                    Text(
-                        file.name,
-                        style = MaterialTheme.typography.bodyLarge,
-                    )
+                    Text(file.name, style = NovexType.ItemTitle)
                     if (file.fileSize.isNotBlank()) {
                         Text(
                             file.fileSize,
-                            style = MaterialTheme.typography.labelSmall,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                            style = NovexType.Metadata,
+                            color = NovexColors.TertiaryText,
                         )
                     }
                 }
                 Text(
                     file.modifiedDate,
-                    style = MaterialTheme.typography.labelSmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    style = NovexType.Metadata,
+                    color = NovexColors.SecondaryText,
                 )
             }
             if (file.preview.isNotBlank()) {
@@ -205,154 +176,28 @@ private fun MemoryFileRow(
                     file.preview,
                     maxLines = 1,
                     overflow = TextOverflow.Ellipsis,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodySmall,
+                    style = NovexType.Metadata,
+                    color = NovexColors.SecondaryText,
                     modifier = Modifier.padding(top = 2.dp),
                 )
             }
         }
-        // [T-memory-file-delete-entrypoint] Daily logs are deletable per the
-        // repository contract, but the row previously accepted onDelete and
-        // never rendered it — the confirm dialog was unreachable, so users
-        // could not delete memory files at all (iOS exposes this via
-        // List .onDelete swipe). An always-visible trash button is the
-        // Android-convention equivalent; GLOBAL.md passes onDelete = null
-        // and keeps its chevron-only layout.
+        // 日记可删（GLOBAL.md 传 null 不渲染垃圾桶）。
         if (onDelete != null) {
             IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
                 Icon(
-                    novex.android.ui.NovexIcons.Delete,
+                    NovexIcons.Delete,
                     contentDescription = stringResource(R.string.common_delete),
-                    tint = MaterialTheme.colorScheme.error.copy(alpha = 0.8f),
+                    tint = NovexColors.Danger.copy(alpha = 0.8f),
                     modifier = Modifier.size(20.dp),
                 )
             }
         }
         Icon(
-            novex.android.ui.NovexIcons.KeyboardArrowRight,
+            NovexIcons.KeyboardArrowRight,
             contentDescription = null,
-            tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
+            tint = NovexColors.TertiaryText,
             modifier = Modifier.size(20.dp),
         )
-    }
-}
-
-/**
- * Full-page memory file editor, matching iOS MemoryFileEditView.
- * Monospaced text. The Save button stays ALWAYS visible.
- *
- * [T-global-memory-save-always-visible] Previously the Save action was
- * gated on a `hasChanges` flag that only flipped true inside the field's
- * onValueChange. Programmatic content changes (paste, IME commit, state
- * restore) don't always route through onValueChange, so Save could fail
- * to appear after a paste until the user typed another key — the exact
- * symptom reported on iOS/macOS (XIN msg 41384). Keeping Save permanently
- * visible removes the dependency entirely; saveFile is idempotent so a
- * no-op Save on unchanged content is harmless.
- */
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-fun MemoryFileEditScreen(
-    fileName: String,
-    isGlobal: Boolean,
-    memoryRepository: MemoryRepository,
-    onBack: () -> Unit,
-) {
-    var content by androidx.compose.runtime.saveable.rememberSaveable(fileName) { mutableStateOf("") }
-    var baseline by androidx.compose.runtime.saveable.rememberSaveable(fileName) { mutableStateOf<String?>(null) }
-    var saveError by remember { mutableStateOf<String?>(null) }
-    val context = LocalContext.current
-    // [T-memory-save-toast-feedback] Confirm Save actually committed by
-    // flashing a toast — previously the Save tap silently closed nothing,
-    // showed no state change, and the user had no signal that the edit
-    // landed (user-reported confusion). Reuses the existing
-    // memory_save_toast string already wired for the per-chat memory
-    // detail editor's SavedToast so the wording stays consistent.
-    val savedToastText = stringResource(R.string.memory_save_toast)
-
-    LaunchedEffect(fileName) {
-        if (baseline == null) {
-            content = memoryRepository.readFile(fileName)
-            baseline = content
-        }
-    }
-
-    fun save(): Boolean = try {
-        memoryRepository.saveFile(fileName, content)
-        baseline = content
-        saveError = null
-        android.widget.Toast.makeText(context, savedToastText, android.widget.Toast.LENGTH_SHORT).show()
-        true
-    } catch (e: Exception) {
-        saveError = e.message ?: "保存失败，请重试"
-        false
-    }
-    novex.android.ui.NovexDraftExitBoundary(
-        baselineDraft = baseline, currentDraft = content, saving = false,
-        onBack = onBack, onSaveAndExit = { if (save()) onBack() },
-    ) { requestBack ->
-        Scaffold(
-            topBar = {
-                TopAppBar(
-                    title = { Text(fileName) },
-                    navigationIcon = {
-                        IconButton(onClick = requestBack) {
-                            Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
-                        }
-                    },
-                    actions = {
-                        // [T-global-memory-save-always-visible] Always render Save —
-                        // no hasChanges gate (see KDoc above).
-                        MinisTextButton(onClick = { save() }, enabled = baseline != null) {
-                            Text("保存")
-                        }
-                    },
-                )
-            },
-        ) { padding ->
-            Column(
-                modifier = Modifier
-                    .fillMaxSize()
-                    .padding(padding)
-                    .padding(horizontal = 16.dp),
-            ) {
-                Spacer(modifier = Modifier.height(8.dp))
-
-                // Editor
-                DialogTextField(
-                    value = content,
-                    onValueChange = {
-                        content = it
-                    },
-                    singleLine = false,
-                    textStyle = MaterialTheme.typography.bodySmall.copy(
-                        fontFamily = androidx.compose.ui.text.font.FontFamily.Monospace,
-                    ),
-                    placeholder = stringResource(R.string.memory_editor_placeholder),
-                    modifier = Modifier.weight(1f),
-                )
-
-                // Footer text
-                if (isGlobal) {
-                    Text(
-                        stringResource(R.string.memory_global_footer),
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
-                    )
-                }
-
-                if (saveError != null) {
-                    Text(
-                        saveError!!,
-                        style = MaterialTheme.typography.bodySmall,
-                        color = MaterialTheme.colorScheme.error,
-                        modifier = Modifier.padding(horizontal = 16.dp, vertical = 4.dp),
-                    )
-                }
-
-                Spacer(modifier = Modifier.height(16.dp))
-            }
-        }
     }
 }

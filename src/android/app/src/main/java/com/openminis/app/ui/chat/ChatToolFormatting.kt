@@ -1,124 +1,129 @@
 package com.openminis.app.ui.chat
 
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.vector.ImageVector
+import novex.android.ui.NovexIcons
 
-// [T-android-split-chat] Pure tool-label / duration / timestamp formatting
-// helpers extracted verbatim from ChatScreen.kt. `internal` so the rest of the
-// chat package (still in ChatScreen.kt) can call them across the file boundary.
-// No logic change — code moved as-is.
+// 工具块的展示换算：强调色 / 图标 / 中文动作名 / 时长与时间戳格式化。
+// 工具名是 wire 协议（冻结），查表按「类别 → 成员」分组维护。
 
-internal val stepTimestampFormatter: java.text.SimpleDateFormat =
-    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US)
+private object ToolLooks {
+    val TERMINAL = ToolLook(Color(0xFF34C759), NovexIcons.Terminal)
+    val READ = ToolLook(Color(0xFF32ADE6), NovexIcons.Description)
+    val WRITE = ToolLook(Color(0xFF007AFF), NovexIcons.NoteAdd)
+    val EDIT = ToolLook(Color(0xFFFF9500), NovexIcons.EditNote)
+    val COMPUTE = ToolLook(Color(0xFFAF52DE), NovexIcons.Build)
+    val WEB = ToolLook(Color(0xFF007AFF), NovexIcons.Language)
+    val IMAGE = ToolLook(Color(0xFFAF52DE), NovexIcons.Image)
+    val MEMORY = ToolLook(Color(0xFFFF2D55), NovexIcons.Psychology)
+    val SEARCH = ToolLook(Color(0xFF32ADE6), NovexIcons.Search)
+    val GENERIC = ToolLook(Color(0xFF8E8E93), NovexIcons.Build)
+}
+
+private class ToolLook(val accent: Color, val icon: ImageVector)
+
+private val toolLookByName = buildMap {
+    fun group(look: ToolLook, vararg names: String) = names.forEach { put(it, look) }
+    group(ToolLooks.TERMINAL, "shell_execute")
+    group(ToolLooks.READ,
+        "file_read", "document_inspect", "document_read",
+        "workspace_inspect", "workspace_search", "workspace_read")
+    group(ToolLooks.WRITE, "file_write", "workspace_write")
+    group(ToolLooks.EDIT, "file_edit", "workspace_edit")
+    group(ToolLooks.COMPUTE, "workspace_compute")
+    group(ToolLooks.WEB, "browser_use")
+    group(ToolLooks.IMAGE, "read_image")
+    group(ToolLooks.MEMORY,
+        "memory_write", "memory_get",
+        "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes")
+    group(ToolLooks.SEARCH, "web_search")
+}
+
+internal fun toolAccentColor(toolName: String): Color =
+    (toolLookByName[toolName] ?: ToolLooks.GENERIC).accent
+
+internal fun toolIconFor(toolName: String): ImageVector =
+    (toolLookByName[toolName] ?: ToolLooks.GENERIC).icon
+
+/** 「正在做什么」里的动作名。 */
+private val toolActionByName = mapOf(
+    "shell_execute" to "后台处理",
+    "file_read" to "读取资料",
+    "document_inspect" to "检查文档",
+    "document_read" to "读取文档",
+    "file_write" to "保存资料",
+    "file_edit" to "更新资料",
+    "browser_use" to "联网检索",
+    "web_search" to "联网检索",
+    "read_image" to "查看图片",
+    "memory_write" to "读取记忆",
+    "memory_get" to "读取记忆",
+    "present_choices" to "提供选项",
+    "render_panel" to "显示资料面板",
+    "panel" to "显示资料面板",
+    "present_system_panel" to "显示资料面板",
+    "save_checkpoint" to "保存进度",
+    "register_controls" to "更新快捷操作",
+    "update_playthrough_state" to "更新本局状态",
+    "novex_inspect_content" to "查看挂载内容",
+    "novex_propose_content_changes" to "提出内容变更",
+    "novex_apply_content_changes" to "执行内容变更",
+    "novex_inspect_memory" to "查看长期记忆",
+    "novex_propose_memory_changes" to "提出记忆变更",
+    "novex_apply_memory_changes" to "执行记忆变更",
+    "workspace_inspect" to "检查工作区",
+    "workspace_read" to "读取工作区",
+    "workspace_search" to "查找仓库资料",
+    "workspace_write" to "写入工作区",
+    "workspace_edit" to "编辑工作区",
+    "workspace_compute" to "处理工作区",
+)
+
+internal fun toolDisplayName(toolName: String): String =
+    toolActionByName[toolName] ?: "处理内容"
+
+/** 详情面板底栏的完整标题。 */
+internal fun toolTitleLabel(toolName: String): String = "Novex 正在${toolDisplayName(toolName)}"
+
+// ── 时长与时间戳 ────────────────────────────────────────────────────────────
 
 internal fun formatStepTimestamp(epochMs: Long): String =
-    stepTimestampFormatter.format(java.util.Date(epochMs))
-
-// [T-step-timestamp v2 aa8b1128] Short "elapsed-or-final duration"
-// label for the tool detail header. Cross-platform format contract:
-//   < 60s   → "3s"
-//   < 1h    → "2m30s" (drops the seconds suffix when seconds == 0)
-//   ≥ 1h    → "1h12m"
-// When `stillRunning` is true the result is suffixed "…" so the
-// header reads "12s…" while the tool is in flight.
-// Negative / non-positive values clamp to 0.
-internal fun formatStepDuration(seconds: Long, stillRunning: Boolean): String {
-    val safe = seconds.coerceAtLeast(0L)
-    val base = when {
-        safe < 60L -> "${safe}s"
-        safe < 3600L -> {
-            val m = safe / 60L
-            val s = safe % 60L
-            if (s == 0L) "${m}m" else "${m}m${s}s"
-        }
-        else -> {
-            val h = safe / 3600L
-            val m = (safe % 3600L) / 60L
-            if (m == 0L) "${h}h" else "${h}h${m}m"
-        }
-    }
-    return if (stillRunning) "$base…" else base
-}
-
-// Helper: tool accent color
-internal fun toolAccentColor(toolName: String): Color = when (toolName) {
-    "shell_execute" -> Color(0xFF34C759)
-    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_search", "workspace_read" -> Color(0xFF32ADE6)
-    "file_write", "workspace_write" -> Color(0xFF007AFF)
-    "file_edit", "workspace_edit" -> Color(0xFFFF9500)
-    "workspace_compute" -> Color(0xFFAF52DE)
-    "browser_use" -> Color(0xFF007AFF)
-    "read_image" -> Color(0xFFAF52DE)
-    "memory_write", "memory_get",
-    "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes" -> Color(0xFFFF2D55)
-    "web_search" -> Color(0xFF32ADE6)    // iOS: .cyan for search
-    else -> Color(0xFF8E8E93)
-}
-
-// Helper: tool icon (iOS: distinct SF Symbols per tool type)
-internal fun toolIconFor(toolName: String) = when (toolName) {
-    "shell_execute" -> novex.android.ui.NovexIcons.Terminal
-    "file_read", "document_inspect", "document_read", "workspace_inspect", "workspace_search", "workspace_read" -> novex.android.ui.NovexIcons.Description
-    "file_write", "workspace_write" -> novex.android.ui.NovexIcons.NoteAdd   // iOS: doc.text.fill (filled variant)
-    "file_edit", "workspace_edit" -> novex.android.ui.NovexIcons.EditNote             // iOS: square.and.pencil
-    "workspace_compute" -> novex.android.ui.NovexIcons.Build
-    "browser_use" -> novex.android.ui.NovexIcons.Language            // iOS: globe
-    "read_image" -> novex.android.ui.NovexIcons.Image                // iOS: photo
-    "memory_write", "memory_get",
-    "novex_inspect_memory", "novex_propose_memory_changes", "novex_apply_memory_changes" ->
-        novex.android.ui.NovexIcons.Psychology // iOS: brain.head.profile
-    "web_search" -> novex.android.ui.NovexIcons.Search               // iOS: magnifyingglass
-    else -> novex.android.ui.NovexIcons.Build
-}
-
-// Helper: tool display name for "Minis is using X"
-internal fun toolDisplayName(toolName: String): String = when (toolName) {
-    "shell_execute" -> "后台处理"
-    "file_read" -> "读取资料"
-    "document_inspect" -> "检查文档"
-    "document_read" -> "读取文档"
-    "file_write" -> "保存资料"
-    "file_edit" -> "更新资料"
-    "browser_use", "web_search" -> "联网检索"
-    "read_image" -> "查看图片"
-    "memory_write", "memory_get" -> "读取记忆"
-    "present_choices" -> "提供选项"
-    "render_panel", "panel", "present_system_panel" -> "显示资料面板"
-    "save_checkpoint" -> "保存进度"
-    "register_controls" -> "更新快捷操作"
-    "update_playthrough_state" -> "更新本局状态"
-    "novex_inspect_content" -> "查看挂载内容"
-    "novex_propose_content_changes" -> "提出内容变更"
-    "novex_apply_content_changes" -> "执行内容变更"
-    "novex_inspect_memory" -> "查看长期记忆"
-    "novex_propose_memory_changes" -> "提出记忆变更"
-    "novex_apply_memory_changes" -> "执行记忆变更"
-    "workspace_inspect" -> "检查工作区"
-    "workspace_read" -> "读取工作区"
-    "workspace_search" -> "查找仓库资料"
-    "workspace_write" -> "写入工作区"
-    "workspace_edit" -> "编辑工作区"
-    "workspace_compute" -> "处理工作区"
-    else -> "处理内容"
-}
+    java.text.SimpleDateFormat("HH:mm:ss", java.util.Locale.US).format(java.util.Date(epochMs))
 
 /**
- * Full "Minis is …" label shown in the tool detail sheet's bottom bar.
- * Mirrors iOS ToolLiveSheet.toolTitle so the wording matches per tool.
+ * 步骤耗时短标签（详情顶栏用）：
+ *   <60s → "3s"；<1h → "2m30s"（整分省秒）；≥1h → "1h12m"（整时省分）。
+ * 仍在跑时尾缀 "…"；非正数按 0 计。
  */
-internal fun toolTitleLabel(toolName: String): String = when (toolName) {
-    else -> "Novex 正在${toolDisplayName(toolName)}"
+internal fun formatStepDuration(seconds: Long, stillRunning: Boolean): String {
+    val total = seconds.coerceAtLeast(0)
+    val label = buildString {
+        val h = total / 3600
+        val m = total % 3600 / 60
+        val s = total % 60
+        when {
+            h > 0 -> {
+                append(h).append('h')
+                if (m > 0) append(m).append('m')
+            }
+            m > 0 -> {
+                append(m).append('m')
+                if (s > 0) append(s).append('s')
+            }
+            else -> append(s).append('s')
+        }
+    }
+    return if (stillRunning) "$label…" else label
 }
 
-// Helper: format duration (iOS: < 1s → "0.1s", < 60s → "45s", >= 60s → "2m 10s")
+/** 毫秒耗时格式化：<1s 一位小数，<60s 整数秒，≥60s "Xm Ys"。 */
 internal fun formatToolDuration(ms: Long): String {
-    val seconds = ms / 1000.0
-    return when {
-        seconds < 1 -> String.format("%.1fs", seconds)
-        seconds < 60 -> String.format("%.0fs", seconds)
-        else -> {
-            val m = (seconds / 60).toInt()
-            val s = (seconds % 60).toInt()
-            "${m}m ${s}s"
-        }
+    val totalSeconds = ms / 1000.0
+    return if (totalSeconds < 1) {
+        "%.1fs".format(totalSeconds)
+    } else if (totalSeconds < 60) {
+        "%.0fs".format(totalSeconds)
+    } else {
+        "%dm %ds".format((totalSeconds / 60).toInt(), (totalSeconds % 60).toInt())
     }
 }

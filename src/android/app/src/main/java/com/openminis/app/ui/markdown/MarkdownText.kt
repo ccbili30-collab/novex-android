@@ -3,15 +3,8 @@ package com.openminis.app.ui.markdown
 import android.content.ClipData
 import android.content.ClipboardManager
 import android.content.Context
-import android.content.Intent
-import android.graphics.Bitmap
-import android.media.MediaMetadataRetriever
-import android.media.MediaPlayer
-import android.net.Uri
-import androidx.compose.foundation.Image
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -22,35 +15,23 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import androidx.compose.material3.LinearProgressIndicator
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.produceState
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.setValue
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.layout.ContentScale
-import coil.compose.AsyncImage
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.delay
-import kotlinx.coroutines.withContext
-import java.io.File
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.AnnotatedString
@@ -67,12 +48,12 @@ import androidx.compose.ui.text.withLink
 import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import novex.android.ContentPaths
+import novex.android.ui.NovexIcons
 
 /**
- * Renders markdown text with full formatting support.
- * Supports: headings, bold, italic, strikethrough, inline code, code blocks (with copy),
- * bullet/numbered/task lists, blockquotes, tables, thematic breaks, and links.
+ * 静态 Markdown 渲染入口：块级（标题/段落/代码块/引用/列表/表格/分隔线/
+ * 媒体）分派 + 行内（粗斜体/删除线/行内码/链接）扫面。数学占位符
+ * （￼MATHn￼）交给 KaTeX 行内瓦片。
  */
 @Composable
 fun MarkdownText(
@@ -82,168 +63,144 @@ fun MarkdownText(
     style: TextStyle = MaterialTheme.typography.bodyMedium,
 ) {
     val parsed = remember(markdown) { MarkdownParser.parseWithMath(markdown) }
-
     Column(modifier = modifier, verticalArrangement = Arrangement.spacedBy(4.dp)) {
         for (block in parsed.blocks) {
-            BlockContent(block, color, style, parsed.mathSpans)
+            BlockRenderer(block, color, style, parsed.mathSpans)
         }
     }
 }
 
+// ── 块级分派 ────────────────────────────────────────────────────────────────
+
 @Composable
-private fun BlockContent(
+private fun BlockRenderer(
     block: MarkdownParser.Block,
     color: Color,
     baseStyle: TextStyle,
-    mathSpans: List<MarkdownParser.MathSpan> = emptyList(),
+    mathSpans: List<MarkdownParser.MathSpan>,
 ) {
-    android.util.Log.d("MdRender", "BlockContent: ${block::class.simpleName}")
     when (block) {
-        is MarkdownParser.Block.Heading -> HeadingBlock(block, color)
-        is MarkdownParser.Block.Paragraph -> ParagraphBlock(block.content, color, baseStyle, mathSpans)
-        is MarkdownParser.Block.CodeBlock -> CodeBlockView(block)
-        is MarkdownParser.Block.Blockquote -> BlockquoteView(block, color, baseStyle, mathSpans)
-        is MarkdownParser.Block.BulletList -> BulletListView(block, color, baseStyle)
-        is MarkdownParser.Block.NumberedList -> NumberedListView(block, color, baseStyle)
-        is MarkdownParser.Block.Table -> TableView(block, color, baseStyle, mathSpans)
+        is MarkdownParser.Block.Heading -> HeadingView(block, color)
+        is MarkdownParser.Block.Paragraph -> MathAwareText(block.content, color, baseStyle, mathSpans)
+        is MarkdownParser.Block.CodeBlock -> CodeBlockCard(block)
+        is MarkdownParser.Block.Blockquote -> QuoteColumn(block, baseStyle, mathSpans)
+        is MarkdownParser.Block.BulletList -> BulletListRows(block, color, baseStyle)
+        is MarkdownParser.Block.NumberedList -> NumberedListRows(block, color, baseStyle)
+        is MarkdownParser.Block.Table -> TableCard(block, color, baseStyle, mathSpans)
         is MarkdownParser.Block.MathBlock -> MathBlockView(latex = block.latex)
         is MarkdownParser.Block.ThematicBreak -> HorizontalDivider(
-            modifier = Modifier.padding(vertical = 4.dp),
+            Modifier.padding(vertical = 4.dp),
             color = color.copy(alpha = 0.3f),
         )
-        is MarkdownParser.Block.Image -> MinisImageBlock(block)
-        is MarkdownParser.Block.Video -> MinisVideoBlock(block)
-        is MarkdownParser.Block.Audio -> MinisAudioBlock(block)
+        is MarkdownParser.Block.Image -> InlineImageCard(block)
+        is MarkdownParser.Block.Video -> VideoCard(block)
+        is MarkdownParser.Block.Audio -> AudioCard(block)
     }
 }
 
-// -- Heading --
+// ── 标题 ────────────────────────────────────────────────────────────────────
+
+private val HEADING_STYLE = mapOf(
+    1 to (24.sp to FontWeight.Bold),
+    2 to (20.sp to FontWeight.Bold),
+    3 to (18.sp to FontWeight.SemiBold),
+    4 to (16.sp to FontWeight.SemiBold),
+    5 to (15.sp to FontWeight.Medium),
+)
 
 @Composable
-private fun HeadingBlock(heading: MarkdownParser.Block.Heading, color: Color) {
-    val (fontSize, fontWeight) = when (heading.level) {
-        1 -> 24.sp to FontWeight.Bold
-        2 -> 20.sp to FontWeight.Bold
-        3 -> 18.sp to FontWeight.SemiBold
-        4 -> 16.sp to FontWeight.SemiBold
-        5 -> 15.sp to FontWeight.Medium
-        else -> 14.sp to FontWeight.Medium
-    }
-    InlineContent(
-        text = heading.content,
-        color = color,
-        style = TextStyle(fontSize = fontSize, fontWeight = fontWeight),
-    )
+private fun HeadingView(heading: MarkdownParser.Block.Heading, color: Color) {
+    val (size, weight) = HEADING_STYLE[heading.level] ?: (14.sp to FontWeight.Medium)
+    InlineContent(heading.content, color, TextStyle(fontSize = size, fontWeight = weight))
 }
 
-// -- Paragraph --
+// ── 数学占位符感知的段落（段落/表格单元共用）──────────────────────────────────
 
+private val MATH_PLACEHOLDER = Regex("￼MATH(\\d+)￼")
+
+/** 含行内数学占位符的文本：按占位符切段，文本段走 InlineContent，
+ *  数学段走非 display 的 KaTeX 小瓦片（行高随正文、左对齐，视觉上
+ *  跟在上一段文字后面流）。display 数学（$$..$$）是独立块不经过这里。 */
 @Composable
-private fun ParagraphBlock(
-    content: String,
+private fun MathAwareText(
+    text: String,
     color: Color,
     style: TextStyle,
-    mathSpans: List<MarkdownParser.MathSpan> = emptyList(),
+    mathSpans: List<MarkdownParser.MathSpan>,
 ) {
-    // Fast path: no math placeholders → original single-Text rendering.
-    if (mathSpans.isEmpty() || !content.contains('￼')) {
-        InlineContent(text = content, color = color, style = style)
+    if (mathSpans.isEmpty() || !text.contains('￼')) {
+        InlineContent(text, color, style)
         return
     }
-
-    // T208 Layer B: split the paragraph at each placeholder and render
-    // inline math as a *non-display-mode*, *non-fillMaxWidth* tile so the
-    // formula visually flows after the preceding text segment instead of
-    // becoming a centered full-width block. Inline math should be roughly
-    // the size of surrounding text and aligned to the start of its row.
-    // Display math (`$$ … $$`) goes through Block.MathBlock above and
-    // still renders centered via MathBlockView — that path is correct.
-    // True inline-flow (math glyph on the same baseline as text within
-    // a single Text composable via InlineTextContent) is a follow-up;
-    // for now we stay with the row-split shape but keep the math visually
-    // small.
     val byPlaceholder = remember(mathSpans) { mathSpans.associateBy { it.placeholder } }
-    val regex = remember { Regex("\\uFFFC" + "MATH(\\d+)" + "\\uFFFC") }
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         var cursor = 0
-        for (match in regex.findAll(content)) {
+        for (match in MATH_PLACEHOLDER.findAll(text)) {
             val span = byPlaceholder[match.value] ?: continue
-            if (match.range.first > cursor) {
-                val segment = content.substring(cursor, match.range.first)
-                if (segment.isNotBlank()) {
-                    InlineContent(text = segment, color = color, style = style)
-                }
-            }
-            // Inline math: non-display KaTeX, no fillMaxWidth, start-aligned.
+            TextSegment(text.substring(cursor, match.range.first), color, style)
             KaTeXRenderView(latex = span.latex, displayMode = false)
             cursor = match.range.last + 1
         }
-        if (cursor < content.length) {
-            val tail = content.substring(cursor)
-            if (tail.isNotBlank()) {
-                InlineContent(text = tail, color = color, style = style)
-            }
-        }
+        if (cursor < text.length) TextSegment(text.substring(cursor), color, style)
     }
 }
 
-// -- Code Block --
+@Composable
+private fun TextSegment(segment: String, color: Color, style: TextStyle) {
+    if (segment.isNotBlank()) InlineContent(segment, color, style)
+}
+
+// ── 代码块 ──────────────────────────────────────────────────────────────────
 
 @Composable
-private fun CodeBlockView(block: MarkdownParser.Block.CodeBlock) {
+private fun CodeBlockCard(block: MarkdownParser.Block.CodeBlock) {
     val context = LocalContext.current
-    val codeColor = Color(0xFF4EC9B0) // Green code text
-    val bgColor = MaterialTheme.colorScheme.surfaceContainerHighest
-
     Column(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .clip(RoundedCornerShape(8.dp))
-            .background(bgColor),
+            .background(MaterialTheme.colorScheme.surfaceContainerHighest),
     ) {
-        // Header with language label + copy button
         Row(
-            modifier = Modifier
+            Modifier
                 .fillMaxWidth()
                 .padding(horizontal = 12.dp, vertical = 4.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Text(
-                text = block.language.ifEmpty { "code" },
+                block.language.ifEmpty { "code" },
                 style = MaterialTheme.typography.labelSmall,
                 color = MaterialTheme.colorScheme.onSurfaceVariant,
             )
             IconButton(
                 onClick = {
-                    val clipboard = context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager
-                    clipboard.setPrimaryClip(ClipData.newPlainText("code", block.code))
+                    (context.getSystemService(Context.CLIPBOARD_SERVICE) as ClipboardManager)
+                        .setPrimaryClip(ClipData.newPlainText("code", block.code))
                 },
                 modifier = Modifier.height(28.dp),
             ) {
                 Icon(
-                    novex.android.ui.NovexIcons.ContentCopy,
+                    NovexIcons.ContentCopy,
                     contentDescription = "Copy code",
-                    modifier = Modifier.height(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.height(16.dp),
                 )
             }
         }
-
-        // Scrollable code content
         Box(
-            modifier = Modifier
+            Modifier
                 .fillMaxWidth()
                 .heightIn(max = 400.dp)
                 .horizontalScroll(rememberScrollState())
                 .padding(horizontal = 12.dp, vertical = 8.dp),
         ) {
             Text(
-                text = block.code,
+                block.code,
                 style = TextStyle(
                     fontFamily = FontFamily.Monospace,
                     fontSize = 13.sp,
-                    color = codeColor,
+                    color = Color(0xFF4EC9B0),
                     lineHeight = 18.sp,
                 ),
             )
@@ -251,184 +208,126 @@ private fun CodeBlockView(block: MarkdownParser.Block.CodeBlock) {
     }
 }
 
-// -- Blockquote --
+// ── 引用 ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun BlockquoteView(
+private fun QuoteColumn(
     block: MarkdownParser.Block.Blockquote,
-    color: Color,
     baseStyle: TextStyle,
-    mathSpans: List<MarkdownParser.MathSpan> = emptyList(),
+    mathSpans: List<MarkdownParser.MathSpan>,
 ) {
-    // Orange accent rule on the leading edge — matches iOS, where the
-    // blockquote uses the app systemOrange (0xFFFF9500) at full opacity.
-    // The previous primary @ 0.5 alpha disappeared into theme purple on the
-    // dark palette and didn't read as a quote at all in some compositions.
-    val barColor = Color(0xFFFF9500)
+    // 前缘橙色竖条；正文用次级色呈现引文感。
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .drawBehind {
-                drawRect(
-                    color = barColor,
-                    topLeft = Offset(0f, 0f),
-                    size = androidx.compose.ui.geometry.Size(3.dp.toPx(), size.height),
-                )
+                drawRect(Color(0xFFFF9500), topLeft = Offset.Zero, size = Size(3.dp.toPx(), size.height))
             }
             .padding(start = 12.dp),
     ) {
         Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-            // Inner content uses onSurfaceVariant so quoted text reads as
-            // secondary, matching the iOS quote treatment.
-            val quotedColor = MaterialTheme.colorScheme.onSurfaceVariant
-            for (inner in block.blocks) {
-                BlockContent(inner, quotedColor, baseStyle, mathSpans)
-            }
+            val quoted = MaterialTheme.colorScheme.onSurfaceVariant
+            for (inner in block.blocks) BlockRenderer(inner, quoted, baseStyle, mathSpans)
         }
     }
 }
 
-// -- Bullet List --
+// ── 列表 ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun BulletListView(
+private fun BulletListRows(
     block: MarkdownParser.Block.BulletList,
     color: Color,
     baseStyle: TextStyle,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         for (item in block.items) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                if (item.checked != null) {
-                    // Task list item
+            Row(Modifier.fillMaxWidth()) {
+                val checked = item.checked
+                if (checked != null) {
                     Icon(
-                        imageVector = if (item.checked) novex.android.ui.NovexIcons.CheckBox else novex.android.ui.NovexIcons.CheckBoxOutlineBlank,
+                        if (checked) NovexIcons.CheckBox else NovexIcons.CheckBoxOutlineBlank,
                         contentDescription = null,
                         tint = color.copy(alpha = 0.6f),
-                        modifier = Modifier
-                            .padding(end = 4.dp, top = 2.dp)
-                            .height(18.dp)
-                            .width(18.dp),
+                        modifier = Modifier.padding(end = 4.dp, top = 2.dp).size(18.dp),
                     )
                 } else {
-                    Text(
-                        text = "•",
-                        color = color,
-                        style = baseStyle,
-                        modifier = Modifier.padding(end = 8.dp),
-                    )
+                    Text("•", color = color, style = baseStyle, modifier = Modifier.padding(end = 8.dp))
                 }
-                InlineContent(
-                    text = item.content,
-                    color = color,
-                    style = baseStyle,
-                    modifier = Modifier.weight(1f),
-                )
+                InlineContent(item.content, color, baseStyle, Modifier.weight(1f))
             }
         }
     }
 }
 
-// -- Numbered List --
-
 @Composable
-private fun NumberedListView(
+private fun NumberedListRows(
     block: MarkdownParser.Block.NumberedList,
     color: Color,
     baseStyle: TextStyle,
 ) {
     Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
         for ((index, item) in block.items.withIndex()) {
-            Row(modifier = Modifier.fillMaxWidth()) {
-                Text(
-                    text = "${block.startNumber + index}.",
-                    color = color,
-                    style = baseStyle,
-                    modifier = Modifier.padding(end = 8.dp),
-                )
-                InlineContent(
-                    text = item.content,
-                    color = color,
-                    style = baseStyle,
-                    modifier = Modifier.weight(1f),
-                )
+            Row(Modifier.fillMaxWidth()) {
+                Text("${block.startNumber + index}.", color = color, style = baseStyle, modifier = Modifier.padding(end = 8.dp))
+                InlineContent(item.content, color, baseStyle, Modifier.weight(1f))
             }
         }
     }
 }
 
-// -- Table --
+// ── 表格 ────────────────────────────────────────────────────────────────────
 
 @Composable
-private fun TableView(
+private fun TableCard(
     table: MarkdownParser.Block.Table,
     color: Color,
     baseStyle: TextStyle,
-    mathSpans: List<MarkdownParser.MathSpan> = emptyList(),
+    mathSpans: List<MarkdownParser.MathSpan>,
 ) {
     val borderColor = color.copy(alpha = 0.2f)
 
+    @Composable
+    fun cell(text: String, colIdx: Int, header: Boolean) {
+        val align = table.alignments.getOrElse(colIdx) { MarkdownParser.Alignment.LEFT }
+        Box(
+            Modifier
+                .width(120.dp)
+                .padding(horizontal = 8.dp, vertical = 6.dp),
+            contentAlignment = when (align) {
+                MarkdownParser.Alignment.CENTER -> Alignment.Center
+                MarkdownParser.Alignment.RIGHT -> Alignment.CenterEnd
+                MarkdownParser.Alignment.LEFT -> Alignment.CenterStart
+            },
+        ) {
+            MathAwareText(
+                text,
+                color,
+                if (header) baseStyle.copy(fontWeight = FontWeight.Bold) else baseStyle,
+                mathSpans,
+            )
+        }
+    }
+
     Box(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
             .horizontalScroll(rememberScrollState())
             .border(0.5.dp, borderColor, RoundedCornerShape(4.dp))
             .clip(RoundedCornerShape(4.dp)),
     ) {
         Column {
-            // Header row
             Row(
-                modifier = Modifier
+                Modifier
                     .background(MaterialTheme.colorScheme.surfaceContainerHighest)
                     .height(IntrinsicSize.Min),
             ) {
-                for ((colIdx, header) in table.headers.withIndex()) {
-                    val align = table.alignments.getOrElse(colIdx) { MarkdownParser.Alignment.LEFT }
-                    Box(
-                        modifier = Modifier
-                            .width(120.dp)
-                            .padding(horizontal = 8.dp, vertical = 6.dp),
-                        contentAlignment = when (align) {
-                            MarkdownParser.Alignment.CENTER -> Alignment.Center
-                            MarkdownParser.Alignment.RIGHT -> Alignment.CenterEnd
-                            MarkdownParser.Alignment.LEFT -> Alignment.CenterStart
-                        },
-                    ) {
-                        TableCellContent(
-                            text = header,
-                            color = color,
-                            style = baseStyle.copy(fontWeight = FontWeight.Bold),
-                            mathSpans = mathSpans,
-                        )
-                    }
-                }
+                table.headers.forEachIndexed { i, header -> cell(header, i, header = true) }
             }
-
             HorizontalDivider(color = borderColor)
-
-            // Data rows
             for (row in table.rows) {
-                Row(modifier = Modifier.height(IntrinsicSize.Min)) {
-                    for ((colIdx, cell) in row.withIndex()) {
-                        val align = table.alignments.getOrElse(colIdx) { MarkdownParser.Alignment.LEFT }
-                        Box(
-                            modifier = Modifier
-                                .width(120.dp)
-                                .padding(horizontal = 8.dp, vertical = 6.dp),
-                            contentAlignment = when (align) {
-                                MarkdownParser.Alignment.CENTER -> Alignment.Center
-                                MarkdownParser.Alignment.RIGHT -> Alignment.CenterEnd
-                                MarkdownParser.Alignment.LEFT -> Alignment.CenterStart
-                            },
-                        ) {
-                            TableCellContent(
-                                text = cell,
-                                color = color,
-                                style = baseStyle,
-                                mathSpans = mathSpans,
-                            )
-                        }
-                    }
+                Row(Modifier.height(IntrinsicSize.Min)) {
+                    row.forEachIndexed { i, text -> cell(text, i, header = false) }
                 }
                 HorizontalDivider(color = borderColor)
             }
@@ -436,52 +335,7 @@ private fun TableView(
     }
 }
 
-/**
- * T208 Layer D: a table cell that resolves inline-math placeholders the
- * same way [ParagraphBlock] does. Without this, `$x^2$` inside a cell
- * would have its placeholder stripped by [InlineContent]'s cleanup pass
- * and the math would silently disappear.
- *
- * Cells that don't carry any math placeholder fall through to a plain
- * [InlineContent] call so existing inline markdown (bold/italic/code,
- * links) keeps working in cells without paying for an extra Column.
- */
-@Composable
-private fun TableCellContent(
-    text: String,
-    color: Color,
-    style: TextStyle,
-    mathSpans: List<MarkdownParser.MathSpan>,
-) {
-    if (mathSpans.isEmpty() || !text.contains('￼')) {
-        InlineContent(text = text, color = color, style = style)
-        return
-    }
-    val byPlaceholder = remember(mathSpans) { mathSpans.associateBy { it.placeholder } }
-    val regex = remember { Regex("\\uFFFC" + "MATH(\\d+)" + "\\uFFFC") }
-    Column(verticalArrangement = Arrangement.spacedBy(2.dp)) {
-        var cursor = 0
-        for (match in regex.findAll(text)) {
-            val span = byPlaceholder[match.value] ?: continue
-            if (match.range.first > cursor) {
-                val segment = text.substring(cursor, match.range.first)
-                if (segment.isNotBlank()) {
-                    InlineContent(text = segment, color = color, style = style)
-                }
-            }
-            KaTeXRenderView(latex = span.latex, displayMode = false)
-            cursor = match.range.last + 1
-        }
-        if (cursor < text.length) {
-            val tail = text.substring(cursor)
-            if (tail.isNotBlank()) {
-                InlineContent(text = tail, color = color, style = style)
-            }
-        }
-    }
-}
-
-// -- Inline Content --
+// ── 行内内容 ────────────────────────────────────────────────────────────────
 
 @Composable
 private fun InlineContent(
@@ -491,448 +345,122 @@ private fun InlineContent(
     modifier: Modifier = Modifier,
 ) {
     val inlineCodeBg = MaterialTheme.colorScheme.surfaceContainerHighest
-    val inlineCodeColor = MaterialTheme.colorScheme.primary
-    val linkColor = MaterialTheme.colorScheme.primary
+    val accent = MaterialTheme.colorScheme.primary
 
-    // Strip any leftover math placeholders (U+FFFC MATH<n> U+FFFC). The
-    // ParagraphBlock split path resolves them when math spans are
-    // threaded through, but lists/headings/table cells don't carry the
-    // span list — collapsing the placeholder here keeps the U+FFFC
-    // sentinel from leaking into the rendered glyph stream.
+    // 清理漏到行内渲染的数学占位符（列表/标题等不带 span 的路径）。
     val cleaned = remember(text) {
-        if (text.contains('￼')) {
-            text.replace(Regex("\\uFFFCMATH\\d+\\uFFFC"), "")
-        } else {
-            text
-        }
+        if (text.contains('￼')) text.replace(MATH_PLACEHOLDER, "") else text
     }
 
-    // [P3.3 裁军] 原 BrowserExternalSchemeHandler（内置浏览器的外跳 scheme
-    // 路由）退役；链接点击一律 ACTION_VIEW 外跳系统处理器。
     val context = LocalContext.current
     val linkListener = remember(context) {
         LinkInteractionListener { link ->
-            val url = (link as? LinkAnnotation.Url)?.url ?: return@LinkInteractionListener
-            com.openminis.app.ui.components.openExternalUrl(context, url)
+            (link as? LinkAnnotation.Url)?.url?.let {
+                com.openminis.app.ui.components.openExternalUrl(context, it)
+            }
         }
     }
 
     val annotated = remember(cleaned, color, linkListener) {
-        parseInline(cleaned, color, style, inlineCodeBg, inlineCodeColor, linkColor, linkListener)
+        scanInline(cleaned, baseStyle = style, codeColor = accent, codeBg = inlineCodeBg,
+            linkColor = accent, linkListener = linkListener)
     }
-
-    Text(
-        text = annotated,
-        modifier = modifier,
-        style = style.copy(color = color),
-    )
+    Text(annotated, modifier = modifier, style = style.copy(color = color))
 }
 
-/**
- * Parse inline markdown: **bold**, *italic*, ~~strikethrough~~, `code`, [links](url)
- */
-private fun parseInline(
+/** 行内语法扫面：一组有序规则，每条返回消费到的下标（null=不匹配），
+ *  全部落空时输出普通字符前进一格。规则序即优先级：
+ *  转义 > 行内码 > 链接 > 粗斜体 > 粗体 > 删除线 > 斜体。 */
+private fun scanInline(
     text: String,
-    color: Color,
     baseStyle: TextStyle,
-    inlineCodeBg: Color,
-    inlineCodeColor: Color,
+    codeColor: Color,
+    codeBg: Color,
     linkColor: Color,
-    linkListener: LinkInteractionListener? = null,
+    linkListener: LinkInteractionListener?,
 ): AnnotatedString = buildAnnotatedString {
-    var i = 0
-    val len = text.length
-
-    while (i < len) {
-        // Escaped character
-        if (text[i] == '\\' && i + 1 < len) {
-            append(text[i + 1])
-            i += 2
-            continue
-        }
-
-        // Inline code
-        if (text[i] == '`') {
-            val end = text.indexOf('`', i + 1)
-            if (end > i) {
-                withStyle(SpanStyle(
-                    fontFamily = FontFamily.Monospace,
-                    color = inlineCodeColor,
-                    background = inlineCodeBg,
-                    fontSize = (baseStyle.fontSize.value * 0.85).sp,
-                )) {
-                    append(text.substring(i + 1, end))
-                }
-                i = end + 1
-                continue
-            }
-        }
-
-        // Link [text](url)
-        if (text[i] == '[') {
-            val closeBracket = text.indexOf(']', i + 1)
-            if (closeBracket > i && closeBracket + 1 < len && text[closeBracket + 1] == '(') {
-                val closeParen = text.indexOf(')', closeBracket + 2)
-                if (closeParen > closeBracket) {
-                    val linkText = text.substring(i + 1, closeBracket)
-                    val url = text.substring(closeBracket + 2, closeParen)
-                    withLink(LinkAnnotation.Url(url, linkInteractionListener = linkListener)) {
-                        withStyle(SpanStyle(
-                            color = linkColor,
-                            textDecoration = TextDecoration.Underline,
-                        )) {
-                            append(linkText)
-                        }
-                    }
-                    i = closeParen + 1
-                    continue
-                }
-            }
-        }
-
-        // Bold + Italic ***text***
-        if (i + 2 < len && text.substring(i, i + 3) == "***") {
-            val end = text.indexOf("***", i + 3)
-            if (end > i) {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic)) {
-                    append(text.substring(i + 3, end))
-                }
-                i = end + 3
-                continue
-            }
-        }
-
-        // Bold **text** or __text__
-        if (i + 1 < len && (text.substring(i, i + 2) == "**" || text.substring(i, i + 2) == "__")) {
-            val marker = text.substring(i, i + 2)
-            val end = text.indexOf(marker, i + 2)
-            if (end > i) {
-                withStyle(SpanStyle(fontWeight = FontWeight.Bold)) {
-                    append(text.substring(i + 2, end))
-                }
-                i = end + 2
-                continue
-            }
-        }
-
-        // Strikethrough ~~text~~
-        if (i + 1 < len && text.substring(i, i + 2) == "~~") {
-            val end = text.indexOf("~~", i + 2)
-            if (end > i) {
-                withStyle(SpanStyle(textDecoration = TextDecoration.LineThrough)) {
-                    append(text.substring(i + 2, end))
-                }
-                i = end + 2
-                continue
-            }
-        }
-
-        // Italic *text* or _text_ (single delimiter, not followed by another)
-        if ((text[i] == '*' || text[i] == '_') &&
-            (i + 1 >= len || text[i + 1] != text[i]) // not ** or __
-        ) {
-            val delim = text[i]
-            val end = text.indexOf(delim, i + 1)
-            if (end > i && end > i + 1) {
-                withStyle(SpanStyle(fontStyle = FontStyle.Italic)) {
-                    append(text.substring(i + 1, end))
-                }
-                i = end + 1
-                continue
-            }
-        }
-
-        // Regular character
-        append(text[i])
-        i++
-    }
-}
-
-// ─── Media blocks (inline image / video / audio) ────────────────────────────
-
-/**
- * Resolve a URL used in Markdown (`minis://...` or a plain path) to a host
- * File, suitable for MediaPlayer, MediaMetadataRetriever, or file share
- * intents. Returns null when the path can't be resolved or the file is
- * missing. Mirrors MinisImageFetcher's resolution logic so inline media
- * tracks the same rules as inline images.
- */
-private fun resolveMediaFile(url: String): File? {
-    if (url.isBlank()) return null
-    // Strip a real query string, but NOT `#`: attachment filenames can
-    // contain '#' (e.g. `foo #China.mp4`). `minis://` URLs don't use
-    // fragments, so truncating at '#' would lose part of the filename.
-    val stripped = url.substringBefore('?')
-    val hostFile: File? = when {
-        stripped.startsWith("minis://") -> {
-            val decoded = java.net.URLDecoder.decode(stripped.removePrefix("minis://"), "UTF-8")
-            ContentPaths.resolveHostPath("/var/minis/$decoded")
-        }
-        stripped.startsWith("file://") -> File(Uri.parse(stripped).path ?: return null)
-        stripped.startsWith("/") -> File(stripped)
-        else -> null
-    }
-    val ok = hostFile?.let { it.exists() && it.isFile } == true
-    android.util.Log.d("MdMedia", "resolveMediaFile url=$url -> host=${hostFile?.absolutePath} exists=$ok")
-    return hostFile?.takeIf { ok }
-}
-
-private fun filenameFromUrl(url: String): String {
-    val stripped = url.substringBefore('?')
-    val last = stripped.substringAfterLast('/')
-    return try {
-        java.net.URLDecoder.decode(last, "UTF-8")
-    } catch (_: Throwable) { last }
-}
-
-/**
- * Share a resolved media file via the system chooser (system player, file
- * manager, etc.). Used when tapping an inline video card — simpler than
- * bundling ExoPlayer for a fullscreen experience.
- */
-private fun openMediaExternally(context: Context, file: File, mime: String) {
-    android.util.Log.d("MdMedia", "openMediaExternally file=${file.absolutePath} mime=$mime")
-    val authority = context.packageName + ".fileprovider"
-    val uri = try {
-        androidx.core.content.FileProvider.getUriForFile(context, authority, file)
-    } catch (_: Throwable) {
-        Uri.fromFile(file)
-    }
-    val intent = Intent(Intent.ACTION_VIEW).apply {
-        setDataAndType(uri, mime)
-        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    val chooser = Intent.createChooser(intent, file.name).apply {
-        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-    }
-    try { context.startActivity(chooser) } catch (_: Throwable) { /* no handler */ }
-}
-
-// -- Image block --
-
-@Composable
-private fun MinisImageBlock(block: MarkdownParser.Block.Image) {
-    val surfaceBg = MaterialTheme.colorScheme.surfaceVariant
-    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-    AsyncImage(
-        model = block.url,
-        contentDescription = block.alt.ifEmpty { filenameFromUrl(block.url) },
-        contentScale = ContentScale.Fit,
-        modifier = Modifier
-            .fillMaxWidth()
-            .heightIn(max = 360.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(surfaceBg)
-            .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
-            .padding(vertical = 4.dp),
+    val bold = SpanStyle(fontWeight = FontWeight.Bold)
+    val codeStyle = SpanStyle(
+        fontFamily = FontFamily.Monospace,
+        color = codeColor,
+        background = codeBg,
+        fontSize = (baseStyle.fontSize.value * 0.85).sp,
     )
-}
+    val rules: List<AnnotatedString.Builder.(Int) -> Int?> = listOf(
+        // \x 转义：输出字面下一字符
+        { pos ->
+            if (text[pos] == '\\' && pos + 1 < text.length) {
+                append(text[pos + 1]); pos + 2
+            } else null
+        },
+        // `行内码`
+        { pos -> delimitedSpan(text, pos, "`", codeStyle, requireContent = false) },
+        // [文字](url)
+        { pos -> linkSpan(text, pos, linkColor, linkListener) },
+        // ***粗斜体***（空内容也消费，与历史行为一致）
+        { pos ->
+            delimitedSpan(text, pos, "***",
+                SpanStyle(fontWeight = FontWeight.Bold, fontStyle = FontStyle.Italic), requireContent = false)
+        },
+        // **粗体** / __粗体__
+        { pos ->
+            delimitedSpan(text, pos, "**", bold, requireContent = false)
+                ?: delimitedSpan(text, pos, "__", bold, requireContent = false)
+        },
+        // ~~删除线~~
+        { pos -> delimitedSpan(text, pos, "~~", SpanStyle(textDecoration = TextDecoration.LineThrough), requireContent = false) },
+        // *斜体* / _斜体_：单分隔符且紧跟同字符时让位给粗体规则（先匹配失败的
+        // `**` 不会在这里被吃掉，保证 `**abc` 原样渲染）
+        { pos ->
+            val c = text[pos]
+            if ((c == '*' || c == '_') && (pos + 1 >= text.length || text[pos + 1] != c)) {
+                delimitedSpan(text, pos, c.toString(), SpanStyle(fontStyle = FontStyle.Italic), requireContent = true)
+            } else null
+        },
+    )
 
-// -- Video block (thumbnail card + tap to open system player) --
-
-@Composable
-private fun MinisVideoBlock(block: MarkdownParser.Block.Video) {
-    android.util.Log.d("MdMedia", "MinisVideoBlock url=${block.url} alt=${block.alt}")
-    val context = LocalContext.current
-    val file = remember(block.url) { resolveMediaFile(block.url) }
-    val filename = remember(block.url) { filenameFromUrl(block.url) }
-    val surfaceBg = MaterialTheme.colorScheme.surfaceVariant
-    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-    val captionColor = MaterialTheme.colorScheme.onSurfaceVariant
-
-    // Generate a thumbnail frame off the main thread via MediaMetadataRetriever.
-    val thumbnail by produceState<Bitmap?>(initialValue = null, key1 = file?.absolutePath) {
-        val f = file ?: run {
-            android.util.Log.d("MdMedia", "video thumbnail skipped (no file)")
-            value = null
-            return@produceState
-        }
-        value = withContext(Dispatchers.IO) {
-            val retriever = MediaMetadataRetriever()
-            try {
-                retriever.setDataSource(f.absolutePath)
-                val bmp = retriever.getFrameAtTime(0, MediaMetadataRetriever.OPTION_CLOSEST_SYNC)
-                android.util.Log.d("MdMedia", "video thumbnail for ${f.name} -> ${bmp?.width}x${bmp?.height}")
-                bmp
-            } catch (t: Throwable) {
-                android.util.Log.w("MdMedia", "video thumbnail failed: ${t.message}")
-                null
-            } finally {
-                try { retriever.release() } catch (_: Throwable) {}
-            }
-        }
-    }
-
-    Column(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(8.dp))
-            .background(surfaceBg)
-            .border(0.5.dp, borderColor, RoundedCornerShape(8.dp))
-            .clickable {
-                file?.let { openMediaExternally(context, it, "video/*") }
-            },
-    ) {
-        Box(
-            modifier = Modifier
-                .fillMaxWidth()
-                .heightIn(min = 180.dp, max = 280.dp),
-            contentAlignment = Alignment.Center,
-        ) {
-            val thumb = thumbnail
-            if (thumb != null) {
-                Image(
-                    bitmap = thumb.asImageBitmap(),
-                    contentDescription = block.alt.ifEmpty { filename },
-                    contentScale = ContentScale.Fit,
-                    modifier = Modifier.fillMaxWidth(),
-                )
-            }
-            Icon(
-                imageVector = novex.android.ui.NovexIcons.PlayCircleFilled,
-                contentDescription = "Play video",
-                tint = Color.White.copy(alpha = 0.9f),
-                modifier = Modifier.width(56.dp).height(56.dp),
-            )
-        }
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .padding(horizontal = 10.dp, vertical = 6.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Icon(
-                imageVector = novex.android.ui.NovexIcons.Videocam,
-                contentDescription = null,
-                tint = captionColor,
-                modifier = Modifier.width(14.dp).height(14.dp),
-            )
-            Text(
-                text = filename,
-                style = MaterialTheme.typography.bodySmall,
-                color = captionColor,
-                maxLines = 1,
-                modifier = Modifier.padding(start = 4.dp),
-            )
-        }
+    var i = 0
+    while (i < text.length) {
+        i = rules.firstNotNullOfOrNull { it(i) } ?: run { append(text[i]); i + 1 }
     }
 }
 
-// -- Audio block (inline play/pause + progress) --
-
-@Composable
-private fun MinisAudioBlock(block: MarkdownParser.Block.Audio) {
-    val file = remember(block.url) { resolveMediaFile(block.url) }
-    val filename = remember(block.url) { filenameFromUrl(block.url) }
-
-    // Dedicated MediaPlayer per card. Released on DisposableEffect dispose.
-    val player = remember(file?.absolutePath) {
-        if (file == null) null else try {
-            MediaPlayer().apply { setDataSource(file.absolutePath); prepare() }
-        } catch (_: Throwable) { null }
-    }
-    DisposableEffect(player) {
-        onDispose { try { player?.release() } catch (_: Throwable) {} }
-    }
-
-    var isPlaying by remember { mutableStateOf(false) }
-    var positionMs by remember { mutableStateOf(0) }
-    val durationMs = player?.duration ?: 0
-
-    // Poll position while playing to drive the progress bar.
-    LaunchedEffect(isPlaying) {
-        while (isPlaying && player != null) {
-            positionMs = try { player.currentPosition } catch (_: Throwable) { 0 }
-            if (!player.isPlaying) { isPlaying = false; break }
-            delay(200)
-        }
-    }
-    DisposableEffect(player) {
-        val listener = MediaPlayer.OnCompletionListener {
-            isPlaying = false
-            positionMs = 0
-            try { player?.seekTo(0) } catch (_: Throwable) {}
-        }
-        player?.setOnCompletionListener(listener)
-        onDispose { try { player?.setOnCompletionListener(null) } catch (_: Throwable) {} }
-    }
-
-    val tint = MaterialTheme.colorScheme.primary
-    val subtle = MaterialTheme.colorScheme.onSurfaceVariant
-    val cardBg = MaterialTheme.colorScheme.surfaceVariant
-    val borderColor = MaterialTheme.colorScheme.outline.copy(alpha = 0.3f)
-    val context = LocalContext.current
-
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 4.dp)
-            .clip(RoundedCornerShape(10.dp))
-            .background(cardBg)
-            .border(0.5.dp, borderColor, RoundedCornerShape(10.dp))
-            .clickable(enabled = file != null) {
-                if (player == null) {
-                    file?.let { openMediaExternally(context, it, "audio/*") }
-                } else {
-                    if (isPlaying) { try { player.pause() } catch (_: Throwable) {} ; isPlaying = false }
-                    else { try { player.start(); isPlaying = true } catch (_: Throwable) {} }
-                }
-            }
-            .padding(horizontal = 10.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Leading icon
-        Icon(
-            imageVector = novex.android.ui.NovexIcons.Audiotrack,
-            contentDescription = null,
-            tint = subtle,
-            modifier = Modifier.width(18.dp).height(18.dp),
-        )
-        Column(
-            modifier = Modifier
-                .weight(1f)
-                .padding(horizontal = 10.dp),
-        ) {
-            Text(
-                text = block.alt.ifEmpty { filename },
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-            )
-            val progress = if (durationMs > 0) positionMs.toFloat() / durationMs else 0f
-            LinearProgressIndicator(
-                progress = { progress.coerceIn(0f, 1f) },
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .padding(top = 4.dp)
-                    .height(3.dp),
-                color = tint,
-                trackColor = tint.copy(alpha = 0.2f),
-            )
-            if (durationMs > 0) {
-                Text(
-                    text = "${formatMs(positionMs)} / ${formatMs(durationMs)}",
-                    style = MaterialTheme.typography.labelSmall,
-                    color = subtle,
-                    modifier = Modifier.padding(top = 2.dp),
-                )
-            }
-        }
-        Icon(
-            imageVector = if (isPlaying) novex.android.ui.NovexIcons.Pause else novex.android.ui.NovexIcons.PlayArrow,
-            contentDescription = if (isPlaying) "Pause" else "Play",
-            tint = tint,
-            modifier = Modifier.width(28.dp).height(28.dp),
-        )
-    }
+/** 通用「对称分隔符包裹」规则：从 [start] 匹配 [delim]，找下一个同分隔符
+ *  收尾，中间内容套 [style]。[requireContent] 为真时要求至少一个内容字符。 */
+private fun AnnotatedString.Builder.delimitedSpan(
+    text: String,
+    start: Int,
+    delim: String,
+    style: SpanStyle,
+    requireContent: Boolean = true,
+): Int? {
+    if (!text.startsWith(delim, start)) return null
+    val end = text.indexOf(delim, start + delim.length)
+    if (end < 0) return null
+    if (requireContent && end == start + delim.length) return null
+    withStyle(style) { append(text.substring(start + delim.length, end)) }
+    return end + delim.length
 }
 
-private fun formatMs(ms: Int): String {
-    if (ms <= 0) return "0:00"
-    val totalSec = ms / 1000
-    val m = totalSec / 60
-    val s = totalSec % 60
-    return "%d:%02d".format(m, s)
+/** `[文字](url)` 规则；结构不完整（缺 `]`/`(`/`)`）返回 null 让字面输出。 */
+private fun AnnotatedString.Builder.linkSpan(
+    text: String,
+    start: Int,
+    linkColor: Color,
+    linkListener: LinkInteractionListener?,
+): Int? {
+    if (text[start] != '[') return null
+    val closeBracket = text.indexOf(']', start + 1)
+    if (closeBracket <= start) return null
+    val openParen = closeBracket + 1
+    if (openParen >= text.length || text[openParen] != '(') return null
+    val closeParen = text.indexOf(')', openParen + 1)
+    if (closeParen <= closeBracket) return null
+    val url = text.substring(openParen + 1, closeParen)
+    withLink(LinkAnnotation.Url(url, linkInteractionListener = linkListener)) {
+        withStyle(SpanStyle(color = linkColor, textDecoration = TextDecoration.Underline)) {
+            append(text.substring(start + 1, closeBracket))
+        }
+    }
+    return closeParen + 1
 }

@@ -17,149 +17,6 @@ import java.util.Date
 import java.util.Locale
 import novex.android.ContentPaths
 
-/** Mirrors iOS FileSortKey. */
-enum class FileSortKey { NAME, MODIFIED, SIZE, KIND }
-
-/**
- * File item model — corresponds to iOS FileItem.
- */
-@Immutable
-data class FileItem(
-    val file: File,
-    val name: String,
-    val isDirectory: Boolean,
-    val isSymlink: Boolean,
-    val size: Long,
-    /** lastModified() in epoch ms, 0 when unavailable. */
-    val modifiedMs: Long = 0L,
-) {
-    val iconRes: String
-        get() {
-            if (isDirectory) return "folder"
-            val ext = file.extension.lowercase()
-            return when (ext) {
-                "txt", "md", "json", "xml", "yaml", "yml", "conf", "cfg", "ini",
-                "log", "csv" -> "text"
-
-                "sh", "bash", "zsh", "fish" -> "terminal"
-                "py", "js", "ts", "kt", "java", "c", "cpp", "h", "m", "swift",
-                "rs", "go", "rb", "php", "lua", "pl" -> "code"
-
-                "png", "jpg", "jpeg", "gif", "bmp", "svg", "webp", "ico" -> "image"
-                "mp3", "wav", "aac", "flac", "ogg", "m4a" -> "audio"
-                "mp4", "mov", "avi", "mkv", "webm" -> "video"
-                "zip", "tar", "gz", "bz2", "xz", "7z", "rar" -> "archive"
-                "pdf" -> "pdf"
-                "apk", "deb", "rpm" -> "package"
-                "db", "sqlite", "sqlite3" -> "database"
-                "so", "dylib", "a" -> "library"
-                else -> "file"
-            }
-        }
-
-    val formattedSize: String
-        get() = Formatter.formatFileSize(null, size)
-
-    /** Whether this file can be previewed inline (text, image, etc.) */
-    val isPreviewable: Boolean
-        get() = isTextFile || isImageFile
-
-    val isTextFile: Boolean
-        get() {
-            val ext = file.extension.lowercase()
-            return ext in setOf(
-                "txt", "md", "json", "xml", "yaml", "yml", "conf", "cfg", "ini",
-                "log", "csv", "sh", "bash", "zsh", "fish",
-                "py", "js", "ts", "kt", "java", "c", "cpp", "h", "m", "swift",
-                "rs", "go", "rb", "php", "lua", "pl", "html", "css", "scss",
-                "toml", "env", "gitignore", "dockerfile", "makefile",
-            ) || ext.isEmpty() // extensionless files treated as text
-        }
-
-    val isImageFile: Boolean
-        get() {
-            val ext = file.extension.lowercase()
-            return ext in setOf("png", "jpg", "jpeg", "gif", "bmp", "webp", "ico")
-        }
-
-    val isMarkdownFile: Boolean
-        get() = file.extension.lowercase() in setOf("md", "markdown", "mdown", "mkd")
-
-    val isHtmlFile: Boolean
-        get() = file.extension.lowercase() in setOf("html", "htm", "xhtml")
-
-    val isAudioFile: Boolean
-        get() = file.extension.lowercase() in setOf("mp3", "wav", "aac", "flac", "ogg", "m4a")
-
-    val isVideoFile: Boolean
-        get() = file.extension.lowercase() in setOf("mp4", "mov", "avi", "mkv", "webm")
-
-    val isPdfFile: Boolean
-        get() = file.extension.lowercase() == "pdf"
-
-    // T144 — file-type flags driving FilePreviewScreen renderers.
-    val isCsvFile: Boolean
-        get() = file.extension.lowercase() in setOf("csv", "tsv")
-
-    val isJsonFile: Boolean
-        get() = file.extension.lowercase() == "json"
-
-    val isArchiveFile: Boolean
-        get() = file.extension.lowercase() in setOf("zip", "jar", "apk", "aar")
-
-    val isOfficeFile: Boolean
-        get() = file.extension.lowercase() in setOf(
-            "xlsx", "xls", "docx", "doc", "pptx", "ppt", "odt", "ods", "odp",
-        )
-
-    /** Mirrors iOS FileItem.formattedDate: today=time, yesterday="Yesterday", <7d=weekday, else short date. */
-    val formattedDate: String
-        get() {
-            if (modifiedMs <= 0L) return ""
-            val date = Date(modifiedMs)
-            val now = Calendar.getInstance()
-            val then = Calendar.getInstance().apply { time = date }
-            val sameDay = now.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
-                now.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
-            if (sameDay) return timeFormatter.format(date)
-            val yesterday = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-            val isYesterday = yesterday.get(Calendar.YEAR) == then.get(Calendar.YEAR) &&
-                yesterday.get(Calendar.DAY_OF_YEAR) == then.get(Calendar.DAY_OF_YEAR)
-            if (isYesterday) return "Yesterday"
-            val daysAgo = (now.timeInMillis - then.timeInMillis) / (24L * 60 * 60 * 1000)
-            if (daysAgo in 0..6) return weekdayFormatter.format(date)
-            return shortDateFormatter.format(date)
-        }
-
-    companion object {
-        private val timeFormatter = SimpleDateFormat("h:mm a", Locale.getDefault())
-        private val weekdayFormatter = SimpleDateFormat("EEEE", Locale.getDefault())
-        private val shortDateFormatter = SimpleDateFormat("MMM d, yyyy", Locale.getDefault())
-
-        fun from(file: File): FileItem? {
-            if (!file.exists()) return null
-            val isSymlink = Files.isSymbolicLink(file.toPath())
-            val resolved = if (isSymlink) {
-                try {
-                    Files.readSymbolicLink(file.toPath()).toFile().let { target ->
-                        if (target.isAbsolute) target else File(file.parentFile, target.path)
-                    }
-                } catch (_: Exception) {
-                    file
-                }
-            } else file
-
-            return FileItem(
-                file = file,
-                name = file.name,
-                isDirectory = resolved.isDirectory,
-                isSymlink = isSymlink,
-                size = if (resolved.isDirectory) 0L else resolved.length(),
-                modifiedMs = resolved.lastModified(),
-            )
-        }
-    }
-}
 
 data class FileBrowserUiState(
     val items: List<FileItem> = emptyList(),
@@ -194,84 +51,69 @@ class FileBrowserViewModel(
     private val rootPath: File,
     initialPath: File? = null,
     private val rootLabel: String = rootPath.name,
-    // linuxRootPath: when set, directory listings route through the
-    // content bind mounts so subdirs like /var/minis/{skills,memory,shared} list their
-    // real content (filesDir/minis-global/*) instead of the empty placeholder
-    // dirs shipped inside the Alpine rootfs tarball.
+    // linuxRootPath: 设置后目录列表走内容 bind mount 解析，让
+    // /var/minis/{skills,memory,shared} 这类子目录列到真实内容
+    // （filesDir/minis-global/*），而不是 Alpine rootfs 里的空占位目录。
     private val linuxRootPath: String? = null,
-    // T147: when set together with [appContext], `/var/minis/{attachments,
-    // workspace,offloads,browser}` resolves against THIS session's per-session
-    // host dir (filesDir/minis-sessions/<sessionId>/<subdir>) instead of
-    // the global bindMounts map. Lets the Chat
-    // Files browser show files generated by the agent in this session even
-    // when another session was the most recent shell to boot.
+    // T147: 与 [appContext] 同时设置时，/var/minis/{attachments,workspace,
+    // offloads,browser} 解析到本会话目录（filesDir/minis-sessions/<sid>/<subdir>）
+    // 而不是全局 bindMounts 表——会话内文件浏览器能看到本 session agent
+    // 产出的文件，即使最近一次拉起 shell 的是别的会话。
     private val sessionId: String? = null,
     private val appContext: android.content.Context? = null,
-    // [T-android-copy-abs-path-fullpath] Linux (PRoot) path of [rootPath] used
-    // ONLY to compute the "Copy Absolute Path" value, decoupled from
-    // [linuxRootPath] (which also re-routes directory listings). The session
-    // storage browser roots its host listing directly at the per-session dir
-    // (filesDir/minis-sessions/<sid>) — that listing already resolves correctly
-    // host-side, so we must NOT route it through the PRoot resolver (which would
-    // redirect /var/minis to the global/empty placeholder dir). Instead this
-    // prefix just lets the copy menu emit /var/minis/workspace/foo.py instead of
-    // the opaque /data/user/0/.../minis-sessions/<sid>/workspace/foo.py host
-    // path. When null, [linuxRootPath] (if any) drives the copy path as before.
+    // [T-android-copy-abs-path-fullpath] [rootPath] 对应的 Linux 路径，只用于
+    // 计算「复制绝对路径」的显示值，与 [linuxRootPath]（同时会重路由目录列表）
+    // 解耦。会话存储浏览器直接把 host 列表根设在会话目录，列表解析已经正确，
+    // 不能再走 PRoot resolver（会把 /var/minis 重定向到全局空占位目录）；
+    // 这个前缀只是让复制路径输出 /var/minis/workspace/foo.py 而不是
+    // /data/user/0/.../minis-sessions/<sid>/workspace/foo.py。为 null 时回退
+    // 用 [linuxRootPath]。
     private val displayLinuxPrefix: String? = null,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FileBrowserUiState())
     val uiState: StateFlow<FileBrowserUiState> = _uiState.asStateFlow()
 
-    /** Cached unsorted listing so re-sort doesn't need to re-stat the dir. */
+    /** 未排序的原始列表缓存——重排序不用再 stat 目录。 */
     private var rawItems: List<FileItem> = emptyList()
 
-    /** Path relative to [rootPath] (e.g. "skills/skill-creator"); empty = at root. */
-    private var relativePath: String = initialPath?.let { init ->
-        if (init.absolutePath.startsWith(rootPath.absolutePath)) {
-            init.absolutePath.removePrefix(rootPath.absolutePath).trim('/')
-        } else ""
-    }.orEmpty()
+    /** 相对 [rootPath] 的路径（如 "skills/skill-creator"）；空串 = 在根。 */
+    private var relativePath: String = initialPath
+        ?.takeIf { it.absolutePath.startsWith(rootPath.absolutePath) }
+        ?.absolutePath
+        ?.removePrefix(rootPath.absolutePath)
+        ?.trim('/')
+        .orEmpty()
 
     /**
-     * T145: snapshot of [relativePath] at construction time — the
-     * directory the screen was opened at. Back navigation stops here
-     * (and `goBack()` returns false to signal the caller to pop the
-     * screen) instead of crawling further up toward [rootPath]. Mirrors
-     * iOS FileBrowserView's behaviour where the initial directory is
-     * the effective root for the back-stack of this screen.
+     * T145: 打开屏幕时的 [relativePath] 快照——返回导航到这里为止
+     * （goBack() 返回 false 让调用方 pop 屏幕），不再继续往 rootPath 爬。
+     * 对齐 iOS FileBrowserView：初始目录就是本屏返回栈的有效根。
      */
     private val initialRelativePath: String = relativePath
 
-    /** Current resolved host-side File (accounts for PRoot bind mounts). */
+    /** 当前目录的宿主侧 File（已按 PRoot bind mount 解析）。 */
     private val currentHostPath: File
-        get() = resolveCurrentHostPath()
-
-    private fun resolveCurrentHostPath(): File {
-        val linuxRoot = linuxRootPath
-        if (linuxRoot != null) {
-            val linuxPath = if (relativePath.isEmpty()) linuxRoot
-                            else "${linuxRoot.trimEnd('/')}/$relativePath"
-            // T147: prefer the session-scoped resolver when we know which
-            // session's view we're rendering — global bindMounts is
-            // last-writer-wins and points at whichever session's PRoot
-            // booted most recently.
-            val sid = sessionId
-            val ctx = appContext
-            if (sid != null && ctx != null) {
-                ContentPaths.resolveSessionHostPath(sid, linuxPath, ctx)
-                    ?.let { return it }
+        get() {
+            val linuxRoot = linuxRootPath
+            if (linuxRoot != null) {
+                val linuxPath = if (relativePath.isEmpty()) linuxRoot
+                    else "${linuxRoot.trimEnd('/')}/$relativePath"
+                // T147: 知道会话 id 时优先走会话级 resolver——全局
+                // bindMounts 是 last-writer-wins，指向最近拉起 PRoot 的会话。
+                val ctx = appContext
+                if (sessionId != null && ctx != null) {
+                    ContentPaths.resolveSessionHostPath(sessionId, linuxPath, ctx)
+                        ?.let { return it }
+                }
+                ContentPaths.resolveHostPath(linuxPath)?.let { return it }
             }
-            ContentPaths.resolveHostPath(linuxPath)?.let { return it }
+            return if (relativePath.isEmpty()) rootPath else File(rootPath, relativePath)
         }
-        return if (relativePath.isEmpty()) rootPath else File(rootPath, relativePath)
-    }
 
     init {
-        // Restore persisted showHidden preference (T-hidden-files
-        // a3e7f1d0). Persisted lazily via SharedPreferences when the user
-        // toggles the menu item; if [appContext] is null (e.g. test
-        // harness) we fall back to the default false.
+        // 恢复持久化的 showHidden 偏好（T-hidden-files a3e7f1d0）。
+        // appContext 为 null（测试环境）时回落默认 false。
         val persisted = appContext
             ?.getSharedPreferences(PREFS_NAME, android.content.Context.MODE_PRIVATE)
             ?.getBoolean(PREF_KEY_SHOW_HIDDEN, false)
@@ -279,15 +121,13 @@ class FileBrowserViewModel(
         if (persisted) {
             _uiState.value = _uiState.value.copy(showHidden = true)
         }
-        updatePathComponents()
+        publishPathState()
         loadItems()
     }
 
     /**
-     * Toggle the "show hidden files" preference and re-load the current
-     * directory listing so newly-included / newly-excluded dotfiles
-     * surface immediately. Persisted via SharedPreferences so the choice
-     * sticks across app restarts. T-hidden-files a3e7f1d0.
+     * 切换「显示隐藏文件」并立即重载当前目录。SharedPreferences 持久化，
+     * 跨启动保留。T-hidden-files a3e7f1d0.
      */
     fun setShowHidden(value: Boolean) {
         if (_uiState.value.showHidden == value) return
@@ -303,36 +143,24 @@ class FileBrowserViewModel(
     fun navigateTo(item: FileItem) {
         if (!item.isDirectory) return
         relativePath = if (relativePath.isEmpty()) item.name else "$relativePath/${item.name}"
-        updatePathComponents()
+        publishPathState()
         loadItems()
     }
 
     /**
-     * T145: pop one directory level. Returns `true` when the navigation
-     * was consumed in-place (the screen stays open), `false` when we're
-     * already at the initial entry directory — caller should treat this
-     * as "exit the screen" (popBackStack).
+     * T145: 向上一层。返回 true = 已在内部消费（屏幕保留）；false = 已经
+     * 在入口目录，调用方应退出本屏（popBackStack）。
      *
-     * Without the floor at [initialRelativePath] the user would crawl
-     * up past the directory they entered (e.g. into `/var/`, `/`),
-     * which makes Chat Files feel like a generic file manager rather
-     * than a session-scoped browser.
+     * 没有 [initialRelativePath] 地板时用户能爬出进入点（爬到 /var/、/），
+     * 让会话文件浏览器变成裸文件管理器。
      */
     fun goBack(): Boolean {
         if (relativePath == initialRelativePath) return false
-        // We're somewhere below the initial dir. Pop one segment, but
-        // don't pop past the initial dir even if the user navigated
-        // sideways (e.g. via breadcrumb tap to a deeper sibling) —
-        // clamp the resulting path to start with initialRelativePath.
+        // 从入口之下的某层弹一级；即便用户绕路过（面包屑点到更深的
+        // 兄弟目录），结果路径也要 clamp 在入口目录之内。
         val parent = relativePath.substringBeforeLast('/', "")
-        val initial = initialRelativePath
-        relativePath = when {
-            initial.isEmpty() -> parent
-            parent.isEmpty() -> initial
-            parent == initial || parent.startsWith("$initial/") -> parent
-            else -> initial
-        }
-        updatePathComponents()
+        relativePath = clampToEntry(parent)
+        publishPathState()
         loadItems()
         return true
     }
@@ -342,28 +170,26 @@ class FileBrowserViewModel(
         val candidate = if (index <= 0) "" else {
             components.drop(1).take(index).joinToString("/")
         }
-        // T145: clamp breadcrumb taps to the initial entry directory
-        // so the user can't escape "above" Chat Files via the path bar
-        // either. Anything that would resolve above the entry dir snaps
-        // back to it.
+        // T145: 面包屑跳转同样 clamp 到入口目录，防止从路径条逃出。
+        relativePath = clampToEntry(candidate)
+        publishPathState()
+        loadItems()
+    }
+
+    /** 把候选相对路径约束在入口目录之下；入口为空串时全放开。 */
+    private fun clampToEntry(candidate: String): String {
         val initial = initialRelativePath
-        relativePath = when {
+        return when {
             initial.isEmpty() -> candidate
             candidate == initial || candidate.startsWith("$initial/") -> candidate
             else -> initial
         }
-        updatePathComponents()
-        loadItems()
     }
 
     fun deleteItem(item: FileItem) {
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                if (item.isDirectory) {
-                    item.file.deleteRecursively()
-                } else {
-                    item.file.delete()
-                }
+                if (item.isDirectory) item.file.deleteRecursively() else item.file.delete()
                 loadItems()
             } catch (e: Exception) {
                 _uiState.value = _uiState.value.copy(errorMessage = e.message)
@@ -385,48 +211,25 @@ class FileBrowserViewModel(
             sortAscending = ascending,
             foldersFirst = foldersFirst,
         )
-        val sorted = applySort(rawItems, newState)
+        val sorted = rawItems.sortedWith(sortComparator(newState))
         _uiState.value = newState.copy(items = sorted, isEmpty = sorted.isEmpty())
     }
 
-    private fun applySort(
-        items: List<FileItem>,
-        state: FileBrowserUiState,
-    ): List<FileItem> {
-        val nameAsc = Comparator<FileItem> { a, b ->
-            a.name.compareTo(b.name, ignoreCase = true)
+    private fun sortComparator(state: FileBrowserUiState): Comparator<FileItem> {
+        val byName = compareBy<FileItem> { it.name.lowercase() }
+        val byKey: Comparator<FileItem> = when (state.sortKey) {
+            FileSortKey.NAME -> byName
+            FileSortKey.MODIFIED -> compareBy<FileItem> { it.modifiedMs }.then(byName)
+            FileSortKey.SIZE -> compareBy<FileItem> { it.size }.then(byName)
+            FileSortKey.KIND -> compareBy<FileItem> {
+                if (it.isDirectory) "" else it.file.extension.lowercase()
+            }.then(byName)
         }
-        val keyComparator: Comparator<FileItem> = when (state.sortKey) {
-            FileSortKey.NAME -> nameAsc
-            FileSortKey.MODIFIED -> Comparator { a, b ->
-                val cmp = a.modifiedMs.compareTo(b.modifiedMs)
-                if (cmp != 0) cmp else nameAsc.compare(a, b)
-            }
-            FileSortKey.SIZE -> Comparator { a, b ->
-                val cmp = a.size.compareTo(b.size)
-                if (cmp != 0) cmp else nameAsc.compare(a, b)
-            }
-            FileSortKey.KIND -> Comparator { a, b ->
-                val ea = if (a.isDirectory) "" else a.file.extension.lowercase()
-                val eb = if (b.isDirectory) "" else b.file.extension.lowercase()
-                val cmp = ea.compareTo(eb)
-                if (cmp != 0) cmp else nameAsc.compare(a, b)
-            }
-        }
-        val directional = if (state.sortAscending) keyComparator else keyComparator.reversed()
-        val final: Comparator<FileItem> = if (state.foldersFirst) {
-            // Directories first regardless of sort direction.
-            Comparator<FileItem> { a, b ->
-                when {
-                    a.isDirectory && !b.isDirectory -> -1
-                    !a.isDirectory && b.isDirectory -> 1
-                    else -> 0
-                }
-            }.then(directional)
-        } else {
-            directional
-        }
-        return items.sortedWith(final)
+        val directional = if (state.sortAscending) byKey else byKey.reversed()
+        // 文件夹置顶不受排序方向影响。
+        return if (state.foldersFirst) {
+            compareBy<FileItem> { if (it.isDirectory) 0 else 1 }.then(directional)
+        } else directional
     }
 
     private fun loadItems() {
@@ -434,25 +237,23 @@ class FileBrowserViewModel(
         val hostPath = currentHostPath
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                // Resolve symlinks for listing but keep logical path for breadcrumbs
+                // 列表按符号链接目标 stat，但面包屑保留逻辑路径。
                 val resolvedPath = try {
                     hostPath.toPath().toRealPath().toFile()
                 } catch (_: Exception) {
                     hostPath
                 }
 
-                // Dotfile filter is gated on the user-facing "Show Hidden
-                // Files" preference (T-hidden-files a3e7f1d0). Snapshot
-                // showHidden here so we don't see a torn read if the
-                // setter races with this background load.
+                // 先快照 showHidden，避免 setter 与后台加载竞争读到撕裂值
+                // （T-hidden-files a3e7f1d0）。
                 val showHidden = _uiState.value.showHidden
                 val files = resolvedPath.listFiles()
                     ?.filter { showHidden || !it.name.startsWith(".") }
                     ?.mapNotNull { FileItem.from(it) }
-                    ?: emptyList()
+                    .orEmpty()
 
                 rawItems = files
-                val sorted = applySort(files, _uiState.value)
+                val sorted = files.sortedWith(sortComparator(_uiState.value))
                 _uiState.value = _uiState.value.copy(
                     items = sorted,
                     isLoading = false,
@@ -469,27 +270,20 @@ class FileBrowserViewModel(
         }
     }
 
-    private fun updatePathComponents() {
+    private fun publishPathState() {
         val components = mutableListOf(rootLabel)
         if (relativePath.isNotEmpty()) {
             components += relativePath.split("/").filter { it.isNotEmpty() }
         }
-
         _uiState.value = _uiState.value.copy(
             pathComponents = components,
-            // T145: only "can go back" when we're below the entry
-            // directory; at the initial root the back button should
-            // exit the screen instead of trying to ascend into the
-            // wrapping rootfs.
+            // T145: 只有位于入口目录之下才可返回；在入口处的返回键
+            // 交给调用方退出屏幕，而不是向上爬进 rootfs 包装层。
             canGoBack = relativePath != initialRelativePath,
             currentPath = currentHostPath.absolutePath,
-            // [T-android-file-context-copy-abs-path] Linux dir path for the
-            // "Copy Absolute Path" menu item — derived from the VM's own
-            // linuxRootPath + relativePath (the same mapping directory
-            // listings route through), not host-path string-fiddling.
-            // [T-android-copy-abs-path-fullpath] Prefer the dedicated
-            // displayLinuxPrefix when supplied (session storage browser), else
-            // fall back to linuxRootPath (Chat Files / shared folders).
+            // [T-android-file-context-copy-abs-path] 「复制绝对路径」菜单
+            // 用的 Linux 目录路径：优先 displayLinuxPrefix（会话存储浏览器），
+            // 否则回退 linuxRootPath（Chat Files / 共享目录）。见构造器注释。
             currentLinuxPath = (displayLinuxPrefix ?: linuxRootPath)?.let { root ->
                 if (relativePath.isEmpty()) root.trimEnd('/')
                 else "${root.trimEnd('/')}/$relativePath"

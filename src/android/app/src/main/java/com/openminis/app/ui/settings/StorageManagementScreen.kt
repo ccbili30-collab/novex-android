@@ -1,8 +1,5 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.R
-import com.openminis.app.ui.components.MinisTextButton
-
 import android.content.Context
 import android.text.format.Formatter
 import androidx.compose.foundation.background
@@ -12,18 +9,14 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
-import novex.android.ui.AlertDialog
 import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -38,26 +31,62 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.res.stringResource
-import novex.android.data.chat.ChatDao
-import novex.android.data.chat.SessionRow
+import com.openminis.app.R
+import com.openminis.app.ui.components.MinisTextButton
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
+import novex.android.data.chat.ChatDao
+import novex.android.data.chat.SessionRow
+import novex.android.ui.AlertDialog
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 import java.io.File
 
-private data class SessionStorageInfo(
+private class SessionStorage(
     val id: String,
     val title: String?,
-    val minisSize: Long,
-    val mediaSize: Long,
+    val sandboxBytes: Long,
+    val mediaBytes: Long,
 ) {
-    val totalSize: Long get() = minisSize + mediaSize
+    val totalBytes: Long get() = sandboxBytes + mediaBytes
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// ── 磁盘占用采样（IO 线程调用）──────────────────────────────────────────────
+
+private fun dirBytes(dir: File): Long =
+    if (!dir.exists()) 0L else dir.walkTopDown().filter { it.isFile }.sumOf { it.length() }
+
+private fun dbBytes(context: Context): Long {
+    val db = context.getDatabasePath("minis.db")
+    return listOf(db, File(db.path + "-wal"), File(db.path + "-shm"))
+        .filter { it.exists() }
+        .sumOf { it.length() }
+}
+
+private fun mediaBytesBySession(mediaRoot: File, sessionIds: Set<String>): Map<String, Long> {
+    if (!mediaRoot.exists()) return emptyMap()
+    return mediaRoot.walkTopDown()
+        .filter { it.isFile }
+        .mapNotNull { f -> f.parentFile?.name?.takeIf(sessionIds::contains)?.let { it to f.length() } }
+        .groupBy({ it.first }, { it.second })
+        .mapValues { (_, v) -> v.sum() }
+}
+
+private fun purgeSessionMedia(mediaRoot: File, sessionId: String) {
+    if (!mediaRoot.exists()) return
+    mediaRoot.walkTopDown()
+        .filter { it.isDirectory && it.name == sessionId }
+        .forEach { it.deleteRecursively() }
+}
+
+// ── 总览页 ──────────────────────────────────────────────────────────────────
+
 @Composable
 fun StorageManagementScreen(
     chatDao: ChatDao,
@@ -67,99 +96,87 @@ fun StorageManagementScreen(
     val context = LocalContext.current
     val scope = rememberCoroutineScope()
 
-    var isLoading by remember { mutableStateOf(true) }
+    var loading by remember { mutableStateOf(true) }
     var dbSize by remember { mutableLongStateOf(0L) }
-    // [T-memory-cap-and-storage] 卡片数据拆两桶：修订历史（revisions/）每次
-    // 保存累积一个文件、无上限——1.98G 数据目录的主嫌，必须单独可见。
+    // 卡片数据拆两桶：revisions/ 每次保存累积无上限，是占用主嫌，单独可见。
     var cardContentSize by remember { mutableLongStateOf(0L) }
     var cardRevisionSize by remember { mutableLongStateOf(0L) }
-    var sessions by remember { mutableStateOf<List<SessionStorageInfo>>(emptyList()) }
+    var sessionRows by remember { mutableStateOf<List<SessionStorage>>(emptyList()) }
 
-    fun reload() {
+    fun rescan() {
         scope.launch {
-            isLoading = true
+            loading = true
             withContext(Dispatchers.IO) {
-                dbSize = databaseSize(context)
+                dbSize = dbBytes(context)
 
                 val cardDir = File(context.filesDir, "rewrite-content")
-                val revisions = directorySize(File(cardDir, "revisions"))
+                val revisions = dirBytes(File(cardDir, "revisions"))
                 cardRevisionSize = revisions
-                cardContentSize = (directorySize(cardDir) - revisions).coerceAtLeast(0L)
+                cardContentSize = (dirBytes(cardDir) - revisions).coerceAtLeast(0L)
 
                 val allSessions = chatDao.primarySessions()
-                val sessionsDir = File(context.filesDir, "minis-sessions")
-                val mediaDir = File(context.filesDir, "media")
-
-                val mediaSizes = mediaSizesBySession(mediaDir, allSessions.map { it.id }.toSet())
-
-                sessions = allSessions.map { session ->
-                    val minisDir = File(sessionsDir, session.id)
-                    SessionStorageInfo(
-                        id = session.id,
-                        title = session.title,
-                        minisSize = directorySize(minisDir),
-                        mediaSize = mediaSizes[session.id] ?: 0L,
-                    )
-                }.sortedByDescending { it.totalSize }
+                val mediaBySession = mediaBytesBySession(
+                    File(context.filesDir, "media"),
+                    allSessions.map { it.id }.toSet(),
+                )
+                val sandboxRoot = File(context.filesDir, "minis-sessions")
+                sessionRows = allSessions
+                    .map { s ->
+                        SessionStorage(
+                            id = s.id,
+                            title = s.title,
+                            sandboxBytes = dirBytes(File(sandboxRoot, s.id)),
+                            mediaBytes = mediaBySession[s.id] ?: 0L,
+                        )
+                    }
+                    .sortedByDescending { it.totalBytes }
             }
-            isLoading = false
+            loading = false
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
+    LaunchedEffect(Unit) { rescan() }
 
-    val totalSessionSize = sessions.sumOf { it.totalSize }
+    val sessionTotal = sessionRows.sumOf { it.totalBytes }
 
     SettingsScaffold(title = stringResource(R.string.storage_title), onBack = onBack) {
         SettingsSection(header = stringResource(R.string.storage_section_overview)) {
-            StorageOverviewRow(
-                color = Color(0xFF007AFF),
-                label = stringResource(R.string.storage_overview_database),
-                value = Formatter.formatFileSize(context, dbSize),
-                showDivider = true,
+            val overview = listOf(
+                Triple(Color(0xFF007AFF), R.string.storage_overview_database, dbSize),
+                Triple(Color(0xFF5856D6), R.string.storage_overview_sessions, sessionTotal),
+                Triple(Color(0xFF34C759), R.string.storage_overview_card_content, cardContentSize),
+                Triple(Color(0xFFFF9500), R.string.storage_overview_card_revisions, cardRevisionSize),
             )
-            StorageOverviewRow(
-                color = Color(0xFF5856D6),
-                label = stringResource(R.string.storage_overview_sessions),
-                value = Formatter.formatFileSize(context, totalSessionSize),
-                showDivider = true,
-            )
-            StorageOverviewRow(
-                color = Color(0xFF34C759),
-                label = stringResource(R.string.storage_overview_card_content),
-                value = Formatter.formatFileSize(context, cardContentSize),
-                showDivider = true,
-            )
-            StorageOverviewRow(
-                color = Color(0xFFFF9500),
-                label = stringResource(R.string.storage_overview_card_revisions),
-                value = Formatter.formatFileSize(context, cardRevisionSize),
-                showDivider = false,
-            )
+            overview.forEachIndexed { i, (color, labelRes, bytes) ->
+                OverviewStatRow(
+                    swatch = color,
+                    label = stringResource(labelRes),
+                    value = Formatter.formatFileSize(context, bytes),
+                    showDivider = i < overview.lastIndex,
+                )
+            }
         }
 
         SettingsSection(header = stringResource(R.string.storage_section_sessions)) {
             when {
-                isLoading -> Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(16.dp),
+                loading -> Row(
+                    Modifier.fillMaxWidth().padding(16.dp),
                     horizontalArrangement = Arrangement.Center,
                 ) {
-                    CircularProgressIndicator(modifier = Modifier.size(20.dp), strokeWidth = 2.dp)
+                    CircularProgressIndicator(Modifier.size(20.dp), strokeWidth = 2.dp)
                 }
-                sessions.isEmpty() -> Text(
+                sessionRows.isEmpty() -> Text(
                     stringResource(R.string.storage_no_sessions),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = NovexType.Body,
+                    color = NovexColors.SecondaryText,
                     modifier = Modifier.padding(16.dp),
                 )
-                else -> sessions.forEachIndexed { index, session ->
+                else -> sessionRows.forEachIndexed { i, row ->
                     SettingsValueRow(
-                        title = session.title ?: "Untitled",
-                        value = Formatter.formatFileSize(context, session.totalSize),
-                        onClick = { onSessionClick(session.id) },
-                        showDivider = index < sessions.size - 1,
+                        title = row.title ?: "Untitled",
+                        value = Formatter.formatFileSize(context, row.totalBytes),
+                        onClick = { onSessionClick(row.id) },
+                        showDivider = i < sessionRows.lastIndex,
                     )
                 }
             }
@@ -169,7 +186,8 @@ fun StorageManagementScreen(
     }
 }
 
-@OptIn(ExperimentalMaterial3Api::class)
+// ── 单会话详情页 ─────────────────────────────────────────────────────────────
+
 @Composable
 fun SessionStorageDetailScreen(
     sessionId: String,
@@ -181,47 +199,40 @@ fun SessionStorageDetailScreen(
     val scope = rememberCoroutineScope()
 
     var session by remember { mutableStateOf<SessionRow?>(null) }
-    var minisSize by remember { mutableLongStateOf(0L) }
+    var sandboxSize by remember { mutableLongStateOf(0L) }
     var mediaSize by remember { mutableLongStateOf(0L) }
-    var isClearing by remember { mutableStateOf(false) }
-    var showClearDialog by remember { mutableStateOf(false) }
+    var clearing by remember { mutableStateOf(false) }
+    var confirmClear by remember { mutableStateOf(false) }
 
-    val sessionsDir = File(context.filesDir, "minis-sessions")
-    val mediaDir = File(context.filesDir, "media")
+    val sandboxRoot = File(context.filesDir, "minis-sessions")
+    val mediaRoot = File(context.filesDir, "media")
 
-    fun reload() {
-        scope.launch {
-            withContext(Dispatchers.IO) {
-                session = chatDao.sessionById(sessionId)
-                minisSize = directorySize(File(sessionsDir, sessionId))
-                val mediaSizes = mediaSizesBySession(mediaDir, setOf(sessionId))
-                mediaSize = mediaSizes[sessionId] ?: 0L
-            }
+    LaunchedEffect(Unit) {
+        withContext(Dispatchers.IO) {
+            session = chatDao.sessionById(sessionId)
+            sandboxSize = dirBytes(File(sandboxRoot, sessionId))
+            mediaSize = mediaBytesBySession(mediaRoot, setOf(sessionId))[sessionId] ?: 0L
         }
     }
 
-    LaunchedEffect(Unit) { reload() }
-
-    val totalSize = minisSize + mediaSize
+    val totalSize = sandboxSize + mediaSize
     val hasFiles = totalSize > 0
 
     SettingsScaffold(title = session?.title ?: "Session", onBack = onBack) {
         SettingsSection(header = stringResource(R.string.storage_section_minis_files)) {
-            if (minisSize > 0) {
+            if (sandboxSize > 0) {
                 SettingsValueRow(
                     title = stringResource(R.string.storage_browse_files),
-                    value = Formatter.formatFileSize(context, minisSize),
-                    onClick = {
-                        onBrowseFiles(File(sessionsDir, sessionId).absolutePath)
-                    },
-                    valueColor = MaterialTheme.colorScheme.onSurfaceVariant,
+                    value = Formatter.formatFileSize(context, sandboxSize),
+                    onClick = { onBrowseFiles(File(sandboxRoot, sessionId).absolutePath) },
+                    valueColor = NovexColors.SecondaryText,
                     showDivider = false,
                 )
             } else {
                 Text(
                     stringResource(R.string.storage_no_minis_files),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = NovexType.Body,
+                    color = NovexColors.SecondaryText,
                     modifier = Modifier.padding(16.dp),
                 )
             }
@@ -237,44 +248,41 @@ fun SessionStorageDetailScreen(
             } else {
                 Text(
                     stringResource(R.string.storage_no_media_files),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    style = MaterialTheme.typography.bodyMedium,
+                    style = NovexType.Body,
+                    color = NovexColors.SecondaryText,
                     modifier = Modifier.padding(16.dp),
                 )
             }
         }
 
-        SettingsSection(
-            footer = stringResource(R.string.storage_clear_session_footer),
-        ) {
+        SettingsSection(footer = stringResource(R.string.storage_clear_session_footer)) {
             Row(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
-                    .clickable(enabled = hasFiles && !isClearing) { showClearDialog = true }
+                    .clickable(enabled = hasFiles && !clearing) { confirmClear = true }
                     .padding(horizontal = 16.dp, vertical = 12.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                if (isClearing) {
-                    CircularProgressIndicator(modifier = Modifier.size(16.dp), strokeWidth = 2.dp)
+                if (clearing) {
+                    CircularProgressIndicator(Modifier.size(16.dp), strokeWidth = 2.dp)
                     Spacer(Modifier.width(10.dp))
                     Text(
                         stringResource(R.string.storage_clearing_status),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = MaterialTheme.colorScheme.error,
+                        style = NovexType.ItemTitle,
+                        color = NovexColors.Danger,
                     )
                 } else {
                     Text(
                         stringResource(R.string.storage_clear_session_button),
-                        style = MaterialTheme.typography.bodyLarge,
-                        color = if (hasFiles) MaterialTheme.colorScheme.error
-                        else MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.4f),
+                        style = NovexType.ItemTitle,
+                        color = if (hasFiles) NovexColors.Danger else NovexColors.TertiaryText,
                         modifier = Modifier.weight(1f),
                     )
                     if (hasFiles) {
                         Text(
                             Formatter.formatFileSize(context, totalSize),
-                            style = MaterialTheme.typography.bodyMedium,
-                            color = MaterialTheme.colorScheme.onSurfaceVariant,
+                            style = NovexType.Body,
+                            color = NovexColors.SecondaryText,
                         )
                     }
                 }
@@ -284,127 +292,75 @@ fun SessionStorageDetailScreen(
         Spacer(Modifier.height(24.dp))
     }
 
-    if (showClearDialog) {
+    if (confirmClear) {
         AlertDialog(
-            onDismissRequest = { showClearDialog = false },
+            onDismissRequest = { confirmClear = false },
             title = { Text(stringResource(R.string.storage_clear_confirm_title)) },
             text = {
                 Text("This will delete ${Formatter.formatFileSize(context, totalSize)} of files. This action cannot be undone.")
             },
             confirmButton = {
                 MinisTextButton(onClick = {
-                    showClearDialog = false
-                    isClearing = true
+                    confirmClear = false
+                    clearing = true
                     scope.launch {
                         withContext(Dispatchers.IO) {
-                            File(sessionsDir, sessionId).deleteRecursively()
-                            deleteSessionMedia(mediaDir, sessionId)
+                            File(sandboxRoot, sessionId).deleteRecursively()
+                            purgeSessionMedia(mediaRoot, sessionId)
                         }
-                        minisSize = 0L
+                        sandboxSize = 0L
                         mediaSize = 0L
-                        isClearing = false
+                        clearing = false
                     }
                 }) {
                     Text(
                         "Clear ${Formatter.formatFileSize(context, totalSize)}",
-                        color = MaterialTheme.colorScheme.error,
+                        color = NovexColors.Danger,
                     )
                 }
             },
             dismissButton = {
-                MinisTextButton(onClick = { showClearDialog = false }) { Text(stringResource(R.string.common_cancel)) }
+                MinisTextButton(onClick = { confirmClear = false }) {
+                    Text(stringResource(R.string.common_cancel))
+                }
             },
         )
     }
 }
 
 @Composable
-private fun StorageOverviewRow(
-    color: Color,
+private fun OverviewStatRow(
+    swatch: Color,
     label: String,
     value: String,
-    onClick: (() -> Unit)? = null,
     showDivider: Boolean,
 ) {
     Column {
         Row(
-            modifier = Modifier
+            Modifier
                 .fillMaxWidth()
-                .then(if (onClick != null) Modifier.clickable(onClick = onClick) else Modifier)
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(21.dp)
-                    .clip(CircleShape)
-                    .background(color),
-            )
+            Box(Modifier.size(21.dp).clip(CircleShape).background(swatch))
             Spacer(Modifier.width(12.dp))
-            Text(label, style = MaterialTheme.typography.bodyLarge, modifier = Modifier.weight(1f))
-            Text(value, style = MaterialTheme.typography.bodyMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
-            if (onClick != null) {
-                Spacer(Modifier.width(4.dp))
-                Icon(
-                    novex.android.ui.NovexIcons.KeyboardArrowRight,
-                    contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.5f),
-                    modifier = Modifier.size(20.dp),
-                )
-            }
+            Text(
+                label,
+                style = NovexType.ItemTitle,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+                modifier = Modifier.weight(1f),
+            )
+            Text(value, style = NovexType.Body, color = NovexColors.SecondaryText)
         }
         if (showDivider) {
-            val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp)
-                    .height(0.5.dp)
-                    .background(divider),
+                    .height(NovexDimensions.Hairline)
+                    .background(NovexColors.Divider),
             )
-        }
-    }
-}
-
-private fun directorySize(dir: File): Long {
-    if (!dir.exists()) return 0L
-    var total = 0L
-    dir.walkTopDown().forEach { file ->
-        if (file.isFile) total += file.length()
-    }
-    return total
-}
-
-private fun databaseSize(context: Context): Long {
-    val dbFile = context.getDatabasePath("minis.db")
-    var size = if (dbFile.exists()) dbFile.length() else 0L
-    val wal = File(dbFile.path + "-wal")
-    val shm = File(dbFile.path + "-shm")
-    if (wal.exists()) size += wal.length()
-    if (shm.exists()) size += shm.length()
-    return size
-}
-
-private fun mediaSizesBySession(mediaDir: File, sessionIds: Set<String>): Map<String, Long> {
-    if (!mediaDir.exists()) return emptyMap()
-    val sizes = mutableMapOf<String, Long>()
-    mediaDir.walkTopDown().forEach { file ->
-        if (file.isFile) {
-            val parent = file.parentFile ?: return@forEach
-            val sid = parent.name
-            if (sessionIds.contains(sid)) {
-                sizes[sid] = (sizes[sid] ?: 0L) + file.length()
-            }
-        }
-    }
-    return sizes
-}
-
-private fun deleteSessionMedia(mediaDir: File, sessionId: String) {
-    if (!mediaDir.exists()) return
-    mediaDir.walkTopDown().forEach { dir ->
-        if (dir.isDirectory && dir.name == sessionId) {
-            dir.deleteRecursively()
         }
     }
 }

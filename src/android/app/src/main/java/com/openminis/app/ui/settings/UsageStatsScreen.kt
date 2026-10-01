@@ -1,7 +1,5 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.R
-
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -14,7 +12,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
@@ -24,50 +21,112 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
+import androidx.compose.ui.unit.dp
+import com.openminis.app.R
 import novex.android.data.chat.ChatDao
+import novex.android.data.chat.UsageJoinRow
 import novex.android.data.model.LLMModel
 import novex.android.data.model.ProviderConfig
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 import org.json.JSONObject
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
 
-private data class ModelStats(
-    val modelId: String,
-    val displayName: String,
-    val provider: String,
-    var inputTokens: Long = 0,
-    var outputTokens: Long = 0,
-    var cacheCreationTokens: Long = 0,
-    var cacheReadTokens: Long = 0,
-    val distinctDays: MutableSet<String> = mutableSetOf(),
-    val distinctSessions: MutableSet<String> = mutableSetOf(),
-) {
-    val totalInput: Long get() = inputTokens + cacheReadTokens + cacheCreationTokens
+// ── 聚合管线（纯数据，与 UI 无关）───────────────────────────────────────────
+
+private class UsageBucket(val modelId: String, val displayName: String, val provider: String) {
+    var input = 0L
+    var output = 0L
+    var cacheCreate = 0L
+    var cacheRead = 0L
+    val days = mutableSetOf<String>()
+    val sessions = mutableSetOf<String>()
+    val totalInput: Long get() = input + cacheRead + cacheCreate
 }
 
-private data class ProviderGroup(val name: String, val models: List<ModelStats>)
-
-private data class GrandTotal(
-    val totalInput: Long = 0,
-    val outputTokens: Long = 0,
-    val cacheReadTokens: Long = 0,
-    val cacheCreationTokens: Long = 0,
+private data class UsageReport(
+    val totalInput: Long,
+    val output: Long,
+    val cacheRead: Long,
+    val cacheCreate: Long,
+    val groups: List<Pair<String, List<UsageBucket>>>,
 ) {
     val cacheHitRate: Double?
-        get() = if (totalInput <= 0 || cacheReadTokens <= 0) null
-        else (cacheReadTokens.toDouble() / totalInput) * 100
+        get() = if (totalInput <= 0 || cacheRead <= 0) null
+        else cacheRead.toDouble() / totalInput * 100
 }
 
-/**
- * [T-android-usage-orphan-rows] Bucket for usage rows whose session row is
- * missing, so their (really billed) tokens still appear in the totals. See
- * ChatDao.allUsageRecords.
- */
+/** 会话行丢失（LEFT JOIN）的 usage 记录归入此桶——token 是真实计费的不能丢。 */
 private const val UNKNOWN_MODEL_KEY = "(unknown model)"
+
+private fun modelNameLookup(providerConfig: ProviderConfig?): Map<String, Pair<String, String>> {
+    val table = LLMModel.allModels.associate { it.id to (it.displayName to it.provider) }
+        .toMutableMap()
+    providerConfig?.let { config ->
+        for (entry in config.modelEntries) {
+            if (entry.model.id in table) continue
+            val providerName = config.instances
+                .find { it.id == entry.providerInstanceId }
+                ?.providerType?.displayName
+                ?: entry.model.provider
+            table[entry.model.id] = entry.model.displayName to providerName
+        }
+    }
+    return table
+}
+
+private fun aggregateUsage(
+    records: List<UsageJoinRow>,
+    nameLookup: Map<String, Pair<String, String>>,
+): UsageReport {
+    val dayFmt = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    val buckets = mutableMapOf<String, UsageBucket>()
+
+    for (record in records) {
+        val usage = runCatching { JSONObject(record.tokenUsage) }.getOrNull() ?: continue
+        val modelKey = record.modelId ?: UNKNOWN_MODEL_KEY
+        val (displayName, provider) = nameLookup[modelKey] ?: (modelKey to "Unknown")
+        val bucket = buckets.getOrPut(modelKey) { UsageBucket(modelKey, displayName, provider) }
+        bucket.input += usage.optLong("inputTokens", 0)
+        bucket.output += usage.optLong("outputTokens", 0)
+        bucket.cacheCreate += usage.optLong("cacheCreationTokens",
+            usage.optLong("cacheCreationInputTokens", 0))
+        bucket.cacheRead += usage.optLong("cacheReadTokens",
+            usage.optLong("cacheReadInputTokens", 0))
+        bucket.days += dayFmt.format(Date(record.createdAt))
+        bucket.sessions += record.sessionId
+    }
+
+    val providerOrder = listOf("OpenAI", "Anthropic", "Google Gemini", "Google", "Antigravity", "Unknown")
+    val groups = buckets.values
+        .groupBy { it.provider }
+        .toList()
+        .sortedBy { (name, _) -> providerOrder.indexOf(name).let { if (it >= 0) it else providerOrder.size } }
+        .map { (name, models) -> name to models.sortedByDescending { it.totalInput } }
+
+    return UsageReport(
+        totalInput = buckets.values.sumOf { it.totalInput },
+        output = buckets.values.sumOf { it.output },
+        cacheRead = buckets.values.sumOf { it.cacheRead },
+        cacheCreate = buckets.values.sumOf { it.cacheCreate },
+        groups = groups,
+    )
+}
+
+private fun compactCount(n: Long): String = when {
+    n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
+    n >= 1_000 -> (n / 1000.0).let { k ->
+        if (k == k.toLong().toDouble()) "${k.toLong()}k" else String.format("%.1fk", k)
+    }
+    else -> n.toString()
+}
+
+// ── 界面 ────────────────────────────────────────────────────────────────────
 
 @Composable
 fun UsageStatsScreen(
@@ -75,104 +134,32 @@ fun UsageStatsScreen(
     providerConfig: ProviderConfig? = null,
     onBack: () -> Unit,
 ) {
-    var grandTotal by remember { mutableStateOf(GrandTotal()) }
-    var providerGroups by remember { mutableStateOf<List<ProviderGroup>>(emptyList()) }
-    var isLoaded by remember { mutableStateOf(false) }
+    var report by remember { mutableStateOf<UsageReport?>(null) }
 
     LaunchedEffect(Unit) {
-        val records = chatDao.usageJoinRows()
-
-        val modelLookup = mutableMapOf<String, Pair<String, String>>()
-        for (m in LLMModel.allModels) modelLookup[m.id] = m.displayName to m.provider
-        providerConfig?.let { config ->
-            for (entry in config.modelEntries) {
-                if (entry.model.id !in modelLookup) {
-                    val instance = config.instances.find { it.id == entry.providerInstanceId }
-                    val providerName = instance?.providerType?.displayName ?: entry.model.provider
-                    modelLookup[entry.model.id] = entry.model.displayName to providerName
-                }
-            }
-        }
-
-        val statsMap = mutableMapOf<String, ModelStats>()
-        val dateFormat = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-
-        for (record in records) {
-            val usage = try { JSONObject(record.tokenUsage) } catch (_: Exception) { continue }
-            val input = usage.optLong("inputTokens", 0)
-            val output = usage.optLong("outputTokens", 0)
-            val cacheCr = usage.optLong("cacheCreationTokens", usage.optLong("cacheCreationInputTokens", 0))
-            val cacheRd = usage.optLong("cacheReadTokens", usage.optLong("cacheReadInputTokens", 0))
-
-            // [T-android-usage-orphan-rows] GH#168: modelId is null for a
-            // message whose session row is gone (LEFT JOIN). Those tokens were
-            // still billed, so they are counted under a single "unknown" bucket
-            // instead of being dropped — matching iOS, where an unresolvable id
-            // falls back to the raw id and the "Other" provider group.
-            val modelKey = record.modelId ?: UNKNOWN_MODEL_KEY
-            val (displayName, provider) = modelLookup[modelKey]
-                ?: (modelKey to "Unknown")
-
-            val stats = statsMap.getOrPut(modelKey) {
-                ModelStats(modelKey, displayName, provider)
-            }
-            stats.inputTokens += input
-            stats.outputTokens += output
-            stats.cacheCreationTokens += cacheCr
-            stats.cacheReadTokens += cacheRd
-            stats.distinctDays.add(dateFormat.format(Date(record.createdAt)))
-            stats.distinctSessions.add(record.sessionId)
-        }
-
-        val providerOrder = listOf("OpenAI", "Anthropic", "Google Gemini", "Google", "Antigravity", "Unknown")
-        val grouped = statsMap.values.groupBy { it.provider }
-        val sortedGroups = grouped.entries.sortedBy { (name, _) ->
-            val idx = providerOrder.indexOf(name)
-            if (idx >= 0) idx else providerOrder.size
-        }.map { (name, models) ->
-            ProviderGroup(name, models.sortedByDescending { it.totalInput })
-        }
-
-        val allStats = statsMap.values
-        grandTotal = GrandTotal(
-            totalInput = allStats.sumOf { it.totalInput },
-            outputTokens = allStats.sumOf { it.outputTokens },
-            cacheReadTokens = allStats.sumOf { it.cacheReadTokens },
-            cacheCreationTokens = allStats.sumOf { it.cacheCreationTokens },
-        )
-
-        providerGroups = sortedGroups
-        isLoaded = true
+        report = aggregateUsage(chatDao.usageJoinRows(), modelNameLookup(providerConfig))
     }
 
     SettingsScaffold(title = stringResource(R.string.usage_title), onBack = onBack) {
-        if (!isLoaded) return@SettingsScaffold
+        val r = report ?: return@SettingsScaffold
 
         SettingsSection(header = stringResource(R.string.usage_section_total)) {
-            val stats = listOfNotNull(
-                stringResource(R.string.usage_label_total_input) to formatCount(grandTotal.totalInput),
-                stringResource(R.string.usage_label_output) to formatCount(grandTotal.outputTokens),
-                if (grandTotal.cacheReadTokens > 0) stringResource(R.string.usage_label_cache_read) to formatCount(grandTotal.cacheReadTokens) else null,
-                if (grandTotal.cacheCreationTokens > 0) stringResource(R.string.usage_label_cache_creation) to formatCount(grandTotal.cacheCreationTokens) else null,
-                grandTotal.cacheHitRate?.let { rate -> stringResource(R.string.usage_label_cache_hit_rate) to String.format("%.1f%%", rate) },
-            )
-            stats.forEachIndexed { idx, (label, value) ->
-                SettingsValueRow(
-                    title = label,
-                    value = value,
-                    valueColor = MaterialTheme.colorScheme.onSurface,
-                    showDivider = idx < stats.size - 1,
-                )
+            val rows = buildList {
+                add(stringResource(R.string.usage_label_total_input) to compactCount(r.totalInput))
+                add(stringResource(R.string.usage_label_output) to compactCount(r.output))
+                if (r.cacheRead > 0) add(stringResource(R.string.usage_label_cache_read) to compactCount(r.cacheRead))
+                if (r.cacheCreate > 0) add(stringResource(R.string.usage_label_cache_creation) to compactCount(r.cacheCreate))
+                r.cacheHitRate?.let { add(stringResource(R.string.usage_label_cache_hit_rate) to String.format("%.1f%%", it)) }
+            }
+            rows.forEachIndexed { i, (label, value) ->
+                SettingsValueRow(title = label, value = value, showDivider = i < rows.lastIndex)
             }
         }
 
-        for (group in providerGroups) {
-            SettingsSection(header = group.name) {
-                group.models.forEachIndexed { idx, model ->
-                    ExpandableModelRow(
-                        model = model,
-                        showDivider = idx < group.models.size - 1,
-                    )
+        for ((providerName, models) in r.groups) {
+            SettingsSection(header = providerName) {
+                models.forEachIndexed { i, model ->
+                    UsageModelRow(model = model, showDivider = i < models.lastIndex)
                 }
             }
         }
@@ -182,94 +169,81 @@ fun UsageStatsScreen(
 }
 
 @Composable
-private fun ExpandableModelRow(model: ModelStats, showDivider: Boolean) {
-    var expanded by remember { mutableStateOf(false) }
-    val summary = "${formatCount(model.totalInput)} / ${formatCount(model.outputTokens)}"
+private fun UsageModelRow(model: UsageBucket, showDivider: Boolean) {
+    var open by remember { mutableStateOf(false) }
 
     Column {
         Row(
-            modifier = Modifier
+            Modifier
                 .fillMaxWidth()
-                .clickable { expanded = !expanded }
+                .clickable { open = !open }
                 .padding(horizontal = 16.dp, vertical = 12.dp),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(
-                model.displayName,
-                style = MaterialTheme.typography.bodyLarge,
-                modifier = Modifier.weight(1f),
-            )
+            Text(model.displayName, style = NovexType.ItemTitle, modifier = Modifier.weight(1f))
             Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    summary,
-                    style = MaterialTheme.typography.bodyMedium,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    "${compactCount(model.totalInput)} / ${compactCount(model.output)}",
+                    style = NovexType.Metadata,
+                    color = NovexColors.SecondaryText,
                 )
                 Icon(
-                    if (expanded) novex.android.ui.NovexIcons.ExpandMore else novex.android.ui.NovexIcons.KeyboardArrowRight,
+                    if (open) NovexIcons.ExpandMore else NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant.copy(alpha = 0.6f),
+                    tint = NovexColors.TertiaryText,
                 )
             }
         }
 
-        AnimatedVisibility(visible = expanded) {
-            Column(modifier = Modifier.padding(start = 32.dp, end = 16.dp, bottom = 8.dp)) {
-                DetailRow(stringResource(R.string.usage_detail_input), formatCount(model.inputTokens))
-                DetailRow(stringResource(R.string.usage_detail_output), formatCount(model.outputTokens))
-                if (model.cacheReadTokens > 0) DetailRow(stringResource(R.string.usage_label_cache_read), formatCount(model.cacheReadTokens))
-                if (model.cacheCreationTokens > 0) DetailRow(stringResource(R.string.usage_label_cache_creation), formatCount(model.cacheCreationTokens))
-                val modelTotalInput = model.totalInput
-                if (modelTotalInput > 0 && model.cacheReadTokens > 0) {
-                    val rate = (model.cacheReadTokens.toDouble() / modelTotalInput) * 100
-                    DetailRow(stringResource(R.string.usage_label_cache_hit_rate), String.format("%.1f%%", rate))
+        AnimatedVisibility(open) {
+            Column(Modifier.padding(start = 32.dp, end = 16.dp, bottom = 8.dp)) {
+                UsageDetailLine(stringResource(R.string.usage_detail_input), compactCount(model.input))
+                UsageDetailLine(stringResource(R.string.usage_detail_output), compactCount(model.output))
+                if (model.cacheRead > 0) UsageDetailLine(stringResource(R.string.usage_label_cache_read), compactCount(model.cacheRead))
+                if (model.cacheCreate > 0) UsageDetailLine(stringResource(R.string.usage_label_cache_creation), compactCount(model.cacheCreate))
+                if (model.totalInput > 0 && model.cacheRead > 0) {
+                    UsageDetailLine(
+                        stringResource(R.string.usage_label_cache_hit_rate),
+                        String.format("%.1f%%", model.cacheRead.toDouble() / model.totalInput * 100),
+                    )
                 }
-                val days = model.distinctDays.size
-                val sessions = model.distinctSessions.size
-                if (days > 0) {
-                    DetailRow(stringResource(R.string.usage_detail_daily_avg), formatCount((model.inputTokens + model.outputTokens) / days))
+                if (model.days.isNotEmpty()) {
+                    UsageDetailLine(
+                        stringResource(R.string.usage_detail_daily_avg),
+                        compactCount((model.input + model.output) / model.days.size),
+                    )
                 }
-                if (sessions > 0) {
-                    DetailRow(stringResource(R.string.usage_detail_session_avg), formatCount((model.inputTokens + model.outputTokens) / sessions))
+                if (model.sessions.isNotEmpty()) {
+                    UsageDetailLine(
+                        stringResource(R.string.usage_detail_session_avg),
+                        compactCount((model.input + model.output) / model.sessions.size),
+                    )
                 }
-                DetailRow(stringResource(R.string.usage_detail_sessions), sessions.toString())
-                DetailRow(stringResource(R.string.usage_detail_active_days), days.toString())
+                UsageDetailLine(stringResource(R.string.usage_detail_sessions), model.sessions.size.toString())
+                UsageDetailLine(stringResource(R.string.usage_detail_active_days), model.days.size.toString())
             }
         }
 
         if (showDivider) {
-            val divider = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
             Box(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .padding(start = 16.dp, end = 14.dp)
-                    .height(0.5.dp)
-                    .background(divider),
+                    .height(NovexDimensions.Hairline)
+                    .background(NovexColors.Divider),
             )
         }
     }
 }
 
 @Composable
-private fun DetailRow(label: String, value: String) {
+private fun UsageDetailLine(label: String, value: String) {
     Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(vertical = 3.dp),
+        Modifier.fillMaxWidth().padding(vertical = 3.dp),
         horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        Text(label, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.onSurfaceVariant)
-        Text(value, style = MaterialTheme.typography.bodySmall, fontFamily = FontFamily.Default)
+        Text(label, style = NovexType.Metadata, color = NovexColors.SecondaryText)
+        Text(value, style = NovexType.Metadata)
     }
-}
-
-private fun formatCount(n: Long): String = when {
-    n >= 1_000_000 -> String.format("%.1fM", n / 1_000_000.0)
-    n >= 1_000 -> {
-        val k = n / 1000.0
-        if (k == k.toLong().toDouble()) "${k.toLong()}k"
-        else String.format("%.1fk", k)
-    }
-    else -> n.toString()
 }

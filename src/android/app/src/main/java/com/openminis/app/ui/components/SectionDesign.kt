@@ -6,159 +6,119 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.ReadOnlyComposable
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import novex.android.ui.NovexColors
 import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexType
 
 /**
- * Single source of truth for Settings section-card visual rhythm.
- * Mirror of iOS SwiftUI Form / List grouped style; the values below are
- * derived from the iOS reference screenshot and its pixel measurements.
- *
- * All Settings screens (ProviderDetail / MountedFolders / MountDetail /
- * ModelGroups / EnvironmentVariables / etc.) MUST consume from this
- * object rather than hard-coding values inline. When a value changes
- * here every screen updates atomically.
+ * Settings 分组卡视觉节奏的单一事实源。所有设置屏（ProviderDetail /
+ * MountedFolders / ModelGroups …）从这里取值，不在行内硬编码——
+ * 改一处全部屏同步。具体数值桥接到 novex 尺寸令牌。
  */
 object SectionDesign {
-    /** Outer column padding from screen edge. iOS UIKit insets.left/.right = 16. */
+    /** 页边到卡片的水平留白。 */
     val ScreenHorizontalPadding = NovexDimensions.PageHorizontal
 
-    /** Card corner radius. iOS UITableViewCell rounded section uses ~10pt. */
+    /** 卡片圆角。 */
     val CardShape = RoundedCornerShape(NovexDimensions.SectionRadius)
 
-    /** Distance from screen top → first section header. */
+    /** 屏顶 → 第一段标题。 */
     val FirstSectionTopGap = 16.dp
 
-    /** Distance from previous section's footer → next section header. */
+    /** 上一段 footer → 下一段标题。 */
     val SectionTopGap = 24.dp
 
-    /** Distance from a section header → its card. */
+    /** 段标题 → 卡片。 */
     val HeaderToCardGap = 8.dp
 
-    /** Distance from card → its footer caption. */
+    /** 卡片 → 脚注。 */
     val CardToFooterGap = 8.dp
 
-    /** Distance between adjacent rows / cards inside the same section
-     *  (e.g. mount list rows). iOS uses no gap with internal dividers
-     *  but Android's surfaceContainer color contrast is weaker so keep
-     *  a tight 8dp visual break. */
+    /** 同段内相邻行/卡的视觉间隔。 */
     val InterRowGap = 8.dp
 
-    /** Standard row height inside a card. iOS row ≈ 44pt. */
+    /** 卡内标准行高。 */
     val RowMinHeight = NovexDimensions.SettingsRowMinHeight
 
-    /** [T-android-settings-ui-md3] #3 Single-line text-field min height. MD3
-     *  text fields are 56dp; the section rows were normalized to the same 56dp
-     *  so an input field lines up with the toggle/value rows around it instead
-     *  of reading as the old ~44/24dp mix. Kept separate from [RowMinHeight] so
-     *  dropdowns / plain rows that intentionally sit tighter are unaffected. */
+    /** 单行输入框的最小高度（与行高同档，避免与旁边开关行错位）。 */
     val TextFieldMinHeight = NovexDimensions.SettingsRowMinHeight
 
-    /** Horizontal padding inside the card (from card-inner-edge to row content). */
+    /** 卡内左右留白。 */
     val RowHorizontalPadding = 16.dp
 
-    /** Vertical padding inside a row (top + bottom each). */
+    /** 行内上下留白。 */
     val RowVerticalPadding = 10.dp
 
-    /** Vertical padding wrapping the inner Column of a [SectionCard], so the
-     *  first/last row don't hug the card's top/bottom edge. iOS Settings
-     *  reserves a small gap here even though row dividers stay flush. */
+    /** SectionCard 内部 Column 的上下缓冲，首尾行不贴卡边。 */
     val CardInnerVerticalPadding = 6.dp
 
-    /** Inner-card divider thickness. */
+    /** 卡内行分隔线粗细。 */
     val DividerThickness = 0.5.dp
 
-    /** Inner-card divider left inset (so it tucks under content text rather
-     *  than touching the card edge — matches iOS). */
+    /** 分隔线左缩进（从内容文字下方起线，不顶到卡边）。 */
     val DividerStartInset = 16.dp
 
-    /** Card background — match iOS pure surface (white in light, near-black in dark).
-     *  T313 follow-up: The app theme deliberately overrides Material3 semantics —
-     *  `surface` is the page-level grouped background (gray / black) while
-     *  `surfaceContainerLow` is the brighter card foreground. Using
-     *  `surfaceContainerLow` here gives us the card color iOS Settings expects. */
+    /** 卡片前景色。 */
     @Composable
     @ReadOnlyComposable
     fun cardColor(): Color = NovexColors.Surface
 
-    /** Section background (the gray behind the cards) — match iOS systemGroupedBackground.
-     *  Pairs with [cardColor]: this token is the dimmer page-level surface
-     *  (`background` = light gray / near-black), so cards painted in
-     *  `surfaceContainerLow` stand out against it. */
+    /** 页底背景色（卡片在它上面浮出）。 */
     @Composable
     @ReadOnlyComposable
     fun screenBackgroundColor(): Color = NovexColors.Background
 
-    /** Inner-card divider color — match iOS systemFill α 0.3. */
+    /** 卡内分隔线色。 */
     @Composable
     @ReadOnlyComposable
     fun dividerColor(): Color = NovexColors.Divider
 
-    /** Footer caption color (gray text below cards). */
+    /** 脚注文字色。 */
     @Composable
     @ReadOnlyComposable
     fun footerColor(): Color = NovexColors.SecondaryText
 }
 
-/**
- * Section title above a card. iOS reference uses 17pt SemiBold sentence-case
- * onSurface — bigger and more present than Material's labelMedium ALL CAPS
- * onSurfaceVariant which fades into the background.
- */
+/** 卡片上方的段标题。 */
 @Composable
 fun SectionHeader(
     text: String,
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = text,
-        style = novex.android.ui.NovexType.Metadata,
-        fontWeight = FontWeight.SemiBold,
+        text,
+        style = NovexType.Metadata,
+        fontWeight = androidx.compose.ui.text.font.FontWeight.SemiBold,
         color = NovexColors.SecondaryText,
         modifier = modifier.padding(
-            start = SectionDesign.ScreenHorizontalPadding,
-            end = SectionDesign.ScreenHorizontalPadding,
-            bottom = SectionDesign.HeaderToCardGap,
-        ),
+            horizontal = SectionDesign.ScreenHorizontalPadding,
+        ).padding(bottom = SectionDesign.HeaderToCardGap),
     )
 }
 
-/**
- * Footer caption below a card. iOS reference uses 13pt secondary onSurfaceVariant.
- */
+/** 卡片下方的脚注说明。 */
 @Composable
 fun SectionFooter(
     text: String,
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = text,
-        style = novex.android.ui.NovexType.Metadata,
+        text,
+        style = NovexType.Metadata,
         color = SectionDesign.footerColor(),
         modifier = modifier.padding(
-            start = SectionDesign.ScreenHorizontalPadding,
-            end = SectionDesign.ScreenHorizontalPadding,
-            top = SectionDesign.CardToFooterGap,
-        ),
+            horizontal = SectionDesign.ScreenHorizontalPadding,
+        ).padding(top = SectionDesign.CardToFooterGap),
     )
 }
 
-/**
- * Container for one or more rows in a settings section. Replaces ad-hoc
- * Surface(surfaceContainerLow, RoundedCornerShape(12.dp)) call sites that
- * each pick their own color / shape / padding. Pass child rows; they get
- * the card background + corner clipping and divide themselves with
- * [SectionDivider] when stacked.
- */
+/** 一节的卡片容器：子行自带 [SectionDivider] 分隔。 */
 @Composable
 fun SectionCard(
     modifier: Modifier = Modifier,
@@ -176,7 +136,7 @@ fun SectionCard(
     }
 }
 
-/** Divider between rows inside a [SectionCard]. */
+/** [SectionCard] 内的行分隔线。 */
 @Composable
 fun SectionDivider() {
     HorizontalDivider(
@@ -187,24 +147,9 @@ fun SectionDivider() {
 }
 
 /**
- * Inline label placed directly above a [SectionTextField] (or
- * [SectionDropdown]) when several labelled fields share a section but
- * each row needs its own short caption — too small a scope for a full
- * [SectionHeader]. Used by ModelEntryDetail / AddCustomModel /
- * AddProvider for fields like "Model ID" / "Display Name" / "Context Window".
- *
- * The previous `label =` slot on [SectionTextField] used Material3's
- * floating-label DecorationBox, but the row's tight `RowVerticalPadding`
- * (10dp) leaves no headroom — input glyphs overlap the floating label.
- * iOS Form puts every label outside its cell, so we follow the same
- * pattern: render the caption with this composable, then drop the
- * field below it.
- *
- * Horizontal padding is 0: callsites place this inside [SettingsCardBlock]
- * (or a manually padded Column) which already adds the 16dp inset. Adding
- * our own 16dp on top would double-indent the label relative to sibling
- * SectionHeader / description text / radio rows — see T353. Mirrors
- * SectionTextField's contentPadding=0 from T352.
+ * 输入框上方的行内小标签。M3 的 floating label 在 10dp 行距里会压住输入
+ * 文字，所以标签一律外置——调用方放在 SettingsCardBlock / 手动 padding
+ * 的 Column 里，这里自身不加水平缩进避免双重缩进。
  */
 @Composable
 fun RowLabel(
@@ -212,9 +157,9 @@ fun RowLabel(
     modifier: Modifier = Modifier,
 ) {
     Text(
-        text = text,
-        style = MaterialTheme.typography.labelSmall,
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
+        text,
+        style = NovexType.Metadata,
+        color = NovexColors.SecondaryText,
         modifier = modifier.padding(bottom = 6.dp),
     )
 }

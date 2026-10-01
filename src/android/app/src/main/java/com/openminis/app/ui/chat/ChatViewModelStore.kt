@@ -3,51 +3,64 @@ package com.openminis.app.ui.chat
 import android.util.Log
 import androidx.lifecycle.ViewModelStore
 import androidx.lifecycle.ViewModelStoreOwner
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.withContext
-import kotlinx.coroutines.Dispatchers
 
 /**
- * Process-level cache of ChatViewModels keyed by sessionId. Mirrors iOS
- * `ViewModelCache` — a session's agent loop keeps running even if the user
- * leaves the chat screen, and the row in the sessions list shows a spinning
- * indicator while streaming is in flight.
+ * ChatViewModel 的进程级缓存，按 sessionId 分桶。
  *
- * Without this, scoping the ChatViewModel to a NavBackStackEntry means
- * `popBackStack()` would cancel `viewModelScope` and kill the streaming job.
+ * 离开聊天页不能杀掉正在跑的 agent 回合：ViewModel 若挂在导航回栈上，
+ * popBackStack 会连 viewModelScope 一起取消。每个会话一个
+ * [ViewModelStore]，要丢弃时对 store 调 clear() 触发 onCleared。
+ *
+ * 另管三件杂事：草稿 id → 正式 id 的别名映射、删除会话时的运行中
+ * Job 停等、以及「移动到…」流程的一次性转交槽。
  */
 object ChatViewModelStore {
 
     private const val TAG = "ChatVMStore"
 
-    /**
-     * One ViewModelStore per canonical sessionId. Each store contains at most
-     * one ChatViewModel (the one created by our factory). When we want to drop
-     * a session's VM, we call `clear()` on its store which triggers
-     * `onCleared`.
-     */
-    private val stores = mutableMapOf<String, ViewModelStore>()
-    private val runtimeJobs = mutableMapOf<String, Job>()
+    /** 一个会话的全部运行态：VM 持有桶 + 正在跑的回合 Job。 */
+    private class Bucket {
+        var store: ViewModelStore? = null
+        var job: Job? = null
+    }
+
+    private val buckets = LinkedHashMap<String, Bucket>()
+
+    /** 已判死刑的会话键：删除流程标记，阻止新 Job 再挂上来。 */
     private val closedKeys = mutableSetOf<String>()
+
+    /** 删除请求登记过哪些键（含别名解析展开），失败时按它回滚 closed 标记。 */
     private val deletionKeys = mutableMapOf<String, Set<String>>()
+
+    /** 草稿 id → 落库后的正式 id；旧路由上的页面经此命中同一个桶。 */
+    private val aliases = mutableMapOf<String, String>()
+
+    private fun keyFor(sessionId: String): String = aliases[sessionId] ?: sessionId
+
+    private fun bucket(key: String) = buckets.getOrPut(key) { Bucket() }
+
+    // ── 运行中 Job ──────────────────────────────────────────────────────────
 
     @Synchronized
     fun registerRuntime(sessionId: String, job: Job) {
-        val key = resolveKey(sessionId)
+        val key = keyFor(sessionId)
         if (key in closedKeys || sessionId in closedKeys) job.cancel()
-        else runtimeJobs[key] = job
+        else bucket(key).job = job
     }
 
-    /** Called from a scope outside the conversation being deleted. */
+    /** 删除会话前停掉它的运行中 Job（由会话外的协程调用）。 */
     suspend fun stopAndJoin(sessionId: String) {
         val job = withContext(Dispatchers.Main.immediate) {
             val running = synchronized(this@ChatViewModelStore) {
-                val key = resolveKey(sessionId)
+                val key = keyFor(sessionId)
                 val keys = deletionKeys.getOrPut(sessionId) {
                     aliases.filterValues { it == key }.keys + setOf(key, sessionId)
                 }
                 closedKeys += keys
-                runtimeJobs[key]
+                buckets[key]?.job
             }
             release(sessionId)
             running?.cancel()
@@ -56,123 +69,99 @@ object ChatViewModelStore {
         job?.join()
     }
 
-    /** Keep deleted ids closed; a failed deletion may be reopened with a fresh, usable runtime. */
+    /** 删除成功则保留 closed 标记；失败则放回，让会话可重新起一个干净的 runtime。 */
     suspend fun finishDeletion(sessionId: String, deleted: Boolean) = withContext(Dispatchers.Main.immediate) {
         synchronized(this@ChatViewModelStore) {
             val keys = deletionKeys.remove(sessionId).orEmpty()
-            keys.forEach { key -> runtimeJobs.remove(key)?.cancel(); stores.remove(key)?.clear() }
+            for (key in keys) {
+                buckets.remove(key)?.let { bucket ->
+                    bucket.job?.cancel()
+                    bucket.store?.clear()
+                }
+            }
             if (!deleted) closedKeys.removeAll(keys)
         }
     }
 
-
-    /**
-     * Draft → canonical mapping. When a draft ("__new__...") session is
-     * persisted, we add `draftKey -> realId` here so lookups via the old key
-     * (from a ChatScreen whose `sessionId` parameter is still the draft)
-     * continue to hit the same live store.
-     */
-    private val aliases = mutableMapOf<String, String>()
-
-    private fun resolveKey(sessionId: String): String =
-        aliases[sessionId] ?: sessionId
+    // ── Store 生命周期 ──────────────────────────────────────────────────────
 
     @Synchronized
     fun ownerFor(sessionId: String): ViewModelStoreOwner {
-        val key = resolveKey(sessionId)
-        val store = stores.getOrPut(key) {
-            Log.d(TAG, "allocate store for $key (total=${stores.size + 1})")
-            ViewModelStore()
+        val key = keyFor(sessionId)
+        val store = bucket(key).store ?: ViewModelStore().also {
+            Log.d(TAG, "allocate store for $key (total=${buckets.size})")
+            bucket(key).store = it
         }
         return object : ViewModelStoreOwner {
-            override val viewModelStore: ViewModelStore = store
+            override val viewModelStore: ViewModelStore get() = store
         }
     }
 
-    /**
-     * Drop the cached VM for this session (cancels `viewModelScope`, triggers
-     * `ChatViewModel.onCleared`). Call when the session is deleted. Also
-     * clears any draft alias pointing at this canonical id.
-     */
+    /** 丢弃会话的 VM（onCleared 取消 viewModelScope），并清掉指向它的草稿别名。 */
     @Synchronized
     fun release(sessionId: String) {
-        val key = resolveKey(sessionId)
+        val key = keyFor(sessionId)
         aliases.entries.removeAll { it.value == key }
-        runtimeJobs.remove(key)
-        stores.remove(key)?.let {
+        buckets.remove(key)?.store?.let {
             it.clear()
-            Log.d(TAG, "release store for $key (remaining=${stores.size})")
+            Log.d(TAG, "release store for $key (remaining=${buckets.size})")
         }
     }
 
     /**
-     * Mark `fromSessionId` (a draft key) as an alias for `toSessionId` (the
-     * real, persisted id). The live store stays under the real id; future
-     * `ownerFor(draftKey)` lookups resolve to the same store so a ChatScreen
-     * still rendering with the draft route continues to see the running VM.
+     * 草稿 [fromSessionId] 落库成 [toSessionId]：store 挪到正式 id 名下，
+     * 旧键留别名，让还开着草稿路由的页面继续看到同一个运行中的 VM。
      */
+    @Synchronized
+    fun rename(fromSessionId: String, toSessionId: String) {
+        if (fromSessionId == toSessionId) return
+        val from = buckets.remove(fromSessionId)
+        if (from != null) {
+            val target = bucket(toSessionId)
+            target.store = from.store
+            from.job?.let { job ->
+                if (fromSessionId in closedKeys || toSessionId in closedKeys) job.cancel()
+                else target.job = job
+            }
+        }
+        aliases[fromSessionId] = toSessionId
+        Log.d(TAG, "rename store $fromSessionId -> $toSessionId (alias kept)")
+    }
+
+    // ── 当前前台会话 ────────────────────────────────────────────────────────
+
     /**
-     * T311: id of the chat the user has on screen right now. Set by
-     * `ChatScreen`'s lifecycle hook on enter, cleared on dispose.
-     * `minis-config session.*` reads this so reads/writes target the
-     * "current session" the same way iOS `AIChatViewModel.activeSessionId`
-     * does. `null` = no chat is foregrounded → reads return empty / writes
-     * throw `No active session`. Resolves through `aliases` so a draft id
-     * still maps to the persisted row.
+     * 当前显示在屏幕上的会话 id（ChatScreen 进入时置、退出时清）。
+     * `minis-config session.*` 据此读写"当前会话"；null = 没有前台聊天。
+     * 读取时过别名表，草稿 id 也能映射到已落库的行。
      */
     @Volatile
     private var activeSessionIdInternal: String? = null
 
     val activeSessionId: String?
-        get() = activeSessionIdInternal?.let { resolveKey(it) }
+        get() = activeSessionIdInternal?.let(::keyFor)
 
     @Synchronized
     fun setActiveSession(sessionId: String?) {
         activeSessionIdInternal = sessionId
     }
 
-    @Synchronized
-    fun rename(fromSessionId: String, toSessionId: String) {
-        if (fromSessionId == toSessionId) return
-        val store = stores.remove(fromSessionId)
-        if (store != null) {
-            stores[toSessionId] = store
-        }
-        runtimeJobs.remove(fromSessionId)?.let {
-            if (fromSessionId in closedKeys || toSessionId in closedKeys) it.cancel() else runtimeJobs[toSessionId] = it
-        }
-        aliases[fromSessionId] = toSessionId
-        Log.d(TAG, "rename store $fromSessionId -> $toSessionId (alias kept)")
-    }
+    // ── 「移动到…」一次性转交槽 ─────────────────────────────────────────────
 
     /**
-     * One-shot stash for the "Move to…" capsule flow. The source session
-     * writes (inputText + attachments) here, navigates to the target,
-     * and the target's ChatScreen drains it via [consumePendingTransfer].
-     * Mirrors iOS `ViewModelCache.pendingTransfer`. Volatile + simple
-     * read/write — only ever touched from the main thread.
+     * 「移动到…」流程的一次性暂存：源会话写入，目标会话的 ChatScreen 用
+     * [consumePendingTransfer] 领走。
      */
     data class PendingTransfer(
         val inputText: String,
         val attachments: List<InputAttachment>,
-        /**
-         * [T-android-moveto-stash-binding] Session this content was moved TO.
-         * Only that session may drain the stash. Previously absent, so
-         * whichever ChatScreen composed first ate the content — if the
-         * navigation to the target didn't land (or the user backed out and
-         * opened something else), the moved text/attachments surfaced in an
-         * unrelated session. Mirrors iOS 6c3093c8 (GH OpenMinis#120).
-         */
+        /** 内容被移动到的目标会话；只有它能领取，防止落进无关会话。 */
         val targetId: String,
-        /** Wall-clock stash time; drives the [STASH_TTL_MS] staleness drop. */
+        /** 暂存时刻（墙钟）；超过 [STASH_TTL_MS] 视为遗弃。 */
         val stashedAtMs: Long = System.currentTimeMillis(),
     )
 
-    /**
-     * [T-android-moveto-stash-binding] A stash older than this is considered
-     * abandoned and dropped rather than injected. Without it an unclaimed
-     * stash sat forever and could ambush a session opened much later.
-     */
+    /** 暂存超过这个时长仍未被领取 → 视为遗弃丢弃，避免日后开旧会话被伏击。 */
     private const val STASH_TTL_MS = 300_000L
 
     @Volatile
@@ -188,40 +177,31 @@ object ChatViewModelStore {
     }
 
     /**
-     * Drain the pending-transfer slot exactly once, and only for the session
-     * it was addressed to.
-     *
-     * [sessionId] is the draining screen's session. A mismatch leaves the
-     * stash in place so the real target can still claim it when it opens.
-     * An expired stash is dropped outright.
+     * 恰好领取一次，且只有目标会话能领。会话 id 不匹配的调用留着暂存
+     * 等正主来取；过期的直接丢弃。
      */
     fun consumePendingTransfer(sessionId: String): PendingTransfer? {
-        val t = pendingTransfer ?: return null
-        if (System.currentTimeMillis() - t.stashedAtMs > STASH_TTL_MS) {
+        val stash = pendingTransfer ?: return null
+        if (System.currentTimeMillis() - stash.stashedAtMs > STASH_TTL_MS) {
             pendingTransfer = null
-            Log.d(TAG, "consumePendingTransfer: dropping stale stash (target=${t.targetId})")
+            Log.d(TAG, "consumePendingTransfer: dropping stale stash (target=${stash.targetId})")
             return null
         }
-        // Compare through the draft→canonical alias map, the same way ownerFor /
-        // release / activeSessionId do. Today MoveToSessionSheet only offers
-        // PERSISTED sessions and rename() only fires for drafts, so raw ids
-        // would already match — but resolving makes this correct by
-        // construction instead of relying on that invariant, so a future
-        // "move into a new chat" target can't strand the transfer.
-        if (resolveKey(t.targetId) != resolveKey(sessionId)) {
-            // Not ours — leave it for the intended target.
+        // 比较走草稿→正式别名表：MoveToSessionSheet 目前只列已落库会话，
+        // 但按别名解析使"移入新会话"的目标将来也不会串号。
+        if (keyFor(stash.targetId) != keyFor(sessionId)) {
             Log.d(
                 TAG,
-                "consumePendingTransfer: session=$sessionId is not target=${t.targetId}, leaving stash",
+                "consumePendingTransfer: session=$sessionId is not target=${stash.targetId}, leaving stash",
             )
             return null
         }
         pendingTransfer = null
         Log.d(
             TAG,
-            "consumePendingTransfer: target=${t.targetId} " +
-                "text=${t.inputText.length}ch attachments=${t.attachments.size}",
+            "consumePendingTransfer: target=${stash.targetId} " +
+                "text=${stash.inputText.length}ch attachments=${stash.attachments.size}",
         )
-        return t
+        return stash
     }
 }

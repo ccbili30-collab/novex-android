@@ -98,8 +98,10 @@ class NovexComponentArchitectureTest {
             roots.walkTopDown().filter { it.isFile && it.extension == "kt" }
                 .none { it.readText().contains("OutlinedTextFieldDefaults.DecorationBox(") },
         )
-        val navigation = File("src/main/java/com/openminis/app/ui/navigation/AppNavigation.kt").readText()
-        assertTrue(navigation.contains("onSelectModelsClick ="))
+        // [ui-clean] 导航拆分后接线分布于同目录各 NavGraphBuilder 扩展——哨兵扫描整目录
+        val navDir = File("src/main/java/com/openminis/app/ui/navigation")
+        val navText = navDir.walkTopDown().filter { it.extension == "kt" }.joinToString("") { it.readText() }
+        assertTrue(navText.contains("onSelectModelsClick ="))
         // [P3.3 裁军] onScheduledTasksClick 断言随定时任务退役移除。
     }
 }

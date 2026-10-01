@@ -16,14 +16,8 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Scaffold
-import androidx.compose.material3.Surface
 import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.ui.Alignment
@@ -36,16 +30,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openminis.app.R
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
 
 /**
- * Detail screen for a single shared folder. Mirrors the iOS Folder Details
- * screen — header card (icon + name + linux path + R/W badge) and a single
- * "Browse Files" action that routes to the in-app file browser rooted at
- * the corresponding host path. The iOS-only "Show in Files app" toggle is
- * intentionally not ported (Android has no equivalent DocumentsProvider
- * mechanism wired up in this version).
+ * 单个共享目录的详情页：头部信息卡 + 「浏览文件」入口（跳到以对应宿主路径
+ * 为根的应用内文件浏览器）。iOS 的「在 Files 中显示」没有 Android 对应物，
+ * 不移植。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun SharedFolderDetailScreen(
     folderId: String,
@@ -54,57 +48,42 @@ fun SharedFolderDetailScreen(
 ) {
     val folder = SharedFolderRegistry.find(folderId)
     if (folder == null) {
-        // Unknown id — pop out so we never render an empty/broken detail.
+        // 未知 id——直接弹回，不渲染空详情。
         LaunchedEffect(Unit) { onBack() }
         return
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.shared_folder_detail_title)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    SettingsScaffold(
+        title = stringResource(R.string.shared_folder_detail_title),
+        onBack = onBack,
+    ) {
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .padding(padding)
                 .verticalScroll(rememberScrollState())
-                .padding(horizontal = 16.dp),
+                .padding(horizontal = NovexDimensions.PageHorizontal),
         ) {
             Spacer(Modifier.height(16.dp))
-            HeaderCard(folder = folder)
+            SharedFolderHeaderCard(folder)
 
-            Spacer(Modifier.height(20.dp))
-            Surface(
-                color = MaterialTheme.colorScheme.surfaceContainerLow,
-                shape = RoundedCornerShape(12.dp),
-                modifier = Modifier
+            Spacer(Modifier.height(16.dp))
+            Row(
+                Modifier
                     .fillMaxWidth()
-                    .clickable(onClick = onBrowseFiles),
+                    .clip(RoundedCornerShape(NovexDimensions.SectionRadius))
+                    .background(NovexColors.Surface)
+                    .clickable(onClick = onBrowseFiles)
+                    .padding(16.dp),
+                verticalAlignment = Alignment.CenterVertically,
+                horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                Row(
-                    modifier = Modifier.padding(16.dp),
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(12.dp),
-                ) {
-                    Icon(
-                        imageVector = novex.android.ui.NovexIcons.Folder,
-                        contentDescription = null,
-                        tint = Color(0xFF007AFF),
-                    )
-                    Text(
-                        text = stringResource(R.string.shared_folder_browse_files),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        fontWeight = FontWeight.Medium,
-                    )
-                }
+                Icon(NovexIcons.Folder, contentDescription = null, tint = NovexColors.Primary)
+                Text(
+                    stringResource(R.string.shared_folder_browse_files),
+                    style = NovexType.ItemTitle,
+                    fontWeight = FontWeight.Medium,
+                    color = NovexColors.Text,
+                )
             }
 
             Spacer(Modifier.height(32.dp))
@@ -113,73 +92,49 @@ fun SharedFolderDetailScreen(
 }
 
 @Composable
-private fun HeaderCard(folder: SharedFolderEntry) {
-    Surface(
-        color = MaterialTheme.colorScheme.surfaceContainerLow,
-        shape = RoundedCornerShape(12.dp),
-        modifier = Modifier.fillMaxWidth(),
+private fun SharedFolderHeaderCard(folder: SharedFolderEntry) {
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clip(RoundedCornerShape(NovexDimensions.SectionRadius))
+            .background(NovexColors.Surface)
+            .padding(16.dp),
+        verticalAlignment = Alignment.Top,
     ) {
-        Row(
-            modifier = Modifier.padding(16.dp),
-            verticalAlignment = Alignment.Top,
+        Box(
+            Modifier
+                .size(36.dp)
+                .clip(RoundedCornerShape(8.dp))
+                .background(folder.iconColor),
+            contentAlignment = Alignment.Center,
         ) {
-            Box(
-                modifier = Modifier
-                    .size(36.dp)
-                    .clip(RoundedCornerShape(8.dp))
-                    .background(folder.iconColor),
-                contentAlignment = Alignment.Center,
-            ) {
-                Icon(
-                    imageVector = folder.icon,
-                    contentDescription = null,
-                    tint = Color.White,
-                    modifier = Modifier.size(20.dp),
-                )
-            }
-            Spacer(Modifier.width(12.dp))
-            Column(modifier = Modifier.weight(1f)) {
-                Row(verticalAlignment = Alignment.CenterVertically) {
-                    Text(
-                        text = stringResource(folder.nameRes),
-                        style = MaterialTheme.typography.titleMedium,
-                        fontWeight = FontWeight.SemiBold,
-                        modifier = Modifier.weight(1f, fill = false),
-                    )
-                    Spacer(Modifier.width(8.dp))
-                    AccessBadge(writable = folder.writable)
-                }
-                Spacer(Modifier.height(2.dp))
-                Text(
-                    text = folder.linuxPath,
-                    style = MaterialTheme.typography.bodySmall,
-                    fontFamily = FontFamily.Monospace,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                )
-            }
+            Icon(
+                folder.icon,
+                contentDescription = null,
+                tint = Color.White,
+                modifier = Modifier.size(20.dp),
+            )
         }
-    }
-}
-
-@Composable
-private fun AccessBadge(writable: Boolean) {
-    val (textRes, color) = if (writable) {
-        R.string.mount_badge_rw to Color(0xFF34C759)
-    } else {
-        R.string.mount_badge_readonly to Color(0xFFFF9500)
-    }
-    Surface(
-        shape = RoundedCornerShape(8.dp),
-        color = color.copy(alpha = 0.12f),
-        contentColor = color,
-    ) {
-        Text(
-            text = stringResource(textRes),
-            style = MaterialTheme.typography.labelSmall,
-            fontWeight = FontWeight.SemiBold,
-            modifier = Modifier.padding(horizontal = 6.dp, vertical = 2.dp),
-        )
+        Spacer(Modifier.width(12.dp))
+        Column(Modifier.weight(1f)) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                Text(
+                    stringResource(folder.nameRes),
+                    style = NovexType.PageTitle,
+                    fontWeight = FontWeight.SemiBold,
+                    modifier = Modifier.weight(1f, fill = false),
+                )
+                Spacer(Modifier.width(8.dp))
+                MountAccessBadge(writable = folder.writable)
+            }
+            Spacer(Modifier.height(2.dp))
+            Text(
+                folder.linuxPath,
+                style = NovexType.Metadata.copy(fontFamily = FontFamily.Monospace),
+                color = NovexColors.SecondaryText,
+                maxLines = 1,
+                overflow = TextOverflow.Ellipsis,
+            )
+        }
     }
 }

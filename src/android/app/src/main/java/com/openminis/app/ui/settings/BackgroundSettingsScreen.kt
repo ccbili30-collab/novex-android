@@ -19,17 +19,11 @@ import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.verticalScroll
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Scaffold
-import novex.android.ui.NovexCheckToggle
 import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
-import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -44,224 +38,181 @@ import androidx.compose.ui.platform.LocalLifecycleOwner
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import androidx.compose.ui.unit.sp
 import androidx.lifecycle.Lifecycle
 import androidx.lifecycle.LifecycleEventObserver
 import com.openminis.app.MinisApp
 import com.openminis.app.R
 import com.openminis.app.power.PowerOptimizationManager
+import com.openminis.app.service.DynamicIslandSupport
+import novex.android.ui.NovexCheckToggle
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
+import novex.android.ui.novexScaledSp
 
 /**
- * T50 settings screen — surfaces the two pieces of background-keep-alive
- * state the user can fix from the OS but the app cannot:
- *
- *   1. Battery-optimisation exemption (`isIgnoringBatteryOptimizations`).
- *   2. OEM-specific autostart permission (Xiaomi/Huawei/OPPO/Vivo/Samsung).
- *
- * Both rows just deep-link to the right system settings page; the app
- * has no privileged way to flip these directly. The state for (1) is
- * polled on resume — when the user comes back from the system settings
- * dialog, the row updates to "already allowed".
- *
- * Renders without depending on the file-private SettingsSection /
- * SettingsItem helpers in [SettingsScreen]; those don't need to grow
- * a public surface for one consumer. Visual feel is intentionally
- * close to the existing settings rows but the components are local.
+ * 后台保活设置页。App 翻不动的两项系统开关（电池白名单、厂商自启动）
+ * 只负责把用户带到对应的系统页；状态在 ON_RESUME 重新探测。
+ * 上面三个开关（任务通知/悬浮层/实时活动）是本应用内的偏好，直接写库。
  */
-@OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun BackgroundSettingsScreen(onBack: () -> Unit) {
     val context = LocalContext.current
     val activity = context as? Activity
+    val repo = (context.applicationContext as MinisApp).backgroundSettingsRepository
 
-    // T180-bg-notif: pull the BackgroundSettingsRepository off the
-    // Application instance — keeps AppNavigation parameters unchanged
-    // (no plumbing churn through the nav graph). MinisApp.onCreate is
-    // guaranteed to have run before any composable composes.
-    val app = context.applicationContext as MinisApp
-    val backgroundRepo = app.backgroundSettingsRepository
-    val taskNotificationsEnabled by backgroundRepo.taskNotificationsEnabled.collectAsState()
-    val backgroundOverlayEnabled by backgroundRepo.backgroundOverlayEnabled.collectAsState()
-    // [T-android-dynamic-island] Live-Updates toggle + device capability.
-    val dynamicIslandEnabled by backgroundRepo.dynamicIslandEnabled.collectAsState()
+    val taskNotificationsEnabled by repo.taskNotificationsEnabled.collectAsState()
+    val backgroundOverlayEnabled by repo.backgroundOverlayEnabled.collectAsState()
+    val dynamicIslandEnabled by repo.dynamicIslandEnabled.collectAsState()
 
     var ignoringOptimizations by remember {
         mutableStateOf(PowerOptimizationManager.isIgnoringBatteryOptimizations(context))
     }
     var canDrawOverlays by remember {
         mutableStateOf(
-            Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                Settings.canDrawOverlays(context),
+            Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context),
         )
     }
-    // [T-android-dynamic-island] Re-probed on ON_RESUME (spec §3) so a
-    // Live-Updates grant the user toggled in system settings is picked up
-    // without an app restart.
     var dynamicIslandCapable by remember {
-        mutableStateOf(
-            com.openminis.app.service.DynamicIslandSupport.isDynamicIslandCapable(context),
-        )
+        mutableStateOf(DynamicIslandSupport.isDynamicIslandCapable(context))
     }
 
+    // 从系统页回来（ON_RESUME）时重探三项系统态。
     val lifecycleOwner = LocalLifecycleOwner.current
-    LaunchedEffect(lifecycleOwner) {
+    DisposableEffect(lifecycleOwner) {
         val observer = LifecycleEventObserver { _, event ->
             if (event == Lifecycle.Event.ON_RESUME) {
                 ignoringOptimizations =
                     PowerOptimizationManager.isIgnoringBatteryOptimizations(context)
                 canDrawOverlays =
-                    Build.VERSION.SDK_INT < Build.VERSION_CODES.M ||
-                        Settings.canDrawOverlays(context)
-                dynamicIslandCapable =
-                    com.openminis.app.service.DynamicIslandSupport.isDynamicIslandCapable(context)
+                    Build.VERSION.SDK_INT < Build.VERSION_CODES.M || Settings.canDrawOverlays(context)
+                dynamicIslandCapable = DynamicIslandSupport.isDynamicIslandCapable(context)
             }
         }
         lifecycleOwner.lifecycle.addObserver(observer)
+        onDispose { lifecycleOwner.lifecycle.removeObserver(observer) }
     }
 
     val vendor = remember { PowerOptimizationManager.Vendor.current() }
     val needsOemGuidance = remember { PowerOptimizationManager.needsOemAutostartGuidance() }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.bg_section_header)) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = null)
-                    }
-                },
-            )
-        },
-    ) { padding ->
+    SettingsScaffold(title = stringResource(R.string.bg_section_header), onBack = onBack) {
         Column(
-            modifier = Modifier
+            Modifier
                 .fillMaxSize()
-                .padding(padding)
-                .padding(horizontal = 16.dp)
-                .verticalScroll(rememberScrollState()),
+                .verticalScroll(rememberScrollState())
+                .padding(horizontal = NovexDimensions.PageHorizontal),
         ) {
-            Spacer(Modifier.size(8.dp))
-            // T180-bg-notif: Task Notifications toggle. Mirrors iOS
-            // EnhancedBackgroundSettingsView's first section (the toggle
-            // ships ON to match iOS default — see
-            // BackgroundSettingsRepository.DEFAULT_TASK_NOTIFICATIONS).
-            BgSectionTitle(stringResource(R.string.settings_section_notifications))
-            BgToggleRow(
-                icon = novex.android.ui.NovexIcons.NotificationsActive,
+            BgSectionLabel(stringResource(R.string.settings_section_notifications))
+
+            BgToggleLine(
+                icon = NovexIcons.NotificationsActive,
                 iconColor = Color(0xFF007AFF),
                 title = stringResource(R.string.settings_task_notifications),
                 checked = taskNotificationsEnabled,
-                onCheckedChange = { backgroundRepo.setTaskNotificationsEnabled(it) },
+                onCheckedChange = repo::setTaskNotificationsEnabled,
             )
-            BgFooter(stringResource(R.string.settings_task_notifications_footer))
+            BgFootnote(stringResource(R.string.settings_task_notifications_footer))
 
-            // T-bg-overlay phase 2: floating tool-status overlay toggle.
-            // Tapping ON without SYSTEM_ALERT_WINDOW deep-links the user to
-            // the system "Display over other apps" screen; canDrawOverlays
-            // is re-polled on ON_RESUME so flipping the system grant
-            // immediately makes the UI reflect ready-to-use state.
-            Spacer(Modifier.size(8.dp))
-            BgToggleRow(
-                icon = novex.android.ui.NovexIcons.Layers,
+            // 悬浮层：没拿到 SYSTEM_ALERT_WINDOW 就深链到系统授权页；用户意愿
+            // 先落库，回来后 canDrawOverlays 重探到 true 即生效。
+            BgToggleLine(
+                icon = NovexIcons.Layers,
                 iconColor = Color(0xFF5856D6),
                 title = stringResource(R.string.settings_bg_overlay),
                 checked = backgroundOverlayEnabled && canDrawOverlays,
                 onCheckedChange = { wanted ->
                     if (wanted && !canDrawOverlays) {
-                        try {
-                            val intent = Intent(
-                                Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
-                                Uri.parse("package:" + context.packageName),
-                            ).apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                            context.startActivity(intent)
-                        } catch (_: Throwable) {
-                            // Fallback: open generic overlay settings screen.
-                            val intent = Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
-                                .apply { addFlags(Intent.FLAG_ACTIVITY_NEW_TASK) }
-                            try { context.startActivity(intent) } catch (_: Throwable) {}
+                        runCatching {
+                            context.startActivity(
+                                Intent(
+                                    Settings.ACTION_MANAGE_OVERLAY_PERMISSION,
+                                    Uri.parse("package:" + context.packageName),
+                                ).addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                            )
+                        }.onFailure {
+                            runCatching {
+                                context.startActivity(
+                                    Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION)
+                                        .addFlags(Intent.FLAG_ACTIVITY_NEW_TASK),
+                                )
+                            }
                         }
-                        // Persist the user's intent so when they return
-                        // with the grant in place, the overlay turns on
-                        // immediately (canDrawOverlays re-polls on
-                        // ON_RESUME — see LaunchedEffect above).
-                        backgroundRepo.setBackgroundOverlayEnabled(true)
+                        repo.setBackgroundOverlayEnabled(true)
                     } else {
-                        backgroundRepo.setBackgroundOverlayEnabled(wanted)
+                        repo.setBackgroundOverlayEnabled(wanted)
                     }
                 },
             )
-            BgFooter(
-                if (!canDrawOverlays && backgroundOverlayEnabled) {
-                    stringResource(R.string.settings_bg_overlay_permission_needed)
-                } else {
-                    stringResource(R.string.settings_bg_overlay_footer)
-                },
+            BgFootnote(
+                stringResource(
+                    if (!canDrawOverlays && backgroundOverlayEnabled) {
+                        R.string.settings_bg_overlay_permission_needed
+                    } else {
+                        R.string.settings_bg_overlay_footer
+                    },
+                ),
             )
 
-            // [T-android-dynamic-island] Live Updates / "dynamic island" toggle.
-            // Only interactive when the device is capable (Android 16+ with the
-            // per-app Live-Updates grant). When ON it REPLACES the floating
-            // overlay — the mutual-exclusion guard lives in
-            // AgentForegroundService.applyOverlayState. Disabled + explained on
-            // devices/versions that don't support it.
-            Spacer(Modifier.size(8.dp))
-            BgToggleRow(
-                icon = novex.android.ui.NovexIcons.Bolt,
+            // 实时活动仅 Android 16+ 且有 per-app 授权才可点；开时替代悬浮层
+            // （互斥逻辑在 AgentForegroundService.applyOverlayState）。
+            BgToggleLine(
+                icon = NovexIcons.Bolt,
                 iconColor = Color(0xFF34C759),
                 title = stringResource(R.string.settings_dynamic_island),
                 checked = dynamicIslandEnabled && dynamicIslandCapable,
                 enabled = dynamicIslandCapable,
-                onCheckedChange = { backgroundRepo.setDynamicIslandEnabled(it) },
+                onCheckedChange = repo::setDynamicIslandEnabled,
             )
-            BgFooter(
-                if (!dynamicIslandCapable) {
-                    stringResource(R.string.settings_dynamic_island_unsupported)
-                } else {
-                    stringResource(R.string.settings_dynamic_island_footer)
-                },
+            BgFootnote(
+                stringResource(
+                    if (dynamicIslandCapable) {
+                        R.string.settings_dynamic_island_footer
+                    } else {
+                        R.string.settings_dynamic_island_unsupported
+                    },
+                ),
             )
 
             Spacer(Modifier.size(16.dp))
-            BgSectionTitle(stringResource(R.string.battery_opt_section_title))
-            BgRow(
-                icon = novex.android.ui.NovexIcons.BatteryFull,
+            BgSectionLabel(stringResource(R.string.battery_opt_section_title))
+            BgActionLine(
+                icon = NovexIcons.BatteryFull,
                 iconColor = if (ignoringOptimizations) Color(0xFF34C759) else Color(0xFFFF9500),
                 title = stringResource(R.string.battery_opt_row_title),
-                subtitle = if (ignoringOptimizations) {
-                    stringResource(R.string.battery_opt_already_exempt)
-                } else {
-                    stringResource(R.string.battery_opt_request_subtitle)
-                },
+                subtitle = stringResource(
+                    if (ignoringOptimizations) {
+                        R.string.battery_opt_already_exempt
+                    } else {
+                        R.string.battery_opt_request_subtitle
+                    },
+                ),
                 onClick = {
-                    if (!ignoringOptimizations && activity != null) {
-                        PowerOptimizationManager.requestBatteryOptimizationExemption(activity)
+                    if (!ignoringOptimizations) {
+                        activity?.let(PowerOptimizationManager::requestBatteryOptimizationExemption)
                     }
                 },
             )
-            BgFooter(stringResource(R.string.battery_opt_section_footer))
+            BgFootnote(stringResource(R.string.battery_opt_section_footer))
 
             if (needsOemGuidance) {
                 Spacer(Modifier.size(16.dp))
-                BgSectionTitle(stringResource(R.string.rom_autostart_section_title))
-                BgRow(
-                    icon = novex.android.ui.NovexIcons.PhoneAndroid,
+                BgSectionLabel(stringResource(R.string.rom_autostart_section_title))
+                BgActionLine(
+                    icon = NovexIcons.PhoneAndroid,
                     iconColor = Color(0xFFFF9500),
                     title = stringResource(R.string.rom_autostart_row_title),
-                    subtitle = stringResource(
-                        R.string.rom_autostart_row_subtitle,
-                        vendor.displayName,
-                    ),
+                    subtitle = stringResource(R.string.rom_autostart_row_subtitle, vendor.displayName),
                     onClick = {
-                        if (activity != null) {
-                            val ok = PowerOptimizationManager.openOemAutostartSettings(activity)
-                            if (!ok) PowerOptimizationManager.openAppDetailsSettings(activity)
+                        activity?.let { act ->
+                            if (!PowerOptimizationManager.openOemAutostartSettings(act)) {
+                                PowerOptimizationManager.openAppDetailsSettings(act)
+                            }
                         }
                     },
                 )
-                BgFooter(
-                    stringResource(R.string.rom_autostart_section_footer, vendor.displayName),
-                )
+                BgFootnote(stringResource(R.string.rom_autostart_section_footer, vendor.displayName))
             }
 
             Spacer(Modifier.size(16.dp))
@@ -270,79 +221,74 @@ fun BackgroundSettingsScreen(onBack: () -> Unit) {
 }
 
 @Composable
-private fun BgSectionTitle(text: String) {
+private fun BgSectionLabel(text: String) {
     Text(
-        text = text.uppercase(),
-        fontSize = novex.android.ui.novexScaledSp(12),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 4.dp, top = 4.dp, bottom = 6.dp),
+        text.uppercase(),
+        fontSize = novexScaledSp(12),
+        color = NovexColors.SecondaryText,
+        modifier = Modifier.padding(start = 4.dp, top = 8.dp, bottom = 6.dp),
     )
 }
 
 @Composable
-private fun BgFooter(text: String) {
+private fun BgFootnote(text: String) {
     Text(
-        text = text,
-        fontSize = novex.android.ui.novexScaledSp(12),
-        color = MaterialTheme.colorScheme.onSurfaceVariant,
-        modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp),
+        text,
+        fontSize = novexScaledSp(12),
+        color = NovexColors.SecondaryText,
+        modifier = Modifier.padding(start = 4.dp, end = 4.dp, top = 6.dp, bottom = 8.dp),
     )
 }
 
 @Composable
-private fun BgToggleRow(
+private fun BgIconChip(icon: ImageVector, color: Color, alpha: Float = 1f) {
+    Box(
+        Modifier
+            .size(28.dp)
+            .clip(RoundedCornerShape(6.dp))
+            .background(color.copy(alpha = 0.15f * alpha)),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(icon, contentDescription = null, tint = color.copy(alpha = alpha), modifier = Modifier.size(18.dp))
+    }
+}
+
+private val bgRowShape = RoundedCornerShape(12.dp)
+
+@Composable
+private fun BgToggleLine(
     icon: ImageVector,
     iconColor: Color,
     title: String,
     checked: Boolean,
     onCheckedChange: (Boolean) -> Unit,
-    // [T-android-dynamic-island] When false the row is greyed out and both the
-    // whole-row tap and the Switch are inert (used for the dynamic-island
-    // toggle on devices that don't support Live Updates).
     enabled: Boolean = true,
 ) {
-    val rowAlpha = if (enabled) 1f else 0.4f
+    val alpha = if (enabled) 1f else 0.4f
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+            .clip(bgRowShape)
+            .background(NovexColors.Surface, bgRowShape)
             .clickable(enabled = enabled) { onCheckedChange(!checked) }
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(iconColor.copy(alpha = 0.15f * rowAlpha)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor.copy(alpha = rowAlpha),
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        BgIconChip(icon, iconColor, alpha)
         Spacer(Modifier.width(12.dp))
         Text(
-            text = title,
-            fontSize = novex.android.ui.novexScaledSp(15),
+            title,
+            fontSize = novexScaledSp(15),
             fontWeight = FontWeight.Medium,
-            color = MaterialTheme.colorScheme.onSurface.copy(alpha = rowAlpha),
+            color = NovexColors.Text.copy(alpha = alpha),
             modifier = Modifier.weight(1f),
         )
-        NovexCheckToggle(
-            checked = checked,
-            onCheckedChange = onCheckedChange,
-            enabled = enabled,
-        )
+        NovexCheckToggle(checked = checked, onCheckedChange = onCheckedChange, enabled = enabled)
     }
 }
 
 @Composable
-private fun BgRow(
+private fun BgActionLine(
     icon: ImageVector,
     iconColor: Color,
     title: String,
@@ -350,42 +296,25 @@ private fun BgRow(
     onClick: () -> Unit,
 ) {
     Row(
-        modifier = Modifier
+        Modifier
             .fillMaxWidth()
-            .clip(RoundedCornerShape(12.dp))
-            .background(MaterialTheme.colorScheme.surfaceContainerHigh, RoundedCornerShape(12.dp))
+            .clip(bgRowShape)
+            .background(NovexColors.Surface, bgRowShape)
             .clickable(onClick = onClick)
             .padding(horizontal = 12.dp, vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Box(
-            modifier = Modifier
-                .size(28.dp)
-                .clip(RoundedCornerShape(6.dp))
-                .background(iconColor.copy(alpha = 0.15f)),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = icon,
-                contentDescription = null,
-                tint = iconColor,
-                modifier = Modifier.size(18.dp),
-            )
-        }
+        BgIconChip(icon, iconColor)
         Spacer(Modifier.width(12.dp))
-        Column(modifier = Modifier.padding(end = 6.dp)) {
+        Column(Modifier.padding(end = 6.dp)) {
             Text(
-                text = title,
-                fontSize = novex.android.ui.novexScaledSp(15),
+                title,
+                fontSize = novexScaledSp(15),
                 fontWeight = FontWeight.Medium,
-                color = MaterialTheme.colorScheme.onSurface,
+                color = NovexColors.Text,
             )
             if (!subtitle.isNullOrEmpty()) {
-                Text(
-                    text = subtitle,
-                    fontSize = novex.android.ui.novexScaledSp(12),
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                Text(subtitle, fontSize = novexScaledSp(12), color = NovexColors.SecondaryText)
             }
         }
     }

@@ -5,6 +5,7 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
+import androidx.compose.foundation.layout.fillMaxHeight
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
@@ -12,41 +13,32 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.HorizontalDivider
 import androidx.compose.material3.Icon
 import androidx.compose.material3.IconButton
-import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
+import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import com.openminis.app.R
 import com.openminis.app.ui.theme.ChatColors
+import novex.android.ui.ModalBottomSheet
+import novex.android.ui.NovexIcons
 
 /**
- * Standardized half-screen modal sheet used by every popup launched from the
- * chat input "⋯" menu. Mirrors [CompactSummarySheet]: 90% screen height by
- * default, the same header row (optional leading action / centered title /
- * close button), 0.5dp separator, and a body slot that fills the rest. The
- * body stays independent — each call site supplies its own [content].
+ * 聊天「⋯」菜单弹出的统一半屏面板壳：顶部细把手、居中标题 + 可选左槽
+ * + 右侧关闭、细分隔线，下方是调用方给的 [content]。
  *
- * Uses a compact custom drag handle: the Material3 default reserves ~22dp of
- * padding above and below the indicator, which produced too much whitespace
- * between the indicator and the title — this version tightens it to 6dp / 4dp.
- *
- * [heightFraction] lets a caller request a smaller detent — for example
- * [TokenUsageSheet] passes 0.5f to match iOS's `.medium` detent
- * (AIChatView.swift:508). The fraction is clamped to (0, 1] so callers can't
- * accidentally collapse the sheet to nothing.
+ * [heightFraction] 给要小档位的调用方（如 TokenUsageSheet 的 0.5），
+ * 钳在 (0,1] 防止把面板压没。
  */
-@OptIn(ExperimentalMaterial3Api::class)
+@OptIn(androidx.compose.material3.ExperimentalMaterial3Api::class)
 @Composable
 fun StandardChatSheet(
     title: String,
@@ -55,95 +47,51 @@ fun StandardChatSheet(
     heightFraction: Float = 0.9f,
     content: @Composable () -> Unit,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-    val configuration = LocalConfiguration.current
-    val sheetHeight = (configuration.screenHeightDp * heightFraction.coerceIn(0.1f, 1f)).dp
-
     ModalBottomSheet(
         onDismissRequest = onDismiss,
-        sheetState = sheetState,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
         containerColor = ChatColors.background,
-        dragHandle = { CompactDragHandle() },
+        dragHandle = { ChatSheetGrabber() },
     ) {
-        Column(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(sheetHeight),
-        ) {
-            StandardChatSheetHeader(
-                title = title,
-                onDismiss = onDismiss,
-                leadingAction = leadingAction,
-            )
-            HorizontalDivider(thickness = 0.5.dp, color = ChatColors.separator)
-            Box(modifier = Modifier.fillMaxSize()) {
-                content()
+        Column(Modifier.fillMaxWidth().fillMaxHeight(heightFraction.coerceIn(0.1f, 1f))) {
+            // 标题条：标题居中，左槽与关闭按钮分居两侧（Box 叠层而非三段 Row）。
+            Box(Modifier.fillMaxWidth().padding(horizontal = 8.dp, vertical = 4.dp).height(48.dp)) {
+                Box(Modifier.align(Alignment.CenterStart)) { leadingAction?.invoke() }
+                Text(
+                    title,
+                    fontSize = 16.sp,
+                    fontWeight = FontWeight.SemiBold,
+                    color = ChatColors.primaryText,
+                    maxLines = 1,
+                    overflow = TextOverflow.Ellipsis,
+                    modifier = Modifier.align(Alignment.Center).padding(horizontal = 48.dp),
+                )
+                IconButton(onClick = onDismiss, modifier = Modifier.align(Alignment.CenterEnd)) {
+                    Icon(
+                        NovexIcons.Close,
+                        contentDescription = stringResource(R.string.standard_sheet_close),
+                        tint = ChatColors.secondaryText,
+                    )
+                }
             }
+            HorizontalDivider(thickness = 0.5.dp, color = ChatColors.separator)
+            Box(Modifier.fillMaxSize()) { content() }
         }
     }
 }
 
-/**
- * Slim replacement for [androidx.compose.material3.BottomSheetDefaults.DragHandle].
- * Same 32×4 indicator pill, but with 6dp top + 4dp bottom padding so the title
- * sits closer to the indicator than the Material default (22dp / 22dp).
- */
+/** 比 Material 默认把手更扁的指示条（上下间距收紧）。 */
 @Composable
-private fun CompactDragHandle() {
+private fun ChatSheetGrabber() {
     Box(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(top = 6.dp, bottom = 4.dp),
+        Modifier.fillMaxWidth().padding(top = 6.dp, bottom = 4.dp),
         contentAlignment = Alignment.TopCenter,
     ) {
         Box(
-            modifier = Modifier
+            Modifier
                 .width(32.dp)
                 .height(4.dp)
-                .background(
-                    color = ChatColors.secondaryText.copy(alpha = 0.4f),
-                    shape = RoundedCornerShape(2.dp),
-                ),
+                .background(ChatColors.secondaryText.copy(alpha = 0.4f), RoundedCornerShape(2.dp)),
         )
-    }
-}
-
-/**
- * Shared header row used by all chat sheets — close button on the right,
- * centered title, and an optional leading slot. Reserving a 48.dp slot on the
- * left when [leadingAction] is null keeps the title optically centered.
- */
-@Composable
-fun StandardChatSheetHeader(
-    title: String,
-    onDismiss: () -> Unit,
-    leadingAction: (@Composable () -> Unit)? = null,
-) {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .padding(horizontal = 8.dp, vertical = 4.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        if (leadingAction != null) {
-            leadingAction()
-        } else {
-            Spacer(modifier = Modifier.size(48.dp))
-        }
-        Spacer(modifier = Modifier.weight(1f))
-        Text(
-            text = title,
-            fontSize = 16.sp,
-            fontWeight = FontWeight.SemiBold,
-            color = ChatColors.primaryText,
-        )
-        Spacer(modifier = Modifier.weight(1f))
-        IconButton(onClick = onDismiss) {
-            Icon(
-                imageVector = novex.android.ui.NovexIcons.Close,
-                contentDescription = stringResource(R.string.standard_sheet_close),
-                tint = ChatColors.secondaryText,
-            )
-        }
     }
 }

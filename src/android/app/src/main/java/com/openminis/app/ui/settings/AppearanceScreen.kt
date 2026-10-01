@@ -1,12 +1,9 @@
 package com.openminis.app.ui.settings
 
-import com.openminis.app.R
-import com.openminis.app.data.repository.AppIconRepository
-import com.openminis.app.ui.components.MinisTextButton
-
+import android.app.Activity
+import android.app.LocaleManager
 import android.content.Context
 import android.content.SharedPreferences
-import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
 import androidx.compose.foundation.Image
@@ -27,12 +24,10 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.material3.Icon
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Slider
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.MutableState
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -45,112 +40,41 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.graphics.painter.BitmapPainter
-import androidx.compose.ui.graphics.painter.Painter
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
+import androidx.compose.ui.res.stringResource
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import androidx.core.content.res.ResourcesCompat
 import androidx.core.graphics.drawable.toBitmap
-import androidx.compose.ui.unit.sp
-import androidx.compose.ui.res.stringResource
+import com.openminis.app.R
+import com.openminis.app.data.repository.AppIconRepository
+import com.openminis.app.ui.components.MinisTextButton
 import kotlin.math.roundToInt
+import novex.android.ui.NovexColors
+import novex.android.ui.NovexDimensions
+import novex.android.ui.NovexIcons
+import novex.android.ui.NovexType
+import novex.android.ui.Slider
 
-// -- Preference Keys --
+// ── 偏好键（跨进程契约，逐字冻结）─────────────────────────────────────────────
+
 const val PREF_APPEARANCE = "appearance_prefs"
-const val KEY_THEME_MODE = "theme_mode"            // 0=System, 1=Light, 2=Dark
-// iOS-aligned key names — match `@AppStorage("returnKeyBehavior")` and
-// `@AppStorage("keepScreenAwakeDuringTasks")` in ContentView.swift so
-// future cross-platform sync (if it ever lands) reads the same values.
-const val KEY_RETURN_KEY_BEHAVIOR = "returnKeyBehavior"  // Int 0=Newline (default), 1=Send
-const val KEY_KEEP_SCREEN_AWAKE = "keepScreenAwakeDuringTasks"  // Boolean, default false
-const val KEY_TOOL_PREVIEW = "tool_preview"        // Boolean, default true
-// [T-chrome-autofade-setting] 对话页「挂篮」（顶栏+侧边组件+悬浮按钮）空闲
-// 6 秒自动淡出。2026-09-16 用户决策：默认关闭，仅点空白处手动淡出；需要
-// 沉浸的用户自行打开。
-const val KEY_CHROME_AUTO_FADE = "chat.chromeAutoFade"  // Boolean, default false
-const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // Boolean, default true
-// [T-keyboard-auto-pop default flip] Default ON — most users want the
-// composer ready for a follow-up immediately after the model finishes.
-// Key name mirrors iOS `@AppStorage("chat.autoFocusAfterReply")` so a
-// future cross-platform sync reads the same pref.
-const val KEY_AUTO_FOCUS_AFTER_REPLY = "chat.autoFocusAfterReply"  // Boolean, default true
-// T-chat-title-pill: shows a sticky session-title pill above the chat list
-// while the user scrolls back through history. Cross-platform key name
-// (matches iOS @AppStorage("appearance.show_chat_title")) so future config
-// sync reads the same value.
-const val KEY_SHOW_CHAT_TITLE = "appearance.show_chat_title"  // Boolean, default true
-// [T-thinking-auto-expand-toggle] When true (default, historical behavior) a
-// NEW streaming thinking block auto-expands while the model reasons; when false
-// it stays collapsed until tapped. Key name mirrors iOS
-// `@AppStorage("chat.autoExpandThinking")` so future config sync reads the same
-// value. Read at block-mount time in ThinkingBlock.
-const val KEY_AUTO_EXPAND_THINKING = "chat.autoExpandThinking"  // Boolean, default true
-// [T-android-auto-grouping] When a chat's title is first generated, also file
-// it into a matching EXISTING group. Rides the title-generation call — no
-// second round-trip. Key name matches iOS `autoGroupingEnabled` so a future
-// config sync reads the same value.
-//
-// Default ON (both platforms, per product decision 2026-08-16). iOS originally
-// shipped this opt-in on the reasoning that it "moves user data without being
-// asked"; that concern is bounded here because the feature only ever files a
-// chat into a group the user already created, only when the model is confident,
-// only once per chat, and never over a hand-filed session (setFolderIfUnfiled).
-const val KEY_AUTO_GROUPING = "autoGroupingEnabled"  // Boolean, default true
-const val KEY_FONT_CHAT_INPUT = "font_chat_input"  // Int scale level -2..3
-const val KEY_FONT_MESSAGE = "font_message"        // Int scale level -2..3
-const val KEY_FONT_APP_BASE = "font_app_base"      // Int scale level -2..3
-const val KEY_LANGUAGE = "app_language"             // "" = system, "en", "zh", "ja", "ko", "fr", "de", "ru"
-
-/** True when Enter (without Shift) should send the message. iOS calls this
- *  `returnKeyBehavior == 1`. Default 0 = Enter inserts a newline (matches
- *  iOS shipping default + most desktop chat clients). */
-fun returnKeySendsMessage(context: Context): Boolean =
-    getAppearancePrefs(context).getInt(KEY_RETURN_KEY_BEHAVIOR, 0) == 1
-
-fun keepScreenAwakeEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_KEEP_SCREEN_AWAKE, false)
-
-/** 对话页挂篮是否空闲 6 秒自动淡出；默认 false（仅点空白处手动淡出）。 */
-fun chromeAutoFadeEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_CHROME_AUTO_FADE, false)
-
-/** [T-android-auto-grouping] Default ON — see [KEY_AUTO_GROUPING]. */
-fun autoGroupingEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_AUTO_GROUPING, true)
-
-/** Default ON — pill shows up on scroll for everyone unless explicitly disabled. */
-fun showChatTitleEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_SHOW_CHAT_TITLE, true)
-
-/** [T-thinking-auto-expand-toggle] Default ON = historical behavior: a new
- *  streaming thinking block opens expanded. Off = it stays collapsed until the
- *  user taps it. */
-fun autoExpandThinkingEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_AUTO_EXPAND_THINKING, true)
-
-fun showContextMeterEnabled(context: Context): Boolean =
-    getAppearancePrefs(context).getBoolean(KEY_SHOW_CONTEXT_METER, true)
-
-/** Font scale levels matching iOS: XS(-2) Small(-1) Default(0) Medium(1) Large(2) XL(3) */
-private val fontScaleLabels = listOf("XS", "Small", "Default", "Medium", "Large", "XL")
-private val fontScaleValues = listOf(-2, -1, 0, 1, 2, 3)
-private val fontScaleMultipliers = listOf(0.88f, 0.94f, 1.0f, 1.06f, 1.12f, 1.21f)
-
-private data class LanguageOption(val code: String, val flag: String, val label: String)
-// "System" label is resolved at call-site via stringResource so it follows
-// the user's chosen UI language. The remaining entries are language self-names
-// and stay as literals \u2014 Chinese is always "\u7B80\u4F53\u4E2D\u6587", regardless of UI locale.
-private val languageOptions = listOf(
-    LanguageOption("", "\uD83C\uDF10", ""),
-    LanguageOption("en", "\uD83C\uDDFA\uD83C\uDDF8", "English"),
-    LanguageOption("zh", "\uD83C\uDDE8\uD83C\uDDF3", "简体中文"),
-    LanguageOption("ja", "\uD83C\uDDEF\uD83C\uDDF5", "日本語"),
-    LanguageOption("ko", "\uD83C\uDDF0\uD83C\uDDF7", "한국어"),
-    LanguageOption("fr", "\uD83C\uDDEB\uD83C\uDDF7", "Français"),
-    LanguageOption("de", "\uD83C\uDDE9\uD83C\uDDEA", "Deutsch"),
-    // ru: flag \uD83C\uDDF7\uD83C\uDDFA (RU), self-name \u0420\u0443\u0441\u0441\u043A\u0438\u0439 (Russkiy)
-    LanguageOption("ru", "\uD83C\uDDF7\uD83C\uDDFA", "\u0420\u0443\u0441\u0441\u043A\u0438\u0439"),
-)
+const val KEY_THEME_MODE = "theme_mode"                    // 0=System, 1=Light, 2=Dark
+const val KEY_RETURN_KEY_BEHAVIOR = "returnKeyBehavior"    // 0=Newline(默认), 1=Send
+const val KEY_KEEP_SCREEN_AWAKE = "keepScreenAwakeDuringTasks"
+const val KEY_TOOL_PREVIEW = "tool_preview"                // 默认 true
+const val KEY_CHROME_AUTO_FADE = "chat.chromeAutoFade"     // 默认 false：仅手动点空白淡出
+const val KEY_SHOW_CONTEXT_METER = "chat.showContextMeter" // 默认 true
+const val KEY_AUTO_FOCUS_AFTER_REPLY = "chat.autoFocusAfterReply"  // 默认 true
+const val KEY_SHOW_CHAT_TITLE = "appearance.show_chat_title"       // 默认 true
+const val KEY_AUTO_EXPAND_THINKING = "chat.autoExpandThinking"     // 默认 true
+const val KEY_AUTO_GROUPING = "autoGroupingEnabled"                // 默认 true
+const val KEY_FONT_CHAT_INPUT = "font_chat_input"          // 档位 -2..3
+const val KEY_FONT_MESSAGE = "font_message"
+const val KEY_FONT_APP_BASE = "font_app_base"
+const val KEY_LANGUAGE = "app_language"                    // ""=跟随系统, en/zh/ja/ko/fr/de/ru
 
 fun getAppearancePrefs(context: Context): SharedPreferences =
     context.getSharedPreferences(PREF_APPEARANCE, Context.MODE_PRIVATE)
@@ -158,13 +82,84 @@ fun getAppearancePrefs(context: Context): SharedPreferences =
 fun getThemeMode(context: Context): Int =
     getAppearancePrefs(context).getInt(KEY_THEME_MODE, 0)
 
+fun returnKeySendsMessage(context: Context): Boolean =
+    getAppearancePrefs(context).getInt(KEY_RETURN_KEY_BEHAVIOR, 0) == 1
+
+fun keepScreenAwakeEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_KEEP_SCREEN_AWAKE, false)
+
+fun chromeAutoFadeEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_CHROME_AUTO_FADE, false)
+
+fun autoGroupingEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_AUTO_GROUPING, true)
+
+fun showChatTitleEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_SHOW_CHAT_TITLE, true)
+
+fun autoExpandThinkingEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_AUTO_EXPAND_THINKING, true)
+
+fun showContextMeterEnabled(context: Context): Boolean =
+    getAppearancePrefs(context).getBoolean(KEY_SHOW_CONTEXT_METER, true)
+
+// ── 字号档位 ─────────────────────────────────────────────────────────────────
+
+private val FONT_LEVELS = listOf(-2, -1, 0, 1, 2, 3)
+private val FONT_LEVEL_LABELS = listOf("XS", "Small", "Default", "Medium", "Large", "XL")
+private val FONT_MULTIPLIERS = listOf(0.88f, 0.94f, 1.0f, 1.06f, 1.12f, 1.21f)
+
+fun fontScaleForLevel(level: Int): Float =
+    FONT_MULTIPLIERS[FONT_LEVELS.indexOf(level).coerceIn(0, FONT_MULTIPLIERS.lastIndex)]
+
 fun getFontScale(context: Context, key: String): Float =
     fontScaleForLevel(getAppearancePrefs(context).getInt(key, 0))
 
-fun fontScaleForLevel(level: Int): Float {
-    val idx = fontScaleValues.indexOf(level).coerceIn(0, fontScaleMultipliers.lastIndex)
-    return fontScaleMultipliers[idx]
-}
+// ── 语言选项 ─────────────────────────────────────────────────────────────────
+
+private data class LanguageOption(val code: String, val flag: String, val selfName: String)
+
+// code 为空 = 跟随系统，标签在调用处 stringResource 取（跟随 UI 语言）；
+// 其余用各语言自称，不随 UI 语言变。
+private val languageOptions = listOf(
+    LanguageOption("", "🌐", ""),
+    LanguageOption("en", "🇺🇸", "English"),
+    LanguageOption("zh", "🇨🇳", "简体中文"),
+    LanguageOption("ja", "🇯🇵", "日本語"),
+    LanguageOption("ko", "🇰🇷", "한국어"),
+    LanguageOption("fr", "🇫🇷", "Français"),
+    LanguageOption("de", "🇩🇪", "Deutsch"),
+    LanguageOption("ru", "🇷🇺", "Русский"),
+)
+
+// ── 开关行规格（数据驱动的段渲染）────────────────────────────────────────────
+
+private class SwitchSpec(
+    val key: String,
+    val default: Boolean,
+    val headerRes: Int,
+    val footerRes: Int,
+    val titleRes: Int,
+    val subtitleRes: Int? = null,
+    val icon: ImageVector,
+    val tint: Color,
+)
+
+@Composable
+private fun rememberBoolPref(
+    prefs: SharedPreferences,
+    key: String,
+    default: Boolean,
+): MutableState<Boolean> =
+    remember { mutableStateOf(prefs.getBoolean(key, default)) }
+
+// ── 页面 ────────────────────────────────────────────────────────────────────
+
+private val TilePurple = Color(0xFF5856D6)
+private val TileBlue = Color(0xFF007AFF)
+private val TileOrange = Color(0xFFFF9500)
+private val TileGreen = Color(0xFF34C759)
+private val TileTeal = Color(0xFF5AC8FA)
 
 @Composable
 fun AppearanceScreen(
@@ -176,68 +171,78 @@ fun AppearanceScreen(
     val prefs = remember { getAppearancePrefs(context) }
 
     var themeMode by remember { mutableIntStateOf(prefs.getInt(KEY_THEME_MODE, 0)) }
-    var returnKeyBehavior by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
-    var keepScreenAwake by remember { mutableStateOf(prefs.getBoolean(KEY_KEEP_SCREEN_AWAKE, false)) }
-    var chromeAutoFade by remember { mutableStateOf(prefs.getBoolean(KEY_CHROME_AUTO_FADE, false)) }
-    var toolPreview by remember { mutableStateOf(prefs.getBoolean(KEY_TOOL_PREVIEW, true)) }
-    var showContextMeter by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CONTEXT_METER, true)) }
-    var autoFocusAfterReply by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, true)) }
-    var autoExpandThinking by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_EXPAND_THINKING, true)) }
-    var showChatTitle by remember { mutableStateOf(prefs.getBoolean(KEY_SHOW_CHAT_TITLE, true)) }
-    var autoGrouping by remember { mutableStateOf(prefs.getBoolean(KEY_AUTO_GROUPING, true)) }
+    var returnKey by remember { mutableIntStateOf(prefs.getInt(KEY_RETURN_KEY_BEHAVIOR, 0)) }
     var chatInputLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_CHAT_INPUT, 0)) }
     var messageLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_MESSAGE, 0)) }
     var appBaseLevel by remember { mutableIntStateOf(prefs.getInt(KEY_FONT_APP_BASE, 0)) }
     var selectedLanguage by remember { mutableStateOf(prefs.getString(KEY_LANGUAGE, "") ?: "") }
     var selectedAppIcon by remember { mutableStateOf(AppIconRepository.current(context)) }
 
-    val fontsModified = chatInputLevel != 0 || messageLevel != 0 || appBaseLevel != 0
+    val switches = listOf(
+        SwitchSpec(KEY_KEEP_SCREEN_AWAKE, false,
+            R.string.appearance_section_keep_awake, R.string.appearance_keep_awake_footer,
+            R.string.appearance_keep_awake_title,
+            icon = NovexIcons.ScreenLockPortrait, tint = TileGreen),
+        SwitchSpec(KEY_CHROME_AUTO_FADE, false,
+            R.string.appearance_section_chrome_autofade, R.string.appearance_chrome_autofade_footer,
+            R.string.appearance_chrome_autofade_title,
+            icon = NovexIcons.VisibilityOff, tint = TilePurple),
+        SwitchSpec(KEY_TOOL_PREVIEW, true,
+            R.string.appearance_section_tool_preview, R.string.appearance_tool_preview_footer,
+            R.string.appearance_tool_preview_title,
+            icon = NovexIcons.Visibility, tint = TileTeal),
+        SwitchSpec(KEY_AUTO_EXPAND_THINKING, true,
+            R.string.appearance_section_deep_thinking, R.string.appearance_auto_expand_thinking_footer,
+            R.string.appearance_auto_expand_thinking_title,
+            icon = NovexIcons.Psychology, tint = TilePurple),
+        SwitchSpec(KEY_AUTO_FOCUS_AFTER_REPLY, true,
+            R.string.appearance_section_auto_focus_after_reply, R.string.appearance_auto_focus_after_reply_footer,
+            R.string.appearance_auto_focus_after_reply_title,
+            icon = NovexIcons.Keyboard, tint = TileBlue),
+        SwitchSpec(KEY_SHOW_CHAT_TITLE, true,
+            R.string.appearance_section_chat_title, R.string.appearance_show_chat_title_footer,
+            R.string.appearance_show_chat_title, subtitleRes = R.string.appearance_show_chat_title_subtitle,
+            icon = NovexIcons.ChatBubbleOutline, tint = TileBlue),
+        SwitchSpec(KEY_AUTO_GROUPING, true,
+            R.string.appearance_section_grouping, R.string.appearance_auto_grouping_footer,
+            R.string.appearance_auto_grouping, subtitleRes = R.string.appearance_auto_grouping_subtitle,
+            icon = NovexIcons.Folder, tint = TileBlue),
+    )
+    val switchValues = switches.associate { spec ->
+        spec.key to rememberBoolPref(prefs, spec.key, spec.default)
+    }
+    val contextMeterState = rememberBoolPref(prefs, KEY_SHOW_CONTEXT_METER, true)
 
-    val tilePurple = Color(0xFF5856D6)
-    val tileBlue = Color(0xFF007AFF)
-    val tileOrange = Color(0xFFFF9500)
-    val tileGreen = Color(0xFF34C759)
-    val tileTeal = Color(0xFF5AC8FA)
+    val fontsModified = chatInputLevel != 0 || messageLevel != 0 || appBaseLevel != 0
 
     SettingsScaffold(title = stringResource(R.string.appearance_title), onBack = onBack) {
 
-        // -- Theme --
-        // Each row carries its own leading icon + tile colour, mirroring the
-        // Provider / Permissions screens. Earlier only the first row had an
-        // icon and rows 2–3 fell through to a 24dp Spacer, which read as a
-        // visual hiccup at the section boundary.
+        // 主题模式：三选一 + 色彩主题入口行。
         SettingsSection(
             header = stringResource(R.string.appearance_section_theme),
             footer = stringResource(R.string.appearance_theme_footer),
         ) {
-            data class ThemeRow(val label: String, val icon: ImageVector, val tint: Color)
-            val themeRows = listOf(
-                ThemeRow(stringResource(R.string.appearance_theme_system), novex.android.ui.NovexIcons.BrightnessAuto, tilePurple),
-                ThemeRow(stringResource(R.string.appearance_theme_light), novex.android.ui.NovexIcons.LightMode, tileOrange),
-                ThemeRow(stringResource(R.string.appearance_theme_dark), novex.android.ui.NovexIcons.DarkMode, tilePurple),
+            val themeChoices = listOf(
+                Triple(stringResource(R.string.appearance_theme_system), NovexIcons.BrightnessAuto, TilePurple),
+                Triple(stringResource(R.string.appearance_theme_light), NovexIcons.LightMode, TileOrange),
+                Triple(stringResource(R.string.appearance_theme_dark), NovexIcons.DarkMode, TilePurple),
             )
-            themeRows.forEachIndexed { idx, row ->
+            themeChoices.forEachIndexed { idx, (label, icon, tint) ->
                 SettingsChoiceRow(
-                    title = row.label,
+                    title = label,
                     selected = themeMode == idx,
                     onSelect = {
                         themeMode = idx
                         prefs.edit().putInt(KEY_THEME_MODE, idx).apply()
                         onThemeChanged(idx)
                     },
-                    leading = {
-                        androidx.compose.material3.Icon(
-                            row.icon,
-                            contentDescription = null,
-                            tint = row.tint,
-                        )
-                    },
+                    leading = { Icon(icon, contentDescription = null, tint = tint) },
                     showDivider = true,
                 )
             }
             SettingsRow(
-                icon = novex.android.ui.NovexIcons.Palette,
-                iconColor = tileBlue,
+                icon = NovexIcons.Palette,
+                iconColor = TileBlue,
                 title = stringResource(R.string.appearance_color_theme_title),
                 subtitle = stringResource(R.string.appearance_color_theme_subtitle),
                 onClick = onColorThemeClick,
@@ -245,217 +250,76 @@ fun AppearanceScreen(
             )
         }
 
-        // -- Return Key (mirrors iOS AppearanceSettingsView stringResource(R.string.appearance_section_return_key) section) --
-        // 0=Newline (default), 1=Send. Hardware Shift+Enter always inserts a
-        // newline regardless of this setting — matches iOS behavior and
-        // overrides the read in ChatScreen's onKeyEvent handler.
+        // 回车行为：0=换行（默认） 1=发送。Shift+Enter 始终换行。
         SettingsSection(
             header = stringResource(R.string.appearance_section_return_key),
             footer = stringResource(R.string.appearance_return_key_footer),
         ) {
-            data class ReturnRow(val label: String, val value: Int)
-            val returnRows = listOf(
-                ReturnRow(stringResource(R.string.appearance_return_key_newline), 0),
-                ReturnRow(stringResource(R.string.appearance_return_key_send), 1),
+            val returnChoices = listOf(
+                Triple(stringResource(R.string.appearance_return_key_newline), 0, NovexIcons.KeyboardReturn to TilePurple),
+                Triple(stringResource(R.string.appearance_return_key_send), 1, NovexIcons.Send to TileGreen),
             )
-            returnRows.forEachIndexed { idx, row ->
+            returnChoices.forEachIndexed { idx, (label, value, iconTint) ->
+                val (icon, tint) = iconTint
                 SettingsChoiceRow(
-                    title = row.label,
-                    selected = returnKeyBehavior == row.value,
+                    title = label,
+                    selected = returnKey == value,
                     onSelect = {
-                        returnKeyBehavior = row.value
-                        prefs.edit().putInt(KEY_RETURN_KEY_BEHAVIOR, row.value).apply()
+                        returnKey = value
+                        prefs.edit().putInt(KEY_RETURN_KEY_BEHAVIOR, value).apply()
                     },
-                    leading = {
-                        if (idx == 0) {
-                            androidx.compose.material3.Icon(
-                                novex.android.ui.NovexIcons.KeyboardReturn,
-                                contentDescription = null,
-                                tint = tilePurple,
-                            )
-                        } else {
-                            androidx.compose.material3.Icon(
-                                novex.android.ui.NovexIcons.Send,
-                                contentDescription = null,
-                                tint = tileGreen,
-                            )
-                        }
-                    },
-                    showDivider = idx < returnRows.size - 1,
+                    leading = { Icon(icon, contentDescription = null, tint = tint) },
+                    showDivider = idx < returnChoices.lastIndex,
                 )
             }
         }
 
-        // -- Keep Screen Awake --
-        // Holds FLAG_KEEP_SCREEN_ON on the activity window while any session
-        // has an active task (mirrors iOS UIApplication.isIdleTimerDisabled
-        // pattern in KeepScreenAwakeController). Default off — battery cost
-        // is real and most users don't need it.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_keep_awake),
-            footer = stringResource(R.string.appearance_keep_awake_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.ScreenLockPortrait,
-                iconColor = tileGreen,
-                title = stringResource(R.string.appearance_keep_awake_title),
-                checked = keepScreenAwake,
-                onCheckedChange = {
-                    keepScreenAwake = it
-                    prefs.edit().putBoolean(KEY_KEEP_SCREEN_AWAKE, it).apply()
-                },
-                showDivider = false,
-            )
+        // 开关组（数据驱动段）。
+        for (spec in switches) {
+            val state = switchValues.getValue(spec.key)
+            SettingsSection(
+                header = stringResource(spec.headerRes),
+                footer = stringResource(spec.footerRes),
+            ) {
+                SettingsSwitchRow(
+                    icon = spec.icon,
+                    iconColor = spec.tint,
+                    title = stringResource(spec.titleRes),
+                    subtitle = spec.subtitleRes?.let { stringResource(it) },
+                    checked = state.value,
+                    onCheckedChange = {
+                        state.value = it
+                        prefs.edit().putBoolean(spec.key, it).apply()
+                    },
+                    showDivider = false,
+                )
+            }
         }
 
-        // [T-chrome-autofade-setting] 挂篮自动隐藏（2026-09-16 用户决策：
-        // 默认关闭；开启恢复 6 秒空闲自动淡出，关闭仅保留点空白处手动淡出）。
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_chrome_autofade),
-            footer = stringResource(R.string.appearance_chrome_autofade_footer),
-        ) {
+        // 上下文用量。
+        SettingsSection(header = "上下文用量", footer = "在输入框旁显示当前模型实际上下文窗口的使用进度。") {
             SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.VisibilityOff,
-                iconColor = tilePurple,
-                title = stringResource(R.string.appearance_chrome_autofade_title),
-                checked = chromeAutoFade,
-                onCheckedChange = {
-                    chromeAutoFade = it
-                    prefs.edit().putBoolean(KEY_CHROME_AUTO_FADE, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        // -- Tool Status Bar --
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_tool_preview),
-            footer = stringResource(R.string.appearance_tool_preview_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.Visibility,
-                iconColor = tileTeal,
-                title = stringResource(R.string.appearance_tool_preview_title),
-                checked = toolPreview,
-                onCheckedChange = {
-                    toolPreview = it
-                    prefs.edit().putBoolean(KEY_TOOL_PREVIEW, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        SettingsSection(
-            header = "上下文用量",
-            footer = "在输入框旁显示当前模型实际上下文窗口的使用进度。",
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.DataUsage,
-                iconColor = tileBlue,
+                icon = NovexIcons.DataUsage,
+                iconColor = TileBlue,
                 title = "显示上下文用量",
                 subtitle = "点击圆圈可切换百分比与进度视图",
-                checked = showContextMeter,
+                checked = contextMeterState.value,
                 onCheckedChange = {
-                    showContextMeter = it
+                    contextMeterState.value = it
                     prefs.edit().putBoolean(KEY_SHOW_CONTEXT_METER, it).apply()
                 },
                 showDivider = false,
             )
         }
 
-        // [T-thinking-auto-expand-toggle] -- Deep Thinking --
-        // Whether a NEW streaming thinking block opens expanded (historical
-        // behavior, default ON) or stays collapsed. Only affects the streaming
-        // auto-expand; manual taps always work either way. Mirrors iOS
-        // AppearanceSettingsView "Deep Thinking" section.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_deep_thinking),
-            footer = stringResource(R.string.appearance_auto_expand_thinking_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.Psychology,
-                iconColor = tilePurple,
-                title = stringResource(R.string.appearance_auto_expand_thinking_title),
-                checked = autoExpandThinking,
-                onCheckedChange = {
-                    autoExpandThinking = it
-                    prefs.edit().putBoolean(KEY_AUTO_EXPAND_THINKING, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        // [T-keyboard-auto-pop default flip] -- Auto-Focus After Reply --
-        // Default ON — most users want the composer ready for a follow-up
-        // immediately after the model finishes.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_auto_focus_after_reply),
-            footer = stringResource(R.string.appearance_auto_focus_after_reply_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.Keyboard,
-                iconColor = tileBlue,
-                title = stringResource(R.string.appearance_auto_focus_after_reply_title),
-                checked = autoFocusAfterReply,
-                onCheckedChange = {
-                    autoFocusAfterReply = it
-                    prefs.edit().putBoolean(KEY_AUTO_FOCUS_AFTER_REPLY, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        // -- Chat Title (T-chat-title-pill) --
-        // Sticky session-title pill that appears at the top of the chat
-        // when the user scrolls back through history. Default ON; toggle
-        // also reachable via `minis-config set appearance.show_chat_title`.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_chat_title),
-            footer = stringResource(R.string.appearance_show_chat_title_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.ChatBubbleOutline,
-                iconColor = tileBlue,
-                title = stringResource(R.string.appearance_show_chat_title),
-                subtitle = stringResource(R.string.appearance_show_chat_title_subtitle),
-                checked = showChatTitle,
-                onCheckedChange = {
-                    showChatTitle = it
-                    prefs.edit().putBoolean(KEY_SHOW_CHAT_TITLE, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        // -- Auto-Grouping (T-android-auto-grouping) --
-        // Rides the title-generation call, so enabling it costs no extra
-        // request. Port of iOS ContentView's "Grouping" section.
-        SettingsSection(
-            header = stringResource(R.string.appearance_section_grouping),
-            footer = stringResource(R.string.appearance_auto_grouping_footer),
-        ) {
-            SettingsSwitchRow(
-                icon = novex.android.ui.NovexIcons.Folder,
-                iconColor = tileBlue,
-                title = stringResource(R.string.appearance_auto_grouping),
-                subtitle = stringResource(R.string.appearance_auto_grouping_subtitle),
-                checked = autoGrouping,
-                onCheckedChange = {
-                    autoGrouping = it
-                    prefs.edit().putBoolean(KEY_AUTO_GROUPING, it).apply()
-                },
-                showDivider = false,
-            )
-        }
-
-        // -- Font Size --
+        // 字号。
         SettingsSection(
             header = stringResource(R.string.appearance_section_font_size),
             footer = stringResource(R.string.appearance_font_size_footer),
         ) {
             SettingsRow(
-                icon = novex.android.ui.NovexIcons.FormatSize,
-                iconColor = tileOrange,
+                icon = NovexIcons.FormatSize,
+                iconColor = TileOrange,
                 title = stringResource(R.string.appearance_font_scale_title),
                 subtitle = stringResource(R.string.appearance_font_scale_subtitle),
                 onClick = null,
@@ -491,9 +355,7 @@ fun AppearanceScreen(
             )
             if (fontsModified) {
                 Row(
-                    modifier = Modifier
-                        .fillMaxWidth()
-                        .padding(vertical = 4.dp),
+                    Modifier.fillMaxWidth().padding(vertical = 4.dp),
                     horizontalArrangement = Arrangement.Center,
                 ) {
                     MinisTextButton(onClick = {
@@ -504,185 +366,140 @@ fun AppearanceScreen(
                             .putInt(KEY_FONT_APP_BASE, 0)
                             .apply()
                     }) {
-                        Text(stringResource(R.string.appearance_font_reset), color = MaterialTheme.colorScheme.error)
+                        Text(stringResource(R.string.appearance_font_reset), color = NovexColors.Danger)
                     }
                 }
             }
         }
 
-        // -- App Icon (T-android-dynamic-app-icon) --
-        // Grid picker mirrors the iOS Settings → Appearance → App Icon
-        // section but uses a 3-column grid layout per spec. Each tile is
-        // an adaptive-icon preview (loaded as Bitmap via ResourcesCompat
-        // since painterResource can't decode mipmap-anydpi-v26 XMLs);
-        // the currently-selected tile gets a checkmark badge in the
-        // top-right corner. Tapping a tile flips the corresponding
-        // activity-alias enabled state via PackageManager — the launcher
-        // refreshes its icon cache within a few seconds.
+        // 应用图标三格选择：点选翻转 activity-alias，图标带选中角标。
         SettingsSection(
             header = stringResource(R.string.appearance_section_app_icon),
             footer = stringResource(R.string.appearance_app_icon_footer),
         ) {
-            data class IconOption(
-                val variant: AppIconRepository.Variant,
-                val titleRes: Int,
-                val mipmapRes: Int,
-            )
-            val iconOptions = listOf(
-                IconOption(
-                    AppIconRepository.Variant.Auto,
-                    R.string.appearance_app_icon_auto,
-                    R.mipmap.ic_launcher,
-                ),
-                IconOption(
-                    AppIconRepository.Variant.ClassicLight,
-                    R.string.appearance_app_icon_light,
-                    R.mipmap.ic_launcher_classic_light,
-                ),
-                IconOption(
-                    AppIconRepository.Variant.ClassicDark,
-                    R.string.appearance_app_icon_dark,
-                    R.mipmap.ic_launcher_classic_dark,
-                ),
-            )
             Row(
-                modifier = Modifier
+                Modifier
                     .fillMaxWidth()
                     .padding(horizontal = 12.dp, vertical = 12.dp),
                 horizontalArrangement = Arrangement.spacedBy(12.dp),
             ) {
-                for (option in iconOptions) {
-                    val isSelected = selectedAppIcon == option.variant
-                    val iconPainter: Painter = remember(option.mipmapRes) {
-                        // painterResource() can't decode adaptive-icon
-                        // XML drawables (mipmap-anydpi-v26), so rasterize
-                        // the drawable into a Bitmap first.
-                        val drawable = ResourcesCompat.getDrawable(
-                            context.resources,
-                            option.mipmapRes,
-                            context.theme,
-                        )
-                        if (drawable != null) {
-                            BitmapPainter(
-                                drawable.toBitmap(width = 192, height = 192).asImageBitmap()
-                            )
-                        } else {
-                            BitmapPainter(
-                                android.graphics.Bitmap
-                                    .createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
-                                    .asImageBitmap()
-                            )
-                        }
-                    }
-                    Column(
-                        modifier = Modifier
-                            .weight(1f)
-                            .clickable {
-                                if (selectedAppIcon != option.variant) {
-                                    selectedAppIcon = option.variant
-                                    AppIconRepository.apply(context, option.variant)
-                                }
-                            },
-                        horizontalAlignment = Alignment.CenterHorizontally,
-                        verticalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Box(
-                            modifier = Modifier
-                                .fillMaxWidth()
-                                .aspectRatio(1f)
-                                .clip(RoundedCornerShape(18.dp))
-                                .border(
-                                    width = if (isSelected) 2.dp else 0.5.dp,
-                                    color = if (isSelected) {
-                                        MaterialTheme.colorScheme.primary
-                                    } else {
-                                        MaterialTheme.colorScheme.outlineVariant
-                                    },
-                                    shape = RoundedCornerShape(18.dp),
-                                ),
-                        ) {
-                            Image(
-                                painter = iconPainter,
-                                contentDescription = null,
-                                modifier = Modifier
-                                    .fillMaxSize()
-                                    .clip(RoundedCornerShape(18.dp)),
-                            )
-                            if (isSelected) {
-                                Box(
-                                    modifier = Modifier
-                                        .align(Alignment.TopEnd)
-                                        .padding(4.dp)
-                                        .size(22.dp)
-                                        .background(
-                                            color = Color.White,
-                                            shape = CircleShape,
-                                        ),
-                                    contentAlignment = Alignment.Center,
-                                ) {
-                                    Icon(
-                                        novex.android.ui.NovexIcons.CheckCircle,
-                                        contentDescription = null,
-                                        tint = MaterialTheme.colorScheme.primary,
-                                        modifier = Modifier.size(22.dp),
-                                    )
-                                }
+                for (option in appIconOptions) {
+                    AppIconTile(
+                        option = option,
+                        selected = selectedAppIcon == option.variant,
+                        onSelect = {
+                            if (selectedAppIcon != option.variant) {
+                                selectedAppIcon = option.variant
+                                AppIconRepository.apply(context, option.variant)
                             }
-                        }
-                        Text(
-                            stringResource(option.titleRes),
-                            style = MaterialTheme.typography.bodySmall,
-                            fontWeight = if (isSelected) FontWeight.SemiBold else FontWeight.Normal,
-                            color = if (isSelected) {
-                                MaterialTheme.colorScheme.primary
-                            } else {
-                                MaterialTheme.colorScheme.onSurface
-                            },
-                        )
-                    }
+                        },
+                        modifier = Modifier.weight(1f),
+                    )
                 }
             }
         }
 
-        // -- Language --
+        // 语言。
         SettingsSection(
             header = stringResource(R.string.appearance_section_language),
             footer = stringResource(R.string.appearance_language_footer),
         ) {
             languageOptions.forEachIndexed { idx, lang ->
                 SettingsChoiceRow(
-                    title = if (lang.code.isEmpty()) stringResource(R.string.appearance_theme_system) else lang.label,
+                    title = if (lang.code.isEmpty()) stringResource(R.string.appearance_theme_system) else lang.selfName,
                     selected = selectedLanguage == lang.code,
                     onSelect = {
                         selectedLanguage = lang.code
                         prefs.edit().putString(KEY_LANGUAGE, lang.code).apply()
-                        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
-                            val lm = context.getSystemService(LocaleManager::class.java)
-                            lm?.applicationLocales = if (lang.code.isEmpty()) {
-                                LocaleList.getEmptyLocaleList()
-                            } else {
-                                LocaleList.forLanguageTags(lang.code)
-                            }
-                        } else {
-                            // T-n01-andmenu-l10n: pre-Tiramisu has no
-                            // LocaleManager. The new language is read
-                            // from SharedPreferences by
-                            // [LocaleWrap.wrap] on the next
-                            // attachBaseContext call, so recreate the
-                            // Activity so its base Configuration picks
-                            // up the change immediately.
-                            (context as? android.app.Activity)?.recreate()
-                        }
+                        applyLanguage(context, lang.code)
                     },
-                    leading = {
-                        Text(lang.flag, fontSize = 22.sp, modifier = Modifier.width(30.dp))
-                    },
-                    showDivider = idx < languageOptions.size - 1,
+                    leading = { Text(lang.flag, fontSize = 22.sp, modifier = Modifier.width(30.dp)) },
+                    showDivider = idx < languageOptions.lastIndex,
                 )
             }
         }
 
         Spacer(Modifier.height(24.dp))
+    }
+}
+
+// ── 私有部件 ─────────────────────────────────────────────────────────────────
+
+private fun applyLanguage(context: Context, code: String) {
+    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+        context.getSystemService(LocaleManager::class.java)?.applicationLocales =
+            if (code.isEmpty()) LocaleList.getEmptyLocaleList() else LocaleList.forLanguageTags(code)
+    } else {
+        // 老版本没有 LocaleManager：LocaleWrap 在下次 attachBaseContext 读
+        // SharedPreferences，这里 recreate 让新配置立即生效。
+        (context as? Activity)?.recreate()
+    }
+}
+
+private data class AppIconOption(
+    val variant: AppIconRepository.Variant,
+    val titleRes: Int,
+    val mipmapRes: Int,
+)
+
+private val appIconOptions = listOf(
+    AppIconOption(AppIconRepository.Variant.Auto, R.string.appearance_app_icon_auto, R.mipmap.ic_launcher),
+    AppIconOption(AppIconRepository.Variant.ClassicLight, R.string.appearance_app_icon_light, R.mipmap.ic_launcher_classic_light),
+    AppIconOption(AppIconRepository.Variant.ClassicDark, R.string.appearance_app_icon_dark, R.mipmap.ic_launcher_classic_dark),
+)
+
+@Composable
+private fun AppIconTile(
+    option: AppIconOption,
+    selected: Boolean,
+    onSelect: () -> Unit,
+    modifier: Modifier = Modifier,
+) {
+    val context = LocalContext.current
+    // painterResource 解不了 adaptive-icon XML，先栅化成 Bitmap。
+    val painter = remember(option.mipmapRes) {
+        val drawable = ResourcesCompat.getDrawable(context.resources, option.mipmapRes, context.theme)
+        val bmp = drawable?.toBitmap(width = 192, height = 192)
+            ?: android.graphics.Bitmap.createBitmap(1, 1, android.graphics.Bitmap.Config.ARGB_8888)
+        BitmapPainter(bmp.asImageBitmap())
+    }
+
+    Column(
+        modifier.clickable(onClick = onSelect),
+        horizontalAlignment = Alignment.CenterHorizontally,
+        verticalArrangement = Arrangement.spacedBy(6.dp),
+    ) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .aspectRatio(1f)
+                .clip(RoundedCornerShape(18.dp))
+                .border(
+                    width = if (selected) 2.dp else 0.5.dp,
+                    color = if (selected) NovexColors.Primary else NovexColors.Divider,
+                    shape = RoundedCornerShape(18.dp),
+                ),
+        ) {
+            Image(painter, contentDescription = null, modifier = Modifier.fillMaxSize().clip(RoundedCornerShape(18.dp)))
+            if (selected) {
+                Box(
+                    Modifier
+                        .align(Alignment.TopEnd)
+                        .padding(4.dp)
+                        .size(22.dp)
+                        .background(Color.White, CircleShape),
+                    contentAlignment = Alignment.Center,
+                ) {
+                    Icon(NovexIcons.CheckCircle, contentDescription = null, tint = NovexColors.Primary, modifier = Modifier.size(22.dp))
+                }
+            }
+        }
+        Text(
+            stringResource(option.titleRes),
+            style = NovexType.Metadata,
+            fontWeight = if (selected) FontWeight.SemiBold else FontWeight.Normal,
+            color = if (selected) NovexColors.Primary else NovexColors.Text,
+        )
     }
 }
 
@@ -693,50 +510,43 @@ private fun FontScaleSliderRow(
     onLevelChange: (Int) -> Unit,
     showDivider: Boolean,
 ) {
-    val idx = fontScaleValues.indexOf(level).coerceIn(0, fontScaleValues.lastIndex)
-    var sliderPos by remember(level) { mutableFloatStateOf(idx.toFloat()) }
-    val currentLabel = fontScaleLabels.getOrElse(sliderPos.roundToInt()) { "Default" }
+    val startIndex = FONT_LEVELS.indexOf(level).coerceIn(0, FONT_LEVELS.lastIndex)
+    var sliderPos by remember(level) { mutableFloatStateOf(startIndex.toFloat()) }
+    val currentLabel = FONT_LEVEL_LABELS.getOrElse(sliderPos.roundToInt()) { "Default" }
 
-    Column(modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
+    Column(Modifier.padding(horizontal = 16.dp, vertical = 8.dp)) {
         Row(
-            modifier = Modifier.fillMaxWidth(),
+            Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceBetween,
             verticalAlignment = Alignment.CenterVertically,
         ) {
-            Text(label, style = MaterialTheme.typography.bodyMedium)
-            Text(
-                currentLabel,
-                style = MaterialTheme.typography.bodySmall,
-                color = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
+            Text(label, style = NovexType.ItemTitle)
+            Text(currentLabel, style = NovexType.Metadata, color = NovexColors.SecondaryText)
         }
-        Row(verticalAlignment = Alignment.CenterVertically, modifier = Modifier.fillMaxWidth()) {
-            Text("A", fontSize = 12.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Text("A", fontSize = 12.sp, color = NovexColors.SecondaryText)
             Slider(
                 value = sliderPos,
                 onValueChange = { sliderPos = it },
                 onValueChangeFinished = {
-                    val newIdx = sliderPos.roundToInt().coerceIn(0, fontScaleValues.lastIndex)
-                    sliderPos = newIdx.toFloat()
-                    onLevelChange(fontScaleValues[newIdx])
+                    val snapped = sliderPos.roundToInt().coerceIn(0, FONT_LEVELS.lastIndex)
+                    sliderPos = snapped.toFloat()
+                    onLevelChange(FONT_LEVELS[snapped])
                 },
-                valueRange = 0f..5f,
-                steps = 4,
-                modifier = Modifier
-                    .weight(1f)
-                    .padding(horizontal = 8.dp),
+                valueRange = 0f..(FONT_LEVELS.lastIndex).toFloat(),
+                steps = FONT_LEVELS.size - 2,
+                modifier = Modifier.weight(1f).padding(horizontal = 8.dp),
             )
-            Text("A", fontSize = 20.sp, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            Text("A", fontSize = 20.sp, color = NovexColors.SecondaryText)
         }
     }
     if (showDivider) {
-        val dividerColor = MaterialTheme.colorScheme.outlineVariant.copy(alpha = 0.5f)
-        androidx.compose.foundation.layout.Box(
-            modifier = Modifier
+        Box(
+            Modifier
                 .fillMaxWidth()
                 .padding(start = 16.dp, end = 14.dp)
-                .height(0.5.dp)
-                .background(dividerColor),
+                .height(NovexDimensions.Hairline)
+                .background(NovexColors.Divider),
         )
     }
 }
