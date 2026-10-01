@@ -1,210 +1,71 @@
 package com.openminis.app.ui.chat
 
-// [T-android-split-chat] Composer/input widgets + tool preview/status bar
-// extracted verbatim from ChatScreen.kt: AttachmentChip, InputCircleButton,
-// MicButton, ToolPreviewThumbnail, FloatingToolStatusBar, ThinkingLevelPicker.
-// Full import block copied (unused=warnings); externally-called ones internal.
+// 输入栏周边小组件：附件片、Novex 光效点按、图形符号钮、圆形钮、思考档
+// 位选择器。工具缩略预览/悬浮状态条在 ToolPreviewBar.kt。
 
-import android.content.Intent
-import android.content.pm.PackageManager
-import android.graphics.BitmapFactory
-import android.net.Uri
-import android.provider.OpenableColumns
-import java.io.File
-import androidx.core.content.ContextCompat
-import androidx.compose.foundation.Image
-import androidx.compose.ui.graphics.asAndroidBitmap
-import androidx.compose.ui.graphics.asImageBitmap
-import androidx.compose.ui.graphics.layer.drawLayer
-import androidx.compose.ui.graphics.drawscope.rotate
-import androidx.compose.ui.graphics.drawscope.withTransform
-import androidx.compose.ui.graphics.rememberGraphicsLayer
-import androidx.activity.compose.rememberLauncherForActivityResult
-import androidx.activity.result.contract.ActivityResultContracts
-import androidx.compose.animation.AnimatedVisibility
-import androidx.compose.animation.fadeIn
-import androidx.compose.animation.fadeOut
-import androidx.compose.foundation.gestures.awaitEachGesture
-import androidx.compose.foundation.gestures.awaitFirstDown
-import androidx.compose.foundation.gestures.detectTapGestures
-import androidx.compose.foundation.gestures.scrollBy
-import androidx.compose.foundation.gestures.verticalDrag
-import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.positionChange
-import androidx.compose.animation.scaleIn
-import androidx.compose.animation.scaleOut
-import androidx.compose.animation.core.LinearEasing
-import androidx.compose.animation.core.RepeatMode
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.FastOutSlowInEasing
 import androidx.compose.animation.core.tween
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.conflate
-import kotlinx.coroutines.flow.distinctUntilChanged
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.flow.sample
-import kotlinx.coroutines.flow.collectLatest
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import androidx.compose.runtime.withFrameNanos
+import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.ExperimentalFoundationApi
+import androidx.compose.foundation.IndicationNodeFactory
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
-import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
+import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.interaction.MutableInteractionSource
-import androidx.compose.foundation.interaction.collectIsFocusedAsState
-import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.interaction.PressInteraction
+import androidx.compose.foundation.interaction.InteractionSource
 import androidx.compose.foundation.layout.Arrangement
-import androidx.compose.foundation.layout.aspectRatio
 import androidx.compose.foundation.layout.Box
-import androidx.compose.foundation.layout.BoxWithConstraints
-import androidx.compose.foundation.layout.ExperimentalLayoutApi
-import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxSize
-import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
-import androidx.compose.foundation.layout.heightIn
-import androidx.compose.foundation.layout.imePadding
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.requiredSize
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
-import androidx.compose.foundation.layout.widthIn
-import androidx.compose.foundation.verticalScroll
-import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.foundation.lazy.LazyRow
-import androidx.compose.foundation.lazy.items
-import androidx.compose.foundation.lazy.itemsIndexed
-import androidx.compose.foundation.lazy.rememberLazyListState
+import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.foundation.text.KeyboardActions
-import androidx.compose.foundation.text.KeyboardOptions
-import novex.android.ui.DropdownMenuItem
-import com.openminis.app.BuildConfig
-import com.openminis.app.R
-import com.openminis.app.data.FileMentionIndex
-import com.openminis.app.logging.AppLogger
-import com.openminis.app.ui.components.MinisAlertDialog
-import com.openminis.app.ui.components.MinisMenu
-import com.openminis.app.ui.components.MinisMenuDivider
-import androidx.compose.material3.HorizontalDivider
-import androidx.compose.material3.Surface
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
 import androidx.compose.material3.MaterialTheme
-import androidx.compose.material3.OutlinedTextFieldDefaults
-import androidx.compose.material3.TextFieldDefaults
-import androidx.compose.material3.SnackbarHost
-import androidx.compose.material3.SnackbarHostState
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
-import androidx.compose.runtime.collectAsState
-import androidx.compose.runtime.derivedStateOf
-import androidx.compose.runtime.getValue
-import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
-import androidx.compose.runtime.rememberCoroutineScope
-import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.compositionLocalOf
-import androidx.compose.runtime.CompositionLocalProvider
-import androidx.compose.runtime.produceState
-import androidx.compose.runtime.snapshotFlow
-import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
 import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.drawBehind
-import androidx.compose.ui.draw.drawWithContent
+import androidx.compose.ui.geometry.CornerRadius
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.layout.onGloballyPositioned
-import androidx.compose.ui.layout.onPlaced
-import androidx.compose.ui.layout.boundsInWindow
-import androidx.compose.ui.layout.positionInWindow
-import androidx.compose.ui.focus.focusRequester
-import androidx.compose.ui.focus.onFocusChanged
-import androidx.compose.ui.input.key.Key
-import androidx.compose.ui.input.key.KeyEventType
-import androidx.compose.ui.input.key.isShiftPressed
-import androidx.compose.ui.input.key.key
-import androidx.compose.ui.input.key.onKeyEvent
-import androidx.compose.ui.input.key.type
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.BlendMode
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.CompositingStrategy
-import androidx.compose.ui.graphics.graphicsLayer
-import androidx.compose.ui.graphics.nativeCanvas
-import androidx.compose.ui.graphics.toArgb
+import androidx.compose.ui.graphics.drawscope.ContentDrawScope
+import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalConfiguration
+import androidx.compose.ui.node.DrawModifierNode
 import androidx.compose.ui.platform.LocalContext
-import androidx.compose.ui.res.pluralStringResource
-import androidx.compose.ui.res.stringResource
-import androidx.lifecycle.viewmodel.compose.viewModel
-import androidx.compose.ui.platform.LocalFocusManager
-import androidx.compose.ui.platform.LocalSoftwareKeyboardController
-import androidx.compose.foundation.layout.WindowInsets
-import androidx.compose.foundation.layout.ime
-import androidx.compose.foundation.layout.navigationBarsPadding
-import androidx.compose.foundation.layout.statusBars
-import androidx.compose.ui.platform.LocalDensity
-import androidx.compose.ui.text.font.FontFamily
-import androidx.compose.ui.text.TextStyle
 import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.text.style.TextOverflow
-import androidx.compose.ui.text.input.ImeAction
+import androidx.compose.ui.text.style.TextAlign
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
-import androidx.compose.foundation.layout.IntrinsicSize
-import androidx.compose.foundation.layout.fillMaxHeight
-import androidx.compose.foundation.layout.offset
-import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.rememberScrollState
-import androidx.compose.material3.ButtonDefaults
-import androidx.compose.foundation.layout.PaddingValues
-import androidx.compose.ui.text.style.TextAlign
-import androidx.compose.material3.CircularProgressIndicator
-import androidx.compose.ui.platform.LocalClipboardManager
-import androidx.compose.ui.text.AnnotatedString
-import androidx.compose.ui.text.SpanStyle
-import androidx.compose.ui.text.buildAnnotatedString
-import androidx.compose.ui.text.font.FontStyle
-import androidx.compose.ui.text.style.TextDecoration
-import androidx.compose.ui.text.withStyle
 import androidx.compose.ui.unit.sp
 import coil.compose.AsyncImage
-import com.mikepenz.markdown.compose.components.markdownComponents
-import com.mikepenz.markdown.m3.Markdown
-import com.mikepenz.markdown.m3.markdownColor
-import com.mikepenz.markdown.m3.markdownTypography
-import org.intellij.markdown.ast.ASTNode
-import org.intellij.markdown.ast.getTextInNode
-import novex.android.data.model.LLMModel
-import novex.android.data.model.ModelEntry
-import novex.android.data.model.ModelGroup
-import novex.android.data.model.ProviderConfig
-import novex.android.data.model.ProviderType
-import novex.android.data.model.RoutingStrategy
-import novex.android.data.model.ThinkingLevel
-import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.data.repository.MemoryRepository
-import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.theme.ChatColors
-import com.openminis.app.ui.components.MinisTextButton
+import kotlinx.coroutines.launch
+import novex.android.data.model.ThinkingLevel
+import novex.android.ui.NovexIcons
 
+// ─── 附件片 ─────────────────────────────────────────────────────────────────
+
+/**
+ * iOS UserAttachmentList 对齐：64dp 片 + 右上角 xmark.circle.fill 删除徽，
+ * 徽标一半压片一半悬空（20dp 圆偏移 -6/-6）。外层 Box 给 72×70 让徽标
+ * 溢出不被裁；片体在 TopStart 保持正好 64dp。
+ */
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun AttachmentChip(
@@ -213,92 +74,90 @@ internal fun AttachmentChip(
     onClick: () -> Unit = {},
     onLongClick: (() -> Unit)? = null,
 ) {
-    // iOS UserAttachmentList parity: 64dp chip + xmark.circle.fill remove
-    // badge at the top-right that sits HALF on the chip and HALF outside
-    // (a 20dp circle offset by -6dp / -6dp). The outer Box is sized 72dp
-    // so the badge isn't clipped; the chip itself stays exactly 64dp,
-    // padded into the Box at TopStart.
     val chipShape = RoundedCornerShape(8.dp)
-    // Outer Box gives the badge room to "spill out" past the chip's
-    // top-right corner without being clipped: chip is 64dp at TopStart,
-    // badge is 20dp at TopEnd, so the outer needs 64 + half(badge) ≈ 72dp
-    // wide and ≈ 70dp tall.
     Box(modifier = Modifier.size(width = 72.dp, height = 70.dp)) {
-        Box(
-            modifier = Modifier
-                .align(Alignment.BottomStart)
-                .size(64.dp)
-                // Tap the chip body (NOT the remove badge — that lives in
-                // the outer Box) to preview the attachment, mirroring iOS
-                // InputAttachmentTile.onTapGesture in AIChatView.swift:3699.
-                .clip(chipShape)
-                .combinedClickable(
-                    onClick = onClick,
-                    onLongClick = onLongClick,
-                ),
-        ) {
-            if (attachment.isImage) {
-                AsyncImage(
-                    model = attachment.uri,
-                    contentDescription = attachment.fileName,
-                    modifier = Modifier
-                        .matchParentSize()
-                        .clip(chipShape)
-                        .border(1.dp, ChatColors.thumbnailBorder, chipShape),
-                    contentScale = ContentScale.Crop,
-                )
-            } else {
-                // File chip (iOS: icon + filename inside a tinted square)
-                Column(
-                    modifier = Modifier
-                        .matchParentSize()
-                        .background(MaterialTheme.colorScheme.surfaceVariant, chipShape)
-                        .border(1.dp, ChatColors.thumbnailBorder, chipShape),
-                    horizontalAlignment = Alignment.CenterHorizontally,
-                    verticalArrangement = Arrangement.Center,
-                ) {
-                    Icon(
-                        novex.android.ui.NovexIcons.InsertDriveFile,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                        modifier = Modifier.size(20.dp),
-                    )
-                    Spacer(modifier = Modifier.height(2.dp))
-                    Text(
-                        text = attachment.fileName,
-                        style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
-                        color = MaterialTheme.colorScheme.onSurface,
-                        maxLines = 2,
-                        textAlign = androidx.compose.ui.text.style.TextAlign.Center,
-                        modifier = Modifier.padding(horizontal = 4.dp),
-                    )
-                }
-            }
-        }
-        // Remove badge (iOS: xmark.circle.fill at the chip's top-right
-        // corner, sitting half on / half off the thumbnail). Hairline
-        // border keeps the badge readable against image content.
-        Box(
-            modifier = Modifier
-                .align(Alignment.TopEnd)
-                .size(20.dp)
-                .background(MaterialTheme.colorScheme.surface, CircleShape)
-                .border(0.5.dp, ChatColors.thumbnailBorder, CircleShape)
-                .clip(CircleShape)
-                .clickable(onClick = onRemove),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                novex.android.ui.NovexIcons.Close,
-                contentDescription = "Remove",
-                tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
-                modifier = Modifier.size(13.dp),
+        AttachmentThumb(attachment, chipShape, onClick, onLongClick)
+        RemoveBadge(onRemove)
+    }
+}
+
+@OptIn(ExperimentalFoundationApi::class)
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.AttachmentThumb(
+    attachment: InputAttachment,
+    chipShape: RoundedCornerShape,
+    onClick: () -> Unit,
+    onLongClick: (() -> Unit)?,
+) {
+    Box(
+        modifier = Modifier
+            .align(Alignment.BottomStart)
+            .size(64.dp)
+            // 点片体（不含删除徽——徽在外层 Box）预览附件，对齐 iOS
+            // InputAttachmentTile.onTapGesture。
+            .clip(chipShape)
+            .combinedClickable(onClick = onClick, onLongClick = onLongClick),
+    ) {
+        if (attachment.isImage) {
+            AsyncImage(
+                model = attachment.uri,
+                contentDescription = attachment.fileName,
+                modifier = Modifier
+                    .matchParentSize()
+                    .clip(chipShape)
+                    .border(1.dp, ChatColors.thumbnailBorder, chipShape),
+                contentScale = ContentScale.Crop,
             )
+        } else {
+            Column(
+                modifier = Modifier
+                    .matchParentSize()
+                    .background(MaterialTheme.colorScheme.surfaceVariant, chipShape)
+                    .border(1.dp, ChatColors.thumbnailBorder, chipShape),
+                horizontalAlignment = Alignment.CenterHorizontally,
+                verticalArrangement = Arrangement.Center,
+            ) {
+                Icon(
+                    NovexIcons.InsertDriveFile,
+                    contentDescription = null,
+                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    modifier = Modifier.size(20.dp),
+                )
+                Spacer(modifier = Modifier.height(2.dp))
+                Text(
+                    text = attachment.fileName,
+                    style = MaterialTheme.typography.labelSmall.copy(fontSize = 9.sp),
+                    color = MaterialTheme.colorScheme.onSurface,
+                    maxLines = 2,
+                    textAlign = TextAlign.Center,
+                    modifier = Modifier.padding(horizontal = 4.dp),
+                )
+            }
         }
     }
 }
 
-// ─── Input Circle Button (iOS: 34×34 circle, secondary bg + border) ─────────
+@Composable
+private fun androidx.compose.foundation.layout.BoxScope.RemoveBadge(onRemove: () -> Unit) {
+    // 删除徽：压片右上角、半压半悬。细描边保证在图片内容上可读。
+    Box(
+        modifier = Modifier
+            .align(Alignment.TopEnd)
+            .size(20.dp)
+            .background(MaterialTheme.colorScheme.surface, CircleShape)
+            .border(0.5.dp, ChatColors.thumbnailBorder, CircleShape)
+            .clip(CircleShape)
+            .clickable(onClick = onRemove),
+        contentAlignment = Alignment.Center,
+    ) {
+        Icon(
+            NovexIcons.Close,
+            contentDescription = "Remove",
+            tint = MaterialTheme.colorScheme.onSurface.copy(alpha = 0.7f),
+            modifier = Modifier.size(13.dp),
+        )
+    }
+}
 
 // ─── Novex 点击光效（自有 indication，替代默认灰涟漪）─────────────────────────
 // 按下点向外扩散一圈薄荷光辉并消退——比灰色圆涟漪轻，也脱离 Material 语言。
@@ -306,35 +165,32 @@ internal fun AttachmentChip(
 private val NovexGlowColor = Color(0xFF2FBF8F)
 
 private class NovexGlowNode(
-    private val interactionSource: androidx.compose.foundation.interaction.InteractionSource,
-) : Modifier.Node(), androidx.compose.ui.node.DrawModifierNode {
-    private val progress = androidx.compose.animation.core.Animatable(0f)
-    private var origin = androidx.compose.ui.geometry.Offset.Unspecified
+    private val interactionSource: InteractionSource,
+) : Modifier.Node(), DrawModifierNode {
+    private val progress = Animatable(0f)
+    private var origin = Offset.Unspecified
 
     override fun onAttach() {
         coroutineScope.launch {
             interactionSource.interactions.collect { interaction ->
-                if (interaction is androidx.compose.foundation.interaction.PressInteraction.Press) {
+                if (interaction is PressInteraction.Press) {
                     origin = interaction.pressPosition
                     progress.snapTo(0f)
                     launch {
-                        progress.animateTo(
-                            1f,
-                            tween(420, easing = androidx.compose.animation.core.FastOutSlowInEasing),
-                        )
+                        progress.animateTo(1f, tween(420, easing = FastOutSlowInEasing))
                     }
                 }
             }
         }
     }
 
-    override fun androidx.compose.ui.graphics.drawscope.ContentDrawScope.draw() {
+    override fun ContentDrawScope.draw() {
         drawContent()
         val p = progress.value
-        if (p > 0f && p < 1f && origin != androidx.compose.ui.geometry.Offset.Unspecified) {
+        if (p > 0f && p < 1f && origin != Offset.Unspecified) {
             val r = size.maxDimension * p
             drawCircle(
-                brush = androidx.compose.ui.graphics.Brush.radialGradient(
+                brush = Brush.radialGradient(
                     0f to NovexGlowColor.copy(alpha = 0.20f * (1f - p)),
                     1f to NovexGlowColor.copy(alpha = 0f),
                     center = origin,
@@ -347,10 +203,9 @@ private class NovexGlowNode(
     }
 }
 
-private object NovexGlowIndicationFactory : androidx.compose.foundation.IndicationNodeFactory {
-    override fun create(
-        interactionSource: androidx.compose.foundation.interaction.InteractionSource,
-    ) = NovexGlowNode(interactionSource)
+private object NovexGlowIndicationFactory : IndicationNodeFactory {
+    override fun create(interactionSource: InteractionSource) =
+        NovexGlowNode(interactionSource)
     override fun hashCode() = 31
     override fun equals(other: Any?) = other is NovexGlowIndicationFactory
 }
@@ -359,7 +214,7 @@ private object NovexGlowIndicationFactory : androidx.compose.foundation.Indicati
  * 带 Novex 薄荷点击光效的 clickable/combinedClickable。
  * clip 要在它之前调用，光效才会被裁进形状内。
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun Modifier.novexClickable(
     onLongClick: (() -> Unit)? = null,
@@ -374,6 +229,8 @@ internal fun Modifier.novexClickable(
     )
 }
 
+// ─── 图形符号 ────────────────────────────────────────────────────────────────
+
 /** 扇形张开的三张卡（指令卡入口图形）：左右两张各向两侧张开，中卡压顶。 */
 @Composable
 internal fun NovexCardStackGlyph(
@@ -381,49 +238,48 @@ internal fun NovexCardStackGlyph(
     tint: Color = MaterialTheme.colorScheme.onSurfaceVariant,
     fillColor: Color = ChatColors.inputBg,
 ) {
-    androidx.compose.foundation.Canvas(modifier.size(20.dp)) {
-        val sw = 1.6.dp.toPx()
+    Canvas(modifier.size(20.dp)) {
+        val strokeWidth = 1.6.dp.toPx()
         val w = size.width
         val h = size.height
-        val cw = w * 0.52f
-        val ch = h * 0.66f
-        val rad = androidx.compose.ui.geometry.CornerRadius(2.2.dp.toPx())
-        val stroke = androidx.compose.ui.graphics.drawscope.Stroke(sw)
-        val pivot = androidx.compose.ui.geometry.Offset(w / 2f, h * 0.90f)
-        val cardTop = pivot.y - ch
-        // 左右两张后卡：绕底部中点向外张开，填底色防线条互透。
-        // 后两张卡各向两侧倾斜，中卡正立压顶——扇形交叠。
+        val cardW = w * 0.52f
+        val cardH = h * 0.66f
+        val corner = CornerRadius(2.2.dp.toPx())
+        val stroke = Stroke(strokeWidth)
+        val pivot = Offset(w / 2f, h * 0.90f)
+        val cardTop = pivot.y - cardH
+        val cardLeft = w / 2f - cardW / 2f
+
+        // 后两张卡绕底部中点各向两侧倾斜，实底填充防线条互透。
         for ((deg, alpha) in listOf(-18f to 0.45f, 18f to 0.45f)) {
-            withTransform({
-                rotate(degrees = deg, pivot = pivot)
-            }) {
+            withTransform({ rotate(degrees = deg, pivot = pivot) }) {
                 drawRoundRect(
                     color = fillColor,
-                    topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop),
-                    size = androidx.compose.ui.geometry.Size(cw, ch),
-                    cornerRadius = rad,
+                    topLeft = Offset(cardLeft, cardTop),
+                    size = Size(cardW, cardH),
+                    cornerRadius = corner,
                 )
                 drawRoundRect(
                     color = tint.copy(alpha = alpha),
-                    topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop),
-                    size = androidx.compose.ui.geometry.Size(cw, ch),
-                    cornerRadius = rad,
+                    topLeft = Offset(cardLeft, cardTop),
+                    size = Size(cardW, cardH),
+                    cornerRadius = corner,
                     style = stroke,
                 )
             }
         }
-        // 中卡压顶：实底 + 全色描边。
+        // 中卡正立压顶：实底 + 全色描边。
         drawRoundRect(
             color = fillColor,
-            topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop + h * 0.02f),
-            size = androidx.compose.ui.geometry.Size(cw, ch),
-            cornerRadius = rad,
+            topLeft = Offset(cardLeft, cardTop + h * 0.02f),
+            size = Size(cardW, cardH),
+            cornerRadius = corner,
         )
         drawRoundRect(
             color = tint,
-            topLeft = androidx.compose.ui.geometry.Offset(w / 2f - cw / 2f, cardTop + h * 0.02f),
-            size = androidx.compose.ui.geometry.Size(cw, ch),
-            cornerRadius = rad,
+            topLeft = Offset(cardLeft, cardTop + h * 0.02f),
+            size = Size(cardW, cardH),
+            cornerRadius = corner,
             style = stroke,
         )
     }
@@ -435,37 +291,38 @@ internal fun NovexMiniCardGlyph(
     color: Color,
     modifier: Modifier = Modifier,
 ) {
-    androidx.compose.foundation.Canvas(modifier.size(20.dp)) {
-        val cw = size.width * 0.62f
-        val ch = size.height * 0.80f
+    Canvas(modifier.size(20.dp)) {
+        val cardW = size.width * 0.62f
+        val cardH = size.height * 0.80f
         drawRoundRect(
             color = color,
-            topLeft = androidx.compose.ui.geometry.Offset((size.width - cw) / 2f, (size.height - ch) / 2f),
-            size = androidx.compose.ui.geometry.Size(cw, ch),
-            cornerRadius = androidx.compose.ui.geometry.CornerRadius(2.4.dp.toPx()),
-            style = androidx.compose.ui.graphics.drawscope.Stroke(1.6.dp.toPx()),
+            topLeft = Offset((size.width - cardW) / 2f, (size.height - cardH) / 2f),
+            size = Size(cardW, cardH),
+            cornerRadius = CornerRadius(2.4.dp.toPx()),
+            style = Stroke(1.6.dp.toPx()),
         )
     }
 }
+
+// ─── 输入栏按钮 ──────────────────────────────────────────────────────────────
 
 /**
  * [A2c-glyphs] 输入栏第二行裸符号钮：无圆底无边框，图标是符号本身；
  * 40dp 触控区保可达性，按下走 NovexGlow 自有光效而非灰涟漪。
  */
-@OptIn(androidx.compose.foundation.ExperimentalFoundationApi::class)
+@OptIn(ExperimentalFoundationApi::class)
 @Composable
 internal fun ComposerGlyphButton(
     onClick: () -> Unit,
     onLongClick: (() -> Unit)? = null,
     content: @Composable () -> Unit,
 ) {
-    val interactionSource = remember { MutableInteractionSource() }
     Box(
         modifier = Modifier
             .size(40.dp)
             .clip(CircleShape)
             .combinedClickable(
-                interactionSource = interactionSource,
+                interactionSource = remember { MutableInteractionSource() },
                 indication = NovexGlowIndicationFactory,
                 onClick = onClick,
                 onLongClick = onLongClick,
@@ -496,615 +353,91 @@ internal fun InputCircleButton(
 
 // [P3.3 裁军] MicButton（语音/键盘切换按钮）随语音输入退役删除。
 
-// ─── Tool Preview Thumbnail (iOS: ToolPreviewThumbnail — tool-specific preview) ──
+// ─── 思考档位选择器 ──────────────────────────────────────────────────────────
 
-@Composable
-private fun ToolPreviewThumbnail(
-    block: AssistantBlock,
-    toolAccent: Color,
-    onClick: () -> Unit,
-    // [T-android-browser-preview-thumb] For browser_use blocks whose action
-    // does not produce a screenshot (get_readable, get_text, fetch, etc.),
-    // fall back to the most-recent prior browser_use screenshot — same
-    // semantics the expanded detail sheet uses. Resolved at the call site
-    // because toolBlocks isn't in scope here.
-    fallbackImagePath: String? = null,
-) {
-    val args = remember(block.toolArgs) {
-        try { org.json.JSONObject(block.toolArgs) } catch (_: Exception) { org.json.JSONObject() }
-    }
-
-    // T141: shell_execute live HUD — CPU% + MEM ribbon at the thumbnail
-    // bottom while the tool is RUNNING/STREAMING/PENDING. Mirrors iOS
-    // ToolLiveSheet.swift:1926 small overlay (5pt monospace, white .8 on
-    // black .6).
-    val isShellTool = block.toolName == "shell_execute"
-    val isLive = block.toolStatus == ToolBlockStatus.RUNNING ||
-        block.toolStatus == ToolBlockStatus.STREAMING ||
-        block.toolStatus == ToolBlockStatus.PENDING
-    val resourceMonitor = rememberSystemResourceMonitor(active = isShellTool && isLive)
-
-    val thumbnailShape = RoundedCornerShape(8.dp)
-    Box(
-        modifier = Modifier
-            .size(width = 100.dp, height = 65.dp)
-            .shadow(elevation = 10.dp, shape = thumbnailShape, ambientColor = Color.Black.copy(alpha = 0.15f), spotColor = Color.Black.copy(alpha = 0.25f))
-            .clip(thumbnailShape)
-            .background(
-                when (block.toolName) {
-                    "file_read", "file_write" -> ChatColors.secondaryBg
-                    "file_edit" -> Color(0xFF1A1A1E)
-                    else -> Color(0xFF1A1A1E)
-                }
-            )
-            .border(0.5.dp, ChatColors.thumbnailBorder, thumbnailShape)
-            .clickable(onClick = onClick),
-    ) {
-        when (block.toolName) {
-            "shell_execute" -> {
-                // iOS: command title + last 12 lines of output in green mono
-                val command = extractShellCommand(args, block)
-                Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 3.dp)) {
-                    Text(
-                        text = "$ $command",
-                        fontSize = 7.sp,
-                        lineHeight = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = Color.White.copy(alpha = 0.6f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (block.content.isNotEmpty()) {
-                        Text(
-                            text = block.content.lines().takeLast(12).joinToString("\n"),
-                            fontSize = 5.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = toolAccent.copy(alpha = 0.85f),
-                            maxLines = 12,
-                            lineHeight = 6.5.sp,
-                        )
-                    }
-                }
-            }
-
-            "file_edit" -> {
-                // iOS: diff preview — old lines in red, new lines in green
-                val oldStr = args.optString("old_string", "")
-                    .ifEmpty { extractPartialJsonString("old_string", block.toolArgs) ?: "" }
-                val newStr = args.optString("new_string", "")
-                    .ifEmpty { extractPartialJsonString("new_string", block.toolArgs) ?: "" }
-                Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
-                    if (oldStr.isNotEmpty()) {
-                        oldStr.lines().takeLast(5).forEach { line ->
-                            Text(
-                                text = "- $line",
-                                fontSize = 5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFFFF6B6B),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                lineHeight = 6.sp,
-                            )
-                        }
-                    }
-                    if (newStr.isNotEmpty()) {
-                        newStr.lines().takeLast(5).forEach { line ->
-                            Text(
-                                text = "+ $line",
-                                fontSize = 5.sp,
-                                fontFamily = FontFamily.Monospace,
-                                color = Color(0xFF4ADE80),
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                lineHeight = 6.sp,
-                            )
-                        }
-                    }
-                    if (oldStr.isEmpty() && newStr.isEmpty()) {
-                        Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                            Icon(toolIconFor("file_edit"), contentDescription = null, tint = toolAccent.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
-                        }
-                    }
-                }
-            }
-
-            "file_read", "file_write" -> {
-                // iOS ToolPreviewThumbnail.textPreview: filename header + last N lines of
-                // content. For file_write during streaming, prefer partial `content` from
-                // toolArgs JSON (mirrors iOS block.streamingFileContent).
-                val path = args.optString("path", "")
-                    .ifEmpty { extractPartialJsonString("path", block.toolArgs) ?: "" }
-                val rawName = if (path.contains("/")) path.substringAfterLast("/") else path
-                val header = when {
-                    rawName.isNotEmpty() -> rawName
-                    block.toolName == "file_write" -> "Write file"
-                    else -> "Read file"
-                }
-                val displayText = if (block.toolName == "file_write") {
-                    args.optString("content", "")
-                        .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
-                        .ifEmpty { block.content }
-                } else {
-                    block.content
-                }
-                Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
-                    Text(
-                        text = header,
-                        fontSize = 7.sp,
-                        lineHeight = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = ChatColors.secondaryText,
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (displayText.isNotEmpty()) {
-                        val lines = displayText.lines()
-                        Text(
-                            text = lines.takeLast(12).joinToString("\n"),
-                            fontSize = 5.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = toolAccent.copy(alpha = 0.85f),
-                            maxLines = 12,
-                            lineHeight = 6.5.sp,
-                        )
-                    }
-                }
-            }
-
-            "memory_write", "memory_get" -> {
-                // iOS ToolPreviewThumbnail: header = action name, body = last
-                // lines of memory content. memory_write takes content from
-                // toolArgs (the text being saved); memory_get takes it from
-                // block.content (the search result), prefixed with the
-                // queried keywords. Mirrors ToolDetailSheet's resolution
-                // (ChatScreen.kt:4581) so the thumbnail isn't an empty pink
-                // icon while the rest of the UI shows real text.
-                val memContent = if (block.toolName == "memory_write") {
-                    args.optString("content", "")
-                        .ifEmpty { extractPartialJsonString("content", block.toolArgs) ?: "" }
-                        .ifEmpty { block.content }
-                } else {
-                    block.content
-                }
-                val keywords = args.optString("keywords", "")
-                    .ifEmpty { extractPartialJsonString("keywords", block.toolArgs) ?: "" }
-                val displayText = if (block.toolName == "memory_get" && keywords.isNotEmpty()) {
-                    "Keywords: $keywords\n$memContent"
-                } else memContent
-                Column(modifier = Modifier.padding(horizontal = 4.dp, vertical = 4.dp)) {
-                    Text(
-                        text = block.toolName,
-                        fontSize = 7.sp,
-                        lineHeight = 8.sp,
-                        fontWeight = FontWeight.Bold,
-                        fontFamily = FontFamily.Monospace,
-                        color = ToolMemoryAccent.copy(alpha = 0.75f),
-                        maxLines = 1,
-                        overflow = TextOverflow.Ellipsis,
-                    )
-                    if (displayText.isNotEmpty()) {
-                        Text(
-                            text = displayText.lines().takeLast(12).joinToString("\n"),
-                            fontSize = 5.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = toolAccent.copy(alpha = 0.85f),
-                            maxLines = 12,
-                            lineHeight = 6.5.sp,
-                        )
-                    }
-                }
-            }
-
-            "read_image" -> {
-                // [T-android-read-image-preview] Show the read image as a
-                // thumbnail (parity with iOS ToolCapsuleView .readImageTool and
-                // with the browser_use case below). Pre-fix read_image fell into
-                // the generic `else` branch and rendered only its metadata text
-                // line ("[/var/.../x.png | WxH | N bytes]") with no thumbnail.
-                // Decode off the main thread (T285 rationale).
-                val bitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
-                    initialValue = null,
-                    block.imageFilePath,
-                ) {
-                    val path = block.imageFilePath
-                    value = if (path == null) null else withContext(Dispatchers.IO) {
-                        try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null }
-                    }
-                }
-                val bmp = bitmap
-                if (bmp != null) {
-                    Image(
-                        bitmap = bmp.asImageBitmap(),
-                        contentDescription = "Read image",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            toolIconFor(block.toolName),
-                            contentDescription = null,
-                            tint = toolAccent.copy(alpha = 0.6f),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-            }
-
-            "browser_use" -> {
-                // [P3.3 裁军] live WebView 快照（rememberBrowserLiveSnapshot）
-                // 随内置浏览器退役；仅渲染历史块持久化的截图，然后 globe 图标。
-                // T285: decode the saved screenshot off the main thread —
-                // BitmapFactory.decodeFile inside `remember {}` was running
-                // synchronously on the composition thread, blocking the
-                // chat-tap → preview navigation transition for ~150-350ms
-                // on multi-MB browser screenshots.
-                val savedBitmap by androidx.compose.runtime.produceState<android.graphics.Bitmap?>(
-                    initialValue = null,
-                    block.imageFilePath,
-                    fallbackImagePath,
-                ) {
-                    // Prefer this block's own screenshot; if absent (read-only
-                    // browser actions like get_readable/get_text/fetch/etc.),
-                    // borrow the most recent prior browser_use screenshot so
-                    // the thumb doesn't degrade to the globe placeholder.
-                    val path = block.imageFilePath ?: fallbackImagePath
-                    value = if (path == null) null else withContext(Dispatchers.IO) {
-                        try { android.graphics.BitmapFactory.decodeFile(path) } catch (_: Exception) { null }
-                    }
-                }
-                val bitmap = savedBitmap
-                if (bitmap != null) {
-                    Image(
-                        bitmap = bitmap.asImageBitmap(),
-                        contentDescription = "Browser screenshot",
-                        contentScale = ContentScale.Crop,
-                        modifier = Modifier.fillMaxSize(),
-                    )
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(
-                            novex.android.ui.NovexIcons.Language,
-                            contentDescription = null,
-                            tint = toolAccent.copy(alpha = 0.6f),
-                            modifier = Modifier.size(24.dp),
-                        )
-                    }
-                }
-            }
-
-            else -> {
-                // Generic: icon or content preview
-                if (block.content.isNotEmpty()) {
-                    Column(modifier = Modifier.padding(horizontal = 6.dp, vertical = 5.dp)) {
-                        Text(
-                            text = block.content.lines().takeLast(12).joinToString("\n"),
-                            fontSize = 5.5.sp,
-                            fontFamily = FontFamily.Monospace,
-                            color = toolAccent.copy(alpha = 0.85f),
-                            maxLines = 12,
-                            lineHeight = 6.5.sp,
-                        )
-                    }
-                } else {
-                    Box(modifier = Modifier.fillMaxSize(), contentAlignment = Alignment.Center) {
-                        Icon(toolIconFor(block.toolName), contentDescription = null, tint = toolAccent.copy(alpha = 0.5f), modifier = Modifier.size(20.dp))
-                    }
-                }
-            }
-        }
-
-        // T141: live CPU/MEM HUD ribbon. Sits at the thumbnail's bottom edge,
-        // matching the iOS small-overlay parity (ToolLiveSheet.swift:1926):
-        // 5sp monospace, white at 80% alpha, on a black-60% background with
-        // bottom-rounded corners that line up with the parent thumbnailShape.
-        if (isShellTool && isLive) {
-            Row(
-                modifier = Modifier
-                    .align(Alignment.BottomCenter)
-                    .fillMaxWidth()
-                    .heightIn(max = 10.dp)
-                    .clip(RoundedCornerShape(bottomStart = 8.dp, bottomEnd = 8.dp))
-                    .background(Color.Black.copy(alpha = 0.6f))
-                    .padding(vertical = 1.dp),
-                horizontalArrangement = Arrangement.Center,
-            ) {
-                Text(
-                    text = "${resourceMonitor.formattedCpu()}  ${resourceMonitor.formattedMem(compact = true)}",
-                    fontSize = 5.sp,
-                    lineHeight = 8.sp,
-                    fontWeight = FontWeight.Medium,
-                    fontFamily = FontFamily.Monospace,
-                    color = Color.White.copy(alpha = 0.8f),
-                )
-            }
-        }
-    }
-}
-
-// ─── Floating Tool Status Bar (iOS: thumbnail + status capsule + pagination) ─
-
-@OptIn(ExperimentalMaterial3Api::class)
-@Composable
-internal fun FloatingToolStatusBar(
-    toolBlocks: List<AssistantBlock>,
-    onStop: (() -> Unit)? = null,
-    onDismiss: (() -> Unit)? = null,
-    modifier: Modifier = Modifier,
-    // T261: detail open routes through ChatViewModel state so this bar
-    // shares one always-mounted sheet with the in-list pills (no more
-    // dueling local-remember sheets, no LaunchedEffect(lastIndex) page
-    // jumps when a new tool starts mid-view).
-    onOpenDetail: (String) -> Unit = {},
-) {
-    var currentIndex by remember { mutableStateOf(toolBlocks.lastIndex.coerceAtLeast(0)) }
-    val lastIndex = toolBlocks.lastIndex
-    LaunchedEffect(lastIndex) {
-        val block = toolBlocks.getOrNull(currentIndex)
-        val isCurrentActive = block?.toolStatus == ToolBlockStatus.RUNNING ||
-            block?.toolStatus == ToolBlockStatus.STREAMING ||
-            block?.toolStatus == ToolBlockStatus.PENDING
-        if (!isCurrentActive) currentIndex = lastIndex.coerceAtLeast(0)
-    }
-    val block = toolBlocks.getOrNull(currentIndex) ?: return
-    // T261: sheet is hoisted to ChatScreen top-level; this bar only emits
-    // open events. The current-displayed block id is what we want shown
-    // when the user opens the sheet from this surface (not necessarily
-    // the latest tool — the user may have paged via the chevrons).
-    val onOpenCurrentDetail: () -> Unit = { onOpenDetail(block.id) }
-
-    val isDone = block.toolStatus == ToolBlockStatus.SUCCESS
-    val isFailed = block.toolStatus == ToolBlockStatus.FAILED ||
-        block.toolStatus == ToolBlockStatus.TIMEOUT
-    val isCancelled = block.toolStatus == ToolBlockStatus.CANCELLED
-    val isRunning = block.toolStatus == ToolBlockStatus.RUNNING ||
-        block.toolStatus == ToolBlockStatus.STREAMING ||
-        block.toolStatus == ToolBlockStatus.PENDING
-    val toolAccent = toolAccentColor(block.toolName)
-    val previewEnabled = LocalToolPreviewEnabled.current
-
-    // iOS layout: ZStack(alignment: .bottomLeading)
-    // Thumbnail (100×65dp) floats ABOVE the status bar (38dp tall)
-    val thumbnailWidth = 100.dp
-    val thumbnailHeight = 65.dp
-    val barHeight = 38.dp
-    val thumbnailOverhang = thumbnailHeight - barHeight  // 14dp above bar
-    val thumbnailInset = 10.dp
-    val barStartPadding = if (previewEnabled) thumbnailWidth + thumbnailInset + 8.dp else 12.dp
-
-    Box(
-        modifier = modifier
-            .fillMaxWidth()
-            .padding(top = if (previewEnabled) thumbnailOverhang else 0.dp),  // reserve space for overhang
-    ) {
-        // Layer 1: Status bar (bottom layer, fills from bottom)
-        Row(
-            modifier = Modifier
-                .fillMaxWidth()
-                .height(barHeight)
-                .align(Alignment.BottomCenter)
-                .shadow(elevation = 8.dp, shape = RoundedCornerShape(10.dp), ambientColor = Color.Black.copy(alpha = 0.06f), spotColor = Color.Black.copy(alpha = 0.12f))
-                .background(ChatColors.inputBg, RoundedCornerShape(10.dp))
-                .border(0.5.dp, ChatColors.toolBorder, RoundedCornerShape(10.dp))
-                .padding(start = barStartPadding, end = 12.dp),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            // Status icon
-            if (isRunning) {
-                CircularProgressIndicator(
-                    modifier = Modifier.size(15.dp),
-                    color = toolAccent,
-                    strokeWidth = 1.5.dp,
-                )
-            } else {
-                val (icon, tint) = when {
-                    isDone -> novex.android.ui.NovexIcons.CheckCircle to ToolCheckColor
-                    isFailed -> novex.android.ui.NovexIcons.Error to ToolErrorColor
-                    isCancelled -> novex.android.ui.NovexIcons.Close to ToolCancelColor
-                    else -> novex.android.ui.NovexIcons.Build to MaterialTheme.colorScheme.onSurfaceVariant
-                }
-                Icon(icon, contentDescription = null, tint = tint, modifier = Modifier.size(15.dp))
-            }
-
-            Spacer(modifier = Modifier.width(6.dp))
-
-            // [T-step-timestamp v2 aa8b1128] Inline HH:mm:ss prefix
-            // removed — see ToolDetailSheet header for the new
-            // "HH:mm:ss · 3s" display, surfaced only inside the
-            // tapped-open detail sheet so the always-visible status bar
-            // stays clean.
-
-            // Tool title
-            Text(
-                text = block.toolTitle.ifEmpty { block.toolName },
-                fontSize = 13.sp,
-                fontWeight = FontWeight.Medium,
-                color = ChatColors.primaryText,
-                maxLines = 1,
-                modifier = Modifier
-                    .weight(1f)
-                    .clickable(
-                        indication = null,
-                        interactionSource = remember { MutableInteractionSource() },
-                    ) { onOpenCurrentDetail() },
-                overflow = TextOverflow.Ellipsis,
-            )
-
-            // Pagination
-            if (toolBlocks.size > 1) {
-                Row(
-                    verticalAlignment = Alignment.CenterVertically,
-                    horizontalArrangement = Arrangement.spacedBy(0.dp),
-                ) {
-                    Icon(
-                        novex.android.ui.NovexIcons.ChevronLeft,
-                        contentDescription = "Previous",
-                        tint = if (currentIndex > 0) MaterialTheme.colorScheme.onSurface
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clickable(
-                                enabled = currentIndex > 0,
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() },
-                            ) { if (currentIndex > 0) currentIndex-- },
-                    )
-                    Text(
-                        "${currentIndex + 1}/${toolBlocks.size}",
-                        fontSize = 11.sp,
-                        fontWeight = FontWeight.Medium,
-                        fontFamily = FontFamily.Monospace,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                    Icon(
-                        novex.android.ui.NovexIcons.ChevronRight,
-                        contentDescription = "Next",
-                        tint = if (currentIndex < toolBlocks.lastIndex) MaterialTheme.colorScheme.onSurface
-                               else MaterialTheme.colorScheme.onSurface.copy(alpha = 0.25f),
-                        modifier = Modifier
-                            .size(18.dp)
-                            .clickable(
-                                enabled = currentIndex < toolBlocks.lastIndex,
-                                indication = null,
-                                interactionSource = remember { MutableInteractionSource() },
-                            ) { if (currentIndex < toolBlocks.lastIndex) currentIndex++ },
-                    )
-                }
-            }
-            if (!isRunning && onDismiss != null) {
-                Spacer(modifier = Modifier.width(6.dp))
-                Icon(
-                    novex.android.ui.NovexIcons.Close,
-                    contentDescription = "关闭",
-                    tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                    modifier = Modifier
-                        .size(18.dp)
-                        .clickable(
-                            indication = null,
-                            interactionSource = remember { MutableInteractionSource() },
-                        ) { onDismiss() },
-                )
-            }
-            // T170: stop button removed from the floating bar — only the
-            // in-list ToolCallPill keeps the red square. Two stop affordances
-            // on the same active tool felt redundant on tight screens.
-        }
-
-        // Layer 2: Thumbnail floating above the bar (iOS: ZStack overlay)
-        if (previewEnabled) {
-            Box(
-                modifier = Modifier
-                    .align(Alignment.TopStart)
-                    .padding(start = thumbnailInset),
-            ) {
-                // [T-android-browser-preview-thumb] Resolve the previous
-                // browser_use screenshot fallback here (toolBlocks is in
-                // scope); ToolPreviewThumbnail uses it for browser_use blocks
-                // whose action did not produce a screenshot.
-                val fallbackImagePath = remember(block.id, toolBlocks) {
-                    if (block.toolName != "browser_use" || block.imageFilePath != null) null
-                    else {
-                        val blockIdx = toolBlocks.indexOfFirst { it.id == block.id }
-                        if (blockIdx <= 0) null
-                        else (blockIdx - 1 downTo 0).firstNotNullOfOrNull { i ->
-                            val prev = toolBlocks[i]
-                            if (prev.toolName == "browser_use") prev.imageFilePath else null
-                        }
-                    }
-                }
-                ToolPreviewThumbnail(
-                    block = block,
-                    toolAccent = toolAccent,
-                    onClick = { onOpenCurrentDetail() },
-                    fallbackImagePath = fallbackImagePath,
-                )
-            }
-        }
-    }
-}
+private val ClampOrange = Color(0xFFFF9500)
 
 /**
- * Inline 5-segment picker rendered on the right side of the `/thinking` row.
- * Mirrors iOS `thinkingLevelPicker`: the active level shows a filled pill;
- * the OFF pill uses a muted background, the others use the accent color.
+ * `/thinking` 行右侧的内联分段选择器。对齐 iOS thinkingLevelPicker：
+ * 当前档画实色胶囊；存储档超出当前模型上限时钳位高亮最高可用档（橙底
+ * + 上箭头），否则按蓝底高亮。
+ *
+ * [T-android-thinking-level-arch] `availableLevels` 是当前模型实际可达的
+ * 档集（OFF + effectiveMaxThinkingLevel 以内），行可横滑让 GPT-5.6 的
+ * MAX/ULTRA 不挤爆窄输入栏。
  */
 @Composable
 internal fun ThinkingLevelPicker(
     current: ThinkingLevel,
-    // [T-android-thinking-level-arch] Levels the CURRENT model actually supports
-    // (OFF + everything up to its effectiveMaxThinkingLevel). Passed in so the
-    // picker only ever offers reachable tiers; the row scrolls horizontally so
-    // the extra GPT-5.6 tiers (MAX/ULTRA) don't overflow a narrow composer.
     availableLevels: List<ThinkingLevel>,
     onSelect: (ThinkingLevel) -> Unit,
 ) {
     val context = LocalContext.current
-    val scrollState = rememberScrollState()
-    // [T-android-thinking-level-arch] Clamped state: the stored level is higher
-    // than what the current model can reach (e.g. ULTRA persisted, then the user
-    // switched to DeepSeek which caps at XHIGH). `current` then isn't in
-    // availableLevels, so no capsule would match `level == current` and the row
-    // would look entirely unselected — as if thinking were off. Mirror iOS
-    // (fb349342): highlight the highest available capsule in orange with an
-    // up-arrow, signalling "your setting is higher, this model caps here".
+    // 钳位态：持久化的档比当前模型能到的还高（如存了 ULTRA 后切到封顶
+    // XHIGH 的 DeepSeek）。此时 current 不在 availableLevels，若无补偿
+    // 整行无选中态像"思考已关"。对齐 iOS：最高可用档橙色高亮+上箭头，
+    // 表达"你的设置更高，这个模型到这里封顶"。
     val maxAvailable = availableLevels.lastOrNull { it != ThinkingLevel.OFF }
     val isClamped = current.isEnabled && maxAvailable != null && current.rank > maxAvailable.rank
-    val clampOrange = Color(0xFFFF9500)
+
     Row(
         modifier = Modifier
-            .background(
-                ChatColors.secondaryText.copy(alpha = 0.12f),
-                RoundedCornerShape(6.dp),
-            )
+            .background(ChatColors.secondaryText.copy(alpha = 0.12f), RoundedCornerShape(6.dp))
             .clip(RoundedCornerShape(6.dp))
-            .horizontalScroll(scrollState),
+            .horizontalScroll(rememberScrollState()),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         availableLevels.forEach { level ->
-            val isExactMatch = level == current
-            val isClampedHighlight = isClamped && level == maxAvailable
-            val isHighlighted = isExactMatch || isClampedHighlight
-            val bg = when {
-                // [T-android-thinking-picker-ui] Clamped tier → orange; normal
-                // selection → blue (ChatColors.thinking, the theme-adaptive
-                // system blue 007AFF/0A84FF), matching iOS's Color.blue. The
-                // old ChatColors.sendButton was black in light / white in dark,
-                // so the selected capsule read as unselected. (OFF no longer
-                // appears in availableLevels, so its former branch is gone.)
-                isClampedHighlight -> clampOrange.copy(alpha = 0.75f)
-                isHighlighted -> ChatColors.thinking
-                else -> Color.Transparent
-            }
-            // White text on both the blue and orange fills (readable in both
-            // themes); grey when unselected.
-            val fg = if (isHighlighted) Color.White else ChatColors.secondaryText
-            Row(
-                verticalAlignment = Alignment.CenterVertically,
-                modifier = Modifier
-                    .background(bg)
-                    // [T-android-thinking-level-arch] Tapping the already-
-                    // highlighted capsule toggles thinking OFF (covers both exact
-                    // and clamped highlight); otherwise selects the tapped level.
-                    .clickable { onSelect(if (isHighlighted) ThinkingLevel.OFF else level) }
-                    .padding(horizontal = 6.dp, vertical = 4.dp),
-            ) {
-                Text(
-                    text = level.localizedName(context),
-                    fontSize = 11.sp,
-                    fontWeight = if (isHighlighted) FontWeight.Bold else FontWeight.Normal,
-                    color = fg,
-                )
-                if (isClampedHighlight) {
-                    Icon(
-                        imageVector = novex.android.ui.NovexIcons.KeyboardArrowUp,
-                        contentDescription = null,
-                        tint = fg,
-                        modifier = Modifier.size(12.dp),
-                    )
-                }
-            }
+            val clamped = isClamped && level == maxAvailable
+            ThinkingCapsule(
+                label = level.localizedName(context),
+                selected = level == current,
+                clamped = clamped,
+                // [T-android-thinking-level-arch] 点已高亮的胶囊（选中或钳位
+                // 高亮）= 关思考；否则选所点档。
+                onTap = { onSelect(if (level == current || clamped) ThinkingLevel.OFF else level) },
+            )
+        }
+    }
+}
+
+@Composable
+private fun ThinkingCapsule(
+    label: String,
+    selected: Boolean,
+    clamped: Boolean,
+    onTap: () -> Unit,
+) {
+    val highlighted = selected || clamped
+    // [T-android-thinking-picker-ui] 钳位档橙、正常选中蓝（ChatColors.thinking
+    // 主题自适应的 system blue，对齐 iOS Color.blue）。旧实现用
+    // ChatColors.sendButton（浅色黑/深色白），选中态读作未选中。
+    val bg = when {
+        clamped -> ClampOrange.copy(alpha = 0.75f)
+        highlighted -> ChatColors.thinking
+        else -> Color.Transparent
+    }
+    val fg = if (highlighted) Color.White else ChatColors.secondaryText
+    Row(
+        verticalAlignment = Alignment.CenterVertically,
+        modifier = Modifier
+            .background(bg)
+            .clickable(onClick = onTap)
+            .padding(horizontal = 6.dp, vertical = 4.dp),
+    ) {
+        Text(
+            text = label,
+            fontSize = 11.sp,
+            fontWeight = if (highlighted) FontWeight.Bold else FontWeight.Normal,
+            color = fg,
+        )
+        if (clamped) {
+            Icon(
+                imageVector = NovexIcons.KeyboardArrowUp,
+                contentDescription = null,
+                tint = fg,
+                modifier = Modifier.size(12.dp),
+            )
         }
     }
 }

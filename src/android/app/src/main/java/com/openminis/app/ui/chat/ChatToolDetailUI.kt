@@ -704,16 +704,6 @@ internal fun extractPartialJsonString(key: String, json: String): String? {
     return value.toString().ifEmpty { null }
 }
 
-/** shell 命令提取：args.command → 流式半段扫描 → 输出首行 "$ " 前缀 → 兜底文案。 */
-internal fun extractShellCommand(args: org.json.JSONObject, block: AssistantBlock): String {
-    args.optString("command", "").takeIf { it.isNotEmpty() }?.let { return it }
-    extractPartialJsonString("command", block.toolArgs)?.takeIf { it.isNotEmpty() }?.let { return it }
-    if (block.content.startsWith("$ ")) {
-        block.content.lineSequence().firstOrNull()?.takeIf { it.length > 2 }?.let { return it.drop(2) }
-    }
-    return "Shell command"
-}
-
 // ── 增量展开：大段工具输出不一次性排版 ──────────────────────────────────────
 
 private const val OUTPUT_WINDOW_LINES = 200
