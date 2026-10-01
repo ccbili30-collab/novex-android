@@ -134,3 +134,12 @@ deps/lame-3.100/**/.deps/
 # Local diagnostics, original user bundles and reproducible temporary outputs.
 /local/
 /tmp/
+
+# [P2.5 沙箱退役] 二进制遗物防再犯：R2 删除时误删了忽略规则，导致工作区
+# 磁盘残留被 add -A 扫回仓库（2026-10-01 beta.105/106 污染事故）。这些路径
+# 永远不该出现在 git 树里——scripts/tests/novex_forbidden_artifacts_test.sh 有门禁。
+src/android/app/src/main/assets/alpine-minirootfs.tar*
+src/android/app/src/main/assets/proot-aarch64
+src/android/app/src/main/jniLibs/arm64-v8a/libproot*.so
+src/android/app/src/main/jniLibs/arm64-v8a/libtalloc.so
+src/android/app/src/main/jniLibs/arm64-v8a/libandroid-shmem.so
