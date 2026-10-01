@@ -7,7 +7,6 @@ import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.combinedClickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.PaddingValues
@@ -45,6 +44,7 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import com.openminis.app.ui.components.MinisTextButton
+import novex.android.ui.NovexIcons
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
@@ -55,21 +55,14 @@ fun FileBrowserScreen(
 ) {
     val state by viewModel.uiState.collectAsState()
     var deleteTarget by remember { mutableStateOf<FileItem?>(null) }
-    // [P3.3 裁军] webAppSheetSource（HTML 长按「添加到主屏」Sheet 状态）随
-    // webapp/ 整包退役删除。
 
-    // When navigated into a subdirectory, the top-bar back button and the
-    // system back gesture both pop one directory level first. The
-    // ViewModel's `goBack()` returns `false` when we're already at the
-    // initial entry directory (T145) — at that point we exit the screen
-    // entirely rather than crawling further up toward the rootfs root,
-    // mirroring iOS FileBrowserView. The state.canGoBack pre-check is
-    // kept for the same shortcut and to flip the back button into a
-    // pure "close" affordance once the user is back at the entry dir.
+    // 进入子目录后，顶栏返回键和系统返回手势都先弹一级目录。
+    // ViewModel.goBack() 在已经回到入口目录时返回 false（T145），此时
+    // 直接退出本屏而不是继续往 rootfs 根爬，对齐 iOS FileBrowserView。
+    // canGoBack 预检让回到入口后返回键变成纯粹的「关闭」。
     val handleBack = {
         if (!state.canGoBack || !viewModel.goBack()) onBack()
     }
-
     BackHandler(enabled = true, onBack = handleBack)
 
     Scaffold(
@@ -78,18 +71,13 @@ fun FileBrowserScreen(
                 title = { Text(stringResource(R.string.filebrowser_title)) },
                 navigationIcon = {
                     IconButton(onClick = handleBack) {
-                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
+                        Icon(NovexIcons.ArrowBack, contentDescription = stringResource(R.string.common_back))
                     }
                 },
                 actions = {
-                    // T-hidden-files a3e7f1d0: trailing toolbar collapsed
-                    // to a single ⋯ menu (was a Sort-only IconButton). All
-                    // functional actions now live under one entry point.
-                    MoreMenu(
-                        sortKey = state.sortKey,
-                        ascending = state.sortAscending,
-                        foldersFirst = state.foldersFirst,
-                        showHidden = state.showHidden,
+                    // T-hidden-files a3e7f1d0: 尾栏收成单个 ⋯ 菜单。
+                    SortAndDisplayMenu(
+                        state = state,
                         onSelectKey = { viewModel.setSort(key = it) },
                         onToggleDirection = { viewModel.setSort(ascending = !state.sortAscending) },
                         onToggleFoldersFirst = { viewModel.setSort(foldersFirst = !state.foldersFirst) },
@@ -99,78 +87,38 @@ fun FileBrowserScreen(
             )
         },
     ) { padding ->
-        Column(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
-            // Breadcrumb bar
-            BreadcrumbBar(
-                pathComponents = state.pathComponents,
-                onNavigate = { index -> viewModel.navigateToPathComponent(index) },
+        Column(Modifier.fillMaxSize().padding(padding)) {
+            PathBreadcrumb(
+                components = state.pathComponents,
+                onNavigate = viewModel::navigateToPathComponent,
             )
-
             HorizontalDivider()
 
-            // Content
             when {
-                state.isLoading -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        CircularProgressIndicator()
-                    }
+                state.isLoading -> Box(Modifier.fillMaxSize(), Alignment.Center) {
+                    CircularProgressIndicator()
                 }
-
-                state.isEmpty -> {
-                    Box(
-                        modifier = Modifier.fillMaxSize(),
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                            Icon(
-                                novex.android.ui.NovexIcons.Folder,
-                                contentDescription = null,
-                                modifier = Modifier.size(48.dp),
-                                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-                            )
-                            Text(
-                                stringResource(R.string.filebrowser_empty_folder),
-                                color = MaterialTheme.colorScheme.onSurfaceVariant,
-                                style = MaterialTheme.typography.bodyMedium,
-                            )
-                        }
-                    }
-                }
-
-                else -> {
-                    LazyColumn(
-                        modifier = Modifier.fillMaxSize(),
-                        contentPadding = PaddingValues(vertical = 4.dp),
-                    ) {
-                        items(state.items, key = { it.file.absolutePath }) { item ->
-                            FileItemRow(
-                                item = item,
-                                currentLinuxPath = state.currentLinuxPath,
-                                onClick = {
-                                    if (item.isDirectory) {
-                                        viewModel.navigateTo(item)
-                                    } else {
-                                        onPreviewFile(item)
-                                    }
-                                },
-                                onDelete = { deleteTarget = item },
-                            )
-                            HorizontalDivider(modifier = Modifier.padding(start = 56.dp))
-                        }
+                state.isEmpty -> EmptyFolderPlaceholder()
+                else -> LazyColumn(
+                    modifier = Modifier.fillMaxSize(),
+                    contentPadding = PaddingValues(vertical = 4.dp),
+                ) {
+                    items(state.items, key = { it.file.absolutePath }) { item ->
+                        FileRow(
+                            item = item,
+                            currentLinuxPath = state.currentLinuxPath,
+                            onClick = {
+                                if (item.isDirectory) viewModel.navigateTo(item) else onPreviewFile(item)
+                            },
+                            onDelete = { deleteTarget = item },
+                        )
+                        HorizontalDivider(Modifier.padding(start = 56.dp))
                     }
                 }
             }
         }
     }
 
-    // Delete confirmation
     deleteTarget?.let { item ->
         AlertDialog(
             onDismissRequest = { deleteTarget = null },
@@ -192,9 +140,6 @@ fun FileBrowserScreen(
         )
     }
 
-    // [P3.3 裁军] AddToHomeSheet 渲染块随 webapp/ 退役删除。
-
-    // Error dialog
     state.errorMessage?.let { msg ->
         AlertDialog(
             onDismissRequest = { viewModel.dismissError() },
@@ -210,28 +155,46 @@ fun FileBrowserScreen(
 }
 
 @Composable
-private fun BreadcrumbBar(
-    pathComponents: List<String>,
+private fun EmptyFolderPlaceholder() {
+    Box(Modifier.fillMaxSize(), Alignment.Center) {
+        Column(horizontalAlignment = Alignment.CenterHorizontally) {
+            Icon(
+                NovexIcons.Folder,
+                contentDescription = null,
+                modifier = Modifier.size(48.dp),
+                tint = MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Text(
+                stringResource(R.string.filebrowser_empty_folder),
+                color = MaterialTheme.colorScheme.onSurfaceVariant,
+                style = MaterialTheme.typography.bodyMedium,
+            )
+        }
+    }
+}
+
+@Composable
+private fun PathBreadcrumb(
+    components: List<String>,
     onNavigate: (Int) -> Unit,
 ) {
-    val scrollState = rememberScrollState()
     Row(
         modifier = Modifier
             .fillMaxWidth()
-            .horizontalScroll(scrollState)
+            .horizontalScroll(rememberScrollState())
             .padding(horizontal = 16.dp, vertical = 8.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        pathComponents.forEachIndexed { index, component ->
+        components.forEachIndexed { index, component ->
             Text(
                 text = component,
                 style = MaterialTheme.typography.labelMedium,
                 color = MaterialTheme.colorScheme.primary,
                 modifier = Modifier.clickable { onNavigate(index) },
             )
-            if (index < pathComponents.lastIndex) {
+            if (index < components.lastIndex) {
                 Icon(
-                    novex.android.ui.NovexIcons.KeyboardArrowRight,
+                    NovexIcons.KeyboardArrowRight,
                     contentDescription = null,
                     modifier = Modifier.size(16.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
@@ -243,132 +206,108 @@ private fun BreadcrumbBar(
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-private fun FileItemRow(
+private fun FileRow(
     item: FileItem,
     currentLinuxPath: String?,
     onClick: () -> Unit,
     onDelete: () -> Unit,
 ) {
-    // [P3.3 裁军] HTML 长按「添加到主屏」菜单（isHtml 判定 + WebApp 源）随
-    // webapp/ 退役删除；长按菜单只保留「复制绝对路径」。
-    var menuExpanded by remember(item.file.absolutePath) { mutableStateOf(false) }
+    var menuOpen by remember(item.file.absolutePath) { mutableStateOf(false) }
 
-    // [T-android-file-context-copy-abs-path] The file's Linux (PRoot) absolute
-    // path = current dir's linux path + name. Falls back to the host absolute
-    // path when this browser isn't rooted under a bind mount (raw host view).
-    val absolutePath = currentLinuxPath?.let { "${it.trimEnd('/')}/${item.name}" }
+    // [T-android-file-context-copy-abs-path] 该文件的 Linux 绝对路径 =
+    // 当前目录 linux 路径 + 文件名；非 bind-mount 浏览器回退宿主绝对路径。
+    val copyablePath = currentLinuxPath?.let { "${it.trimEnd('/')}/${item.name}" }
         ?: item.file.absolutePath
 
     Box {
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .combinedClickable(
-                onClick = onClick,
-                // [T-android-file-context-copy-abs-path] Long-press opens the
-                // file context menu (currently "Copy Absolute Path"; the
-                // HTML-only "Add to Home" item below stays gated). Mirrors the
-                // iOS file context menu.
-                onLongClick = { menuExpanded = true },
-            )
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        // Icon
-        Icon(
-            imageVector = fileIcon(item),
-            contentDescription = null,
-            modifier = Modifier.size(24.dp),
-            tint = if (item.isDirectory)
-                MaterialTheme.colorScheme.primary
-            else
-                MaterialTheme.colorScheme.onSurfaceVariant,
-        )
-
-        Spacer(modifier = Modifier.width(16.dp))
-
-        // Name and size
-        Column(modifier = Modifier.weight(1f)) {
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                Text(
-                    text = item.name,
-                    style = MaterialTheme.typography.bodyMedium,
-                    maxLines = 1,
-                    overflow = TextOverflow.Ellipsis,
-                    modifier = Modifier.weight(1f, fill = false),
+        Row(
+            modifier = Modifier
+                .fillMaxWidth()
+                .combinedClickable(
+                    onClick = onClick,
+                    onLongClick = { menuOpen = true },
                 )
-                if (item.isSymlink) {
-                    Spacer(modifier = Modifier.width(4.dp))
+                .padding(horizontal = 16.dp, vertical = 12.dp),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Icon(
+                imageVector = fileKindIcon(item),
+                contentDescription = null,
+                modifier = Modifier.size(24.dp),
+                tint = if (item.isDirectory)
+                    MaterialTheme.colorScheme.primary
+                else
+                    MaterialTheme.colorScheme.onSurfaceVariant,
+            )
+            Spacer(Modifier.width(16.dp))
+
+            Column(Modifier.weight(1f)) {
+                Row(verticalAlignment = Alignment.CenterVertically) {
                     Text(
-                        text = "link",
-                        style = MaterialTheme.typography.labelSmall,
-                        color = MaterialTheme.colorScheme.tertiary,
+                        text = item.name,
+                        style = MaterialTheme.typography.bodyMedium,
+                        maxLines = 1,
+                        overflow = TextOverflow.Ellipsis,
+                        modifier = Modifier.weight(1f, fill = false),
                     )
+                    if (item.isSymlink) {
+                        Spacer(Modifier.width(4.dp))
+                        Text(
+                            text = "link",
+                            style = MaterialTheme.typography.labelSmall,
+                            color = MaterialTheme.colorScheme.tertiary,
+                        )
+                    }
                 }
-            }
-            // mtime + size on a single row, mirroring iOS: "size · mtime"
-            // (size omitted for directories, mtime omitted when stat = 0).
-            val mtime = item.formattedDate
-            if (!item.isDirectory || mtime.isNotEmpty()) {
+                // 副行对齐 iOS「size · mtime」：目录不显示大小，stat 为 0
+                // 不显示时间。
+                val mtime = item.formattedDate
                 val parts = buildList {
                     if (!item.isDirectory) add(item.formattedSize)
                     if (mtime.isNotEmpty()) add(mtime)
                 }
-                Text(
-                    text = parts.joinToString(" · "),
-                    style = MaterialTheme.typography.bodySmall,
-                    color = MaterialTheme.colorScheme.onSurfaceVariant,
-                )
+                if (parts.isNotEmpty()) {
+                    Text(
+                        text = parts.joinToString(" · "),
+                        style = MaterialTheme.typography.bodySmall,
+                        color = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
-        }
 
-        // Delete button for non-directory items
-        if (!item.isDirectory) {
-            IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+            if (item.isDirectory) {
                 Icon(
-                    novex.android.ui.NovexIcons.Delete,
-                    contentDescription = stringResource(R.string.delete),
-                    modifier = Modifier.size(18.dp),
+                    NovexIcons.KeyboardArrowRight,
+                    contentDescription = null,
+                    modifier = Modifier.size(20.dp),
                     tint = MaterialTheme.colorScheme.onSurfaceVariant,
                 )
+            } else {
+                IconButton(onClick = onDelete, modifier = Modifier.size(32.dp)) {
+                    Icon(
+                        NovexIcons.Delete,
+                        contentDescription = stringResource(R.string.delete),
+                        modifier = Modifier.size(18.dp),
+                        tint = MaterialTheme.colorScheme.onSurfaceVariant,
+                    )
+                }
             }
         }
 
-        // Chevron for directories
-        if (item.isDirectory) {
-            Icon(
-                novex.android.ui.NovexIcons.KeyboardArrowRight,
-                contentDescription = null,
-                modifier = Modifier.size(20.dp),
-                tint = MaterialTheme.colorScheme.onSurfaceVariant,
-            )
-        }
-    }
-
-    // [T-android-file-context-copy-abs-path] File context menu, anchored to
-    // the row's bounding Box. Always offers "Copy Absolute Path"; the
-    // HTML-only "Add to Home" item below stays gated behind the unvalidated
-    // WebApp entry point (TODO webapp-hidden).
-    run {
         val context = LocalContext.current
         com.openminis.app.ui.components.MinisMenu(
-            expanded = menuExpanded,
-            onDismissRequest = { menuExpanded = false },
+            expanded = menuOpen,
+            onDismissRequest = { menuOpen = false },
         ) {
             DropdownMenuItem(
                 text = { Text(stringResource(R.string.filebrowser_copy_abs_path)) },
-                leadingIcon = {
-                    Icon(novex.android.ui.NovexIcons.ContentCopy, contentDescription = null)
-                },
+                leadingIcon = { Icon(NovexIcons.ContentCopy, contentDescription = null) },
                 onClick = {
-                    menuExpanded = false
+                    menuOpen = false
                     val clip = context.getSystemService(android.content.Context.CLIPBOARD_SERVICE)
                         as android.content.ClipboardManager
-                    clip.setPrimaryClip(
-                        android.content.ClipData.newPlainText("path", absolutePath),
-                    )
-                    // Android 13+ shows its own clipboard confirmation chip;
-                    // add a Toast for < 13 and as explicit feedback.
+                    clip.setPrimaryClip(android.content.ClipData.newPlainText("path", copyablePath))
+                    // Android 13+ 自带剪贴板确认条；Toast 兼容旧版本并给明确反馈。
                     android.widget.Toast.makeText(
                         context,
                         context.getString(R.string.filebrowser_copy_abs_path_toast),
@@ -378,15 +317,11 @@ private fun FileItemRow(
             )
         }
     }
-    } // anchoring Box
 }
 
 @Composable
-private fun MoreMenu(
-    sortKey: FileSortKey,
-    ascending: Boolean,
-    foldersFirst: Boolean,
-    showHidden: Boolean,
+private fun SortAndDisplayMenu(
+    state: FileBrowserUiState,
     onSelectKey: (FileSortKey) -> Unit,
     onToggleDirection: () -> Unit,
     onToggleFoldersFirst: () -> Unit,
@@ -395,38 +330,33 @@ private fun MoreMenu(
     var expanded by remember { mutableStateOf(false) }
     Box {
         IconButton(onClick = { expanded = true }) {
-            Icon(novex.android.ui.NovexIcons.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
+            Icon(NovexIcons.MoreVert, contentDescription = stringResource(R.string.filebrowser_more_action))
         }
-        com.openminis.app.ui.components.MinisMenu(expanded = expanded, onDismissRequest = { expanded = false }) {
-            // Display options — sort key choices first so the most
-            // frequent toggle (sort) is the closest tap.
+        com.openminis.app.ui.components.MinisMenu(
+            expanded = expanded,
+            onDismissRequest = { expanded = false },
+        ) {
+            // 排序键在最上——最高频操作离拇指最近。
             for (key in FileSortKey.entries) {
-                DropdownMenuItem(
-                    text = { Text(stringResource(when (key) {
-                        FileSortKey.NAME -> R.string.filebrowser_sort_name
-                        FileSortKey.MODIFIED -> R.string.filebrowser_sort_modified
-                        FileSortKey.SIZE -> R.string.filebrowser_sort_size
-                        FileSortKey.KIND -> R.string.filebrowser_sort_kind
-                    })) },
-                    leadingIcon = {
-                        if (key == sortKey) {
-                            Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
-                        } else {
-                            Spacer(modifier = Modifier.size(24.dp))
-                        }
-                    },
-                    onClick = {
-                        onSelectKey(key)
-                        expanded = false
-                    },
-                )
+                CheckableMenuEntry(
+                    label = stringResource(sortKeyLabel(key)),
+                    checked = key == state.sortKey,
+                ) {
+                    onSelectKey(key)
+                    expanded = false
+                }
             }
             HorizontalDivider()
             DropdownMenuItem(
-                text = { Text(stringResource(if (ascending) R.string.filebrowser_sort_ascending else R.string.filebrowser_sort_descending)) },
+                text = {
+                    Text(stringResource(
+                        if (state.sortAscending) R.string.filebrowser_sort_ascending
+                        else R.string.filebrowser_sort_descending
+                    ))
+                },
                 leadingIcon = {
                     Icon(
-                        if (ascending) novex.android.ui.NovexIcons.ArrowUpward else novex.android.ui.NovexIcons.ArrowDownward,
+                        if (state.sortAscending) NovexIcons.ArrowUpward else NovexIcons.ArrowDownward,
                         contentDescription = null,
                     )
                 },
@@ -435,30 +365,23 @@ private fun MoreMenu(
                     expanded = false
                 },
             )
-            DropdownMenuItem(
-                text = { Text(stringResource(R.string.filebrowser_sort_folders_first)) },
-                leadingIcon = {
-                    if (foldersFirst) {
-                        Icon(novex.android.ui.NovexIcons.Check, contentDescription = null)
-                    } else {
-                        Spacer(modifier = Modifier.size(24.dp))
-                    }
-                },
-                onClick = {
-                    onToggleFoldersFirst()
-                    expanded = false
-                },
-            )
+            CheckableMenuEntry(
+                label = stringResource(R.string.filebrowser_sort_folders_first),
+                checked = state.foldersFirst,
+            ) {
+                onToggleFoldersFirst()
+                expanded = false
+            }
             DropdownMenuItem(
                 text = {
                     Text(stringResource(
-                        if (showHidden) R.string.filebrowser_hide_hidden
+                        if (state.showHidden) R.string.filebrowser_hide_hidden
                         else R.string.filebrowser_show_hidden
                     ))
                 },
                 leadingIcon = {
                     Icon(
-                        if (showHidden) novex.android.ui.NovexIcons.VisibilityOff else novex.android.ui.NovexIcons.Visibility,
+                        if (state.showHidden) NovexIcons.VisibilityOff else NovexIcons.Visibility,
                         contentDescription = null,
                     )
                 },
@@ -471,18 +394,40 @@ private fun MoreMenu(
     }
 }
 
-private fun fileIcon(item: FileItem): ImageVector {
-    if (item.isDirectory) return novex.android.ui.NovexIcons.Folder
+@Composable
+private fun CheckableMenuEntry(label: String, checked: Boolean, onClick: () -> Unit) {
+    DropdownMenuItem(
+        text = { Text(label) },
+        leadingIcon = {
+            if (checked) {
+                Icon(NovexIcons.Check, contentDescription = null)
+            } else {
+                Spacer(Modifier.size(24.dp))
+            }
+        },
+        onClick = onClick,
+    )
+}
+
+private fun sortKeyLabel(key: FileSortKey): Int = when (key) {
+    FileSortKey.NAME -> R.string.filebrowser_sort_name
+    FileSortKey.MODIFIED -> R.string.filebrowser_sort_modified
+    FileSortKey.SIZE -> R.string.filebrowser_sort_size
+    FileSortKey.KIND -> R.string.filebrowser_sort_kind
+}
+
+private fun fileKindIcon(item: FileItem): ImageVector {
+    if (item.isDirectory) return NovexIcons.Folder
     return when (item.iconRes) {
-        "text" -> novex.android.ui.NovexIcons.Description
-        "terminal" -> novex.android.ui.NovexIcons.Terminal
-        "code" -> novex.android.ui.NovexIcons.Code
-        "image" -> novex.android.ui.NovexIcons.Image
-        "audio" -> novex.android.ui.NovexIcons.AudioFile
-        "video" -> novex.android.ui.NovexIcons.VideoFile
-        "archive" -> novex.android.ui.NovexIcons.Archive
-        "pdf" -> novex.android.ui.NovexIcons.PictureAsPdf
-        "database" -> novex.android.ui.NovexIcons.Storage
-        else -> novex.android.ui.NovexIcons.InsertDriveFile
+        "text" -> NovexIcons.Description
+        "terminal" -> NovexIcons.Terminal
+        "code" -> NovexIcons.Code
+        "image" -> NovexIcons.Image
+        "audio" -> NovexIcons.AudioFile
+        "video" -> NovexIcons.VideoFile
+        "archive" -> NovexIcons.Archive
+        "pdf" -> NovexIcons.PictureAsPdf
+        "database" -> NovexIcons.Storage
+        else -> NovexIcons.InsertDriveFile
     }
 }
