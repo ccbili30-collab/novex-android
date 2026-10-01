@@ -4,61 +4,56 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.geometry.Rect
 
 /**
- * Per-conversation registry of currently-laid-out message bounds. Lets the
- * outer [androidx.compose.foundation.text.selection.SelectionContainer]'s
- * custom [androidx.compose.ui.platform.TextToolbar] look up which message
- * a selection rect belongs to so it can offer "Copy Markdown" / "Copy Rich
- * Text" of the originating message's full markdown.
+ * 会话内「已布局消息边界」登记处（血统清剿 P3.7 就地真重写；查询语义与
+ * CompositionLocal 名为消费方依赖面冻结）。
  *
- * The registry is keyed by message id and stores the message's bounds in
- * window coordinates plus a snapshot of its joined markdown source. Each
- * `AssistantMessageView` writes into the registry via `onGloballyPositioned`
- * and clears its entry on dispose.
+ * 让外层 [androidx.compose.foundation.text.selection.SelectionContainer] 的
+ * 自定义 [androidx.compose.ui.platform.TextToolbar] 能查出选区矩形属于哪条
+ * 消息，从而提供来源消息完整 markdown 的「复制 Markdown / 复制富文本」。
  *
- * Lookup picks the message whose bounds vertically contain the y-center of
- * the query rect — selection rects are typically short horizontal ranges,
- * but they cleanly belong to a single message in the y axis. When no entry
- * matches (cross-message selection or a rect that misses everything) the
- * lookup returns null and the caller falls back to the system Copy bar
- * behavior.
+ * 登记以消息 id 为键，存窗口坐标下的边界 + 该消息拼接 markdown 源的快照。
+ * 每个 `AssistantMessageView` 经 `onGloballyPositioned` 写入、离开组合时
+ * 清掉自己的条目。
+ *
+ * 查询取「边界在竖直方向罩住查询矩形 y 中心」的那条消息——选区矩形通常
+ * 是短横向区间，但 y 轴上干净地归属唯一消息。没有命中（跨消息选区或矩形
+ * 全打空）返回 null，调用方回落系统复制条行为。
  */
 class MessageBoundsRegistry {
+
     /**
-     * One slot per (messageId, slotKey) so a message that flattens into
-     * multiple LazyColumn items (text block + tool pills + ...) can register
-     * each piece independently. The markdown is the message-wide markdown,
-     * shared across all of that message's slots.
+     * (messageId, slotKey) 一格：一条消息摊平成多个 LazyColumn 条目（正文
+     * 块 + 工具药丸 + …）时各件独立登记。markdown 是消息级整体 markdown，
+     * 该消息全部槽位共享。
      */
     private data class Entry(val bounds: Rect, val markdown: String)
-    private val entries = mutableMapOf<Pair<String, String>, Entry>()
+
+    private val slots = mutableMapOf<Pair<String, String>, Entry>()
 
     fun put(messageId: String, slotKey: String, bounds: Rect, markdown: String) {
-        entries[messageId to slotKey] = Entry(bounds, markdown)
+        slots[messageId to slotKey] = Entry(bounds, markdown)
     }
 
     fun remove(messageId: String, slotKey: String) {
-        entries.remove(messageId to slotKey)
+        slots.remove(messageId to slotKey)
     }
 
     /**
-     * Find the markdown for the message whose bounds vertically contain
-     * [rect]'s y-center. Returns null if no slot matches.
+     * 找「边界竖直罩住 [rect] y 中心」的消息 markdown；无槽位命中为 null。
      */
     fun markdownAt(rect: Rect): String? {
-        val y = (rect.top + rect.bottom) / 2f
-        return entries.values.firstOrNull { y in it.bounds.top..it.bounds.bottom }?.markdown
+        val centerY = (rect.top + rect.bottom) / 2f
+        return slots.values.firstOrNull { centerY in it.bounds.top..it.bounds.bottom }?.markdown
     }
 
     /**
-     * Direct messageId → markdown lookup, used by the MinisTextKit selection
-     * toolbar so it can resolve the parent message's source even when both
-     * selection endpoints' shards have scrolled out of the viewport. Falls
-     * back to any registered slot for that message (any slot's markdown ==
-     * the message-wide joined markdown by construction in buildFlatChatItems).
+     * messageId → markdown 直查，MinisTextKit 选区工具条用——即便选区两端
+     * 的分片都已滚出视口，也能解析出父消息源。回落到该消息任意已登记槽位
+     * （按 buildFlatChatItems 的构造，任一槽位的 markdown 都是消息级拼接
+     * markdown）。
      */
-    fun markdownFor(messageId: String): String? {
-        return entries.entries.firstOrNull { it.key.first == messageId }?.value?.markdown
-    }
+    fun markdownFor(messageId: String): String? =
+        slots.entries.firstOrNull { it.key.first == messageId }?.value?.markdown
 }
 
 val LocalMessageBoundsRegistry = compositionLocalOf<MessageBoundsRegistry?> { null }

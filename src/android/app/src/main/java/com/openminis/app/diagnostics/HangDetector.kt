@@ -5,7 +5,6 @@ import android.os.Handler
 import android.os.Looper
 import android.util.Log
 import java.io.File
-import java.io.FileWriter
 import java.text.SimpleDateFormat
 import java.util.Date
 import java.util.Locale
@@ -17,319 +16,294 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * Main-thread hang watchdog.
+ * 主线程卡顿看门狗（生产线断路器，血统清剿 P3.7 就地真重写）。
  *
- * Posts a heartbeat task to the main looper at a fixed cadence and waits on a
- * background thread for it to fire. If the heartbeat fails to land within
- * [HANG_THRESHOLD_MS], the main thread is considered hung — capture its stack
- * trace, append a record to a daily `stall-<date>.log` file under the app's
- * logs/ dir, increment a persisted hang counter, and continue.
+ * 工作模型：主 looper 上按固定节拍自续的心跳 + 后台守望线程量「距上次心跳
+ * 的时距」。时距越过 [HANG_TRIGGER_MS] 即判一次卡顿发作（episode）：计数
+ * 落 prefs、追加 `stall-<日期>.log` 采样；发作期间每 [RESAMPLE_STEP_MS]
+ * 再采一帧主线程栈，用多帧对比区分「卡在一帧」与「同族帧打转」；心跳恢复
+ * 时补一帧 post-recovery 快照收口。
  *
- * After [HANG_LIMIT_FOR_BREAKER] hangs accumulate the [shouldForceHomeOnLaunch]
- * gate flips true. AppNavigation reads it on cold start and overrides the
- * user's "open last session" / "open new chat" launch preference to "open
- * home" (mode 3) so the user isn't trapped in a loop where every cold start
- * lands on a session that hangs the UI again.
+ * 两级断路（消费方）：
+ * 1. 渲染降级（[renderBreakerActive]，发作数 ≥ [RENDER_DEGRADE_N]）：流式
+ *    markdown 降级纯文本——刻意比启动断路器早一档，因为 ANR 基线日志显示
+ *    系统在第 2~3 次卡顿之间就杀进程，计数 3 的闸门永远赶不上现场。
+ * 2. 启动改落地首页（计数 ≥ [LAUNCH_BREAKER_N]，冷启时导航层读取）：把用户
+ *    「续上次会话/直接新聊」的偏好改判为回首页，避免每次冷启都落回那个
+ *    一进就卡的会话。
  *
- * The counter resets when the user successfully runs a chat session for
- * [RESET_AFTER_QUIET_MS] without another hang firing — see [markHealthyTick].
- *
- * No iOS counterpart yet (intentional — iOS only has the DEBUG-mode RPC hang
- * detector at src/ios/Debug/DebugRPCHangDetector.swift; this is a production
- * circuit breaker).
+ * 计数自愈：健康 UI 面（聊天屏）周期性调 [markHealthyTick]，距上次卡顿安静
+ * 满 [QUIET_RESET_MS] 即清零；设置页也可手动清零。
  */
 object HangDetector {
 
     private const val TAG = "HangDetector"
 
-    /** Heartbeat cadence — how often the watchdog pings the main thread. */
-    private const val HEARTBEAT_INTERVAL_MS = 1_000L
-
-    /** A hang fires once the main thread has missed a heartbeat for this long. */
-    private const val HANG_THRESHOLD_MS = 3_000L
+    // -- 节拍与判定阈值（行为冻结面） ------------------------------------
+    private const val HEARTBEAT_PERIOD_MS = 1_000L
+    private const val HANG_TRIGGER_MS = 3_000L
 
     /**
-     * [T-android-hangdetector-midhang-sample] While a hang episode is still
-     * ongoing, re-sample the main-thread stack this often. Multiple samples
-     * across one long hang show whether the thread is stuck in ONE frame
-     * (a single blocking call) or churning through related frames (a loop)
-     * — and guarantee samples land while the work is actually on the stack.
-     * Replaces the old MIN_GAP_BETWEEN_LOGS_MS single-shot dedupe, whose one
-     * trip-time snapshot was frequently an idle stack (background process
-     * freezes resume with a huge heartbeat gap but an already-idle main
-     * thread — that's why historical stall logs were full of
-     * nativePollOnce frames).
+     * 发作中重采样主栈的步长。后台进程冻结解冻时会带着巨大心跳时距回来但主
+     * 线程其实已闲——单点快照常拍到空转栈（nativePollOnce），多帧采样才能
+     * 钉住真凶；也保证采样落在活栈期间。
      */
-    private const val MID_HANG_RESAMPLE_MS = 3_000L
+    private const val RESAMPLE_STEP_MS = 3_000L
 
-    /** Once `count >= this`, AppNavigation forces launch mode = home. */
-    private const val HANG_LIMIT_FOR_BREAKER = 3
+    private const val LAUNCH_BREAKER_N = 3
+    private const val RENDER_DEGRADE_N = 2
+    private const val QUIET_RESET_MS = 10_000L
 
-    /**
-     * [T-android-render-breaker] Once `count >= this`, streaming markdown
-     * rendering degrades to plain text until the hang count resets (quiet
-     * period or manual reset). Deliberately one step EARLIER than the launch
-     * breaker: the ANR-loop baseline (minis-2026-06-10.log) shows the system
-     * kills the process between hang #2 and #3, so a count-3 gate never fires
-     * in the scenario it exists for.
-     */
-    private const val RENDER_DEGRADE_HANG_COUNT = 2
-
-    /** Quiet period (no hang firing) after which the count resets. */
-    private const val RESET_AFTER_QUIET_MS = 10_000L
-
+    // -- 持久化契约（prefs 名与键冻结） ----------------------------------
     private const val PREFS_NAME = "hang_detector_prefs"
     private const val KEY_HANG_COUNT = "hang_count"
     private const val KEY_LAST_HANG_AT = "last_hang_at_ms"
 
+    // -- stall 日志文件契约（文件名与行格式冻结） -------------------------
     private const val STALL_LOG_DIR = "logs"
     private const val STALL_LOG_PREFIX = "stall-"
-    private val DATE_FORMAT = SimpleDateFormat("yyyy-MM-dd", Locale.US)
-    private val TIMESTAMP_FORMAT = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
+    private val DAY_FMT = SimpleDateFormat("yyyy-MM-dd", Locale.US)
+    private val CLOCK_FMT = SimpleDateFormat("HH:mm:ss.SSS", Locale.US)
 
     private val mainHandler = Handler(Looper.getMainLooper())
     private val started = AtomicBoolean(false)
 
-    /** Heartbeat ticks bumped by the main-thread side of each ping. */
-    private val lastHeartbeatAt = AtomicLong(0L)
-    private val lastLogAt = AtomicLong(0L)
+    /** 主线程心跳时间戳（心跳任务自身维护）。 */
+    private val beatAt = AtomicLong(0L)
 
     private var appContext: Context? = null
 
     private val _renderBreakerActive = MutableStateFlow(false)
 
     /**
-     * [T-android-render-breaker] Live signal that streaming markdown rendering
-     * should degrade to plain text (main thread has hung
-     * [RENDER_DEGRADE_HANG_COUNT]+ times recently). Consumed by the chat
-     * renderer (LargeContentGuard); cleared by the same quiet-period / manual
-     * resets that clear the hang count. Seeded from the persisted count at
-     * [start] so a relaunch mid-loop starts degraded instead of hanging again
-     * before the first in-process hang fires.
+     * 渲染降级活信号：true 时流式 markdown 以纯文本呈现。start() 时用持久化
+     * 计数播种——ANR 循环里进程活不到攒满两次进程内卡顿，但计数跨重启存活，
+     * 半路重启直接以降级态起，先别再卡一次。
      */
     val renderBreakerActive: StateFlow<Boolean> = _renderBreakerActive.asStateFlow()
 
-    /** Start the watchdog. Idempotent; safe to call from MinisApp.onCreate(). */
+    /** 幂等启动；MinisApp.onCreate 调用安全。 */
     fun start(context: Context) {
         if (!started.compareAndSet(false, true)) return
         appContext = context.applicationContext
-        lastHeartbeatAt.set(System.currentTimeMillis())
-        // [T-android-render-breaker] Seed the render breaker from the
-        // PERSISTED hang count: in the ANR-kill loop the process never lives
-        // long enough to accumulate 2 in-process hangs, but the count
-        // survives restarts — so a relaunch mid-loop starts with degraded
-        // streaming rendering instead of hanging once more first.
-        if (currentHangCount(context) >= RENDER_DEGRADE_HANG_COUNT) {
-            _renderBreakerActive.value = true
-            Log.w(TAG, "render breaker seeded ACTIVE from persisted hang count")
-        }
-        scheduleHeartbeat()
-        // Use a non-daemon thread so the watchdog isn't reaped while the app
-        // is still alive but scheduled out. Daemon threads also die earlier
-        // when the JVM is winding down, which can suppress the very stalls
-        // we want to capture.
-        thread(name = "HangDetector-watch", isDaemon = false) { watchLoop() }
-        // [T-HANG-DIAG] echo via stdout *and* logcat so the start banner
-        // shows up regardless of whether the user has Settings → Logging
-        // enabled. AppLogger replaces System.out with its file-writing
-        // PrintStream when logging is on; when logging is off this still
-        // surfaces under `adb logcat`. Same pattern is used by recordHang
-        // so its output is also captured both ways.
-        val banner = "[T-HANG-DIAG] HangDetector started: threshold=${HANG_THRESHOLD_MS}ms " +
-            "interval=${HEARTBEAT_INTERVAL_MS}ms limit=$HANG_LIMIT_FOR_BREAKER"
-        println(banner)
-        Log.i(TAG, banner)
+        beatAt.set(System.currentTimeMillis())
+        seedRenderBreakerFromPersistedCount(context)
+        armHeartbeat()
+        // 非守护线程：进程还活着但被调度出去时看门狗不能被收割；JVM 收尾期
+        // 守护线程提前死，会吞掉正要捕获的卡顿。
+        thread(name = "HangDetector-watch", isDaemon = false) { watchForever() }
+        echoStartBanner()
     }
 
     /**
-     * Called by long-running healthy UI surfaces (e.g. ChatScreen) to confirm
-     * the main thread has been responsive for [RESET_AFTER_QUIET_MS] since the
-     * last hang. Cheap on the hot path — early-returns when the count is
-     * already 0.
+     * 长寿健康 UI 面的确认心跳：计数为 0 时零开销早退；距最近一次卡顿安静满
+     * [QUIET_RESET_MS] 则清零并解除渲染降级。
      */
     fun markHealthyTick() {
         val ctx = appContext ?: return
-        val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+        val prefs = hangPrefs(ctx)
         if (prefs.getInt(KEY_HANG_COUNT, 0) == 0) return
-        val lastHangAt = prefs.getLong(KEY_LAST_HANG_AT, 0L)
-        if (lastHangAt > 0 && System.currentTimeMillis() - lastHangAt < RESET_AFTER_QUIET_MS) return
-        prefs.edit()
-            .putInt(KEY_HANG_COUNT, 0)
-            .putLong(KEY_LAST_HANG_AT, 0L)
-            .apply()
-        // [T-android-render-breaker] Healthy again — restore full rendering.
+        val lastAt = prefs.getLong(KEY_LAST_HANG_AT, 0L)
+        if (lastAt > 0 && System.currentTimeMillis() - lastAt < QUIET_RESET_MS) return
+        clearCount(prefs)
         _renderBreakerActive.value = false
         Log.i(TAG, "hang count reset after quiet period")
     }
 
     /**
-     * AppNavigation calls this on cold start. Returns true once the breaker
-     * threshold is hit, asking the launch resolver to ignore the user's
-     * "open last session / open new chat" preference and land on the home
-     * screen instead — the only safe destination when the previous launches
-     * have been hanging.
+     * 冷启动断路器闸门：true 时导航层应无视「续上次会话/新聊」偏好直接落
+     * 首页——前几次启动都在卡的时候，首页是唯一安全落点。
      */
-    fun shouldForceHomeOnLaunch(context: Context): Boolean {
-        val prefs = context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        return prefs.getInt(KEY_HANG_COUNT, 0) >= HANG_LIMIT_FOR_BREAKER
-    }
+    fun shouldForceHomeOnLaunch(context: Context): Boolean =
+        hangPrefs(context).getInt(KEY_HANG_COUNT, 0) >= LAUNCH_BREAKER_N
 
-    /** Manual reset (Settings → "Reset hang counter") — clears immediately. */
+    /** 手动清零（设置页「重置卡顿计数」），同步解除渲染降级。 */
     fun resetHangCount(context: Context) {
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .edit()
-            .putInt(KEY_HANG_COUNT, 0)
-            .putLong(KEY_LAST_HANG_AT, 0L)
-            .apply()
-        // [T-android-render-breaker] Manual reset also restores full rendering.
+        clearCount(hangPrefs(context))
         _renderBreakerActive.value = false
     }
 
     fun currentHangCount(context: Context): Int =
-        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-            .getInt(KEY_HANG_COUNT, 0)
+        hangPrefs(context).getInt(KEY_HANG_COUNT, 0)
 
-    // -- internals -----------------------------------------------------------
+    // -- 心跳侧 ------------------------------------------------------------
 
-    private fun scheduleHeartbeat() {
+    /** 主线程自续心跳：每拍刷新时间戳再排下一拍。 */
+    private fun armHeartbeat() {
         mainHandler.postDelayed({
-            lastHeartbeatAt.set(System.currentTimeMillis())
-            scheduleHeartbeat()
-        }, HEARTBEAT_INTERVAL_MS)
+            beatAt.set(System.currentTimeMillis())
+            armHeartbeat()
+        }, HEARTBEAT_PERIOD_MS)
     }
 
-    private fun watchLoop() {
-        // [T-HANG-DIAG] one-line confirmation that the watchdog thread itself
-        // actually entered its loop — distinct from start() which only proves
-        // the thread was *spawned*.
-        println("[T-HANG-DIAG] HangDetector watchLoop entered")
-        var ticks = 0L
-        // [T-android-hangdetector-midhang-sample] Episode state: a hang
-        // episode starts when the heartbeat gap first crosses the threshold
-        // and ends when a heartbeat lands again. The episode is COUNTED once
-        // (breakers depend on count semantics) but SAMPLED repeatedly.
-        var hangActive = false
-        var lastSampleAt = 0L
-        var escalation = 0
-        var episodePeakSinceMs = 0L
+    // -- 守望侧 ------------------------------------------------------------
+
+    /**
+     * 发作状态机：idle →（时距越限）onset（计数+首帧采样）→（持续越限）
+     * 每 RESAMPLE_STEP_MS 补采样 →（心跳恢复）收口帧回到 idle。
+     * 「计数」每发作一次、「采样」发作内多次，两者解耦。
+     */
+    private class Episode(
+        var peakGapMs: Long,
+        var sampledAt: Long,
+        var resamples: Int,
+    )
+
+    private fun watchForever() {
+        // start() 只证明线程拉起来了；这行证明循环真的进去了。
+        echo("[T-HANG-DIAG] HangDetector watchLoop entered")
+        var loopCount = 0L
+        var episode: Episode? = null
         while (true) {
             try {
                 Thread.sleep(500)
             } catch (e: InterruptedException) {
                 return
             }
-            ticks++
+            loopCount++
             val now = System.currentTimeMillis()
-            val since = now - lastHeartbeatAt.get()
-            // [T-HANG-DIAG] every 30 ticks (~15s) emit a liveness ping so we
-            // can confirm the watchdog is alive even when nothing hangs.
-            // Volume is intentionally tiny (~4 lines / minute).
-            if (ticks % 30L == 0L) {
-                println("[T-HANG-DIAG] HangDetector tick=$ticks sinceHeartbeat=${since}ms")
+            val gapMs = now - beatAt.get()
+            // 守望线程自身存活 ping，约 4 行/分钟，刻意压低音量。
+            if (loopCount % 30L == 0L) {
+                echo("[T-HANG-DIAG] HangDetector tick=$loopCount sinceHeartbeat=${gapMs}ms")
             }
-            if (since < HANG_THRESHOLD_MS) {
-                if (hangActive) {
-                    // Episode over — the heartbeat landed. One labeled
-                    // post-recovery snapshot closes the record (its stack is
-                    // expectedly idle; it documents WHEN the thread came
-                    // back and the episode's peak gap).
-                    hangActive = false
-                    writeStallSample("post-recovery", episodePeakSinceMs, escalation)
-                    println(
-                        "[T-HANG-DIAG] hang episode ENDED peak=${episodePeakSinceMs}ms midHangSamples=${escalation + 1}",
-                    )
-                }
-                continue
-            }
-            if (!hangActive) {
-                hangActive = true
-                escalation = 0
-                episodePeakSinceMs = since
-                lastSampleAt = now
-                lastLogAt.set(now)
-                // Counts once per episode + writes the first mid-hang sample.
-                recordHang(durationMs = since)
-                continue
-            }
-            episodePeakSinceMs = maxOf(episodePeakSinceMs, since)
-            if (now - lastSampleAt >= MID_HANG_RESAMPLE_MS) {
-                lastSampleAt = now
-                escalation++
-                writeStallSample("mid-hang", since, escalation)
+            episode = if (gapMs < HANG_TRIGGER_MS) {
+                episode?.let { closeEpisode(it) } ?: episode
+                null
+            } else {
+                episode?.let { continueEpisode(it, now, gapMs) } ?: openEpisode(now, gapMs)
             }
         }
     }
 
-    /**
-     * [T-android-hangdetector-midhang-sample] Capture the MAIN thread's stack
-     * right now and persist it: full ~25 frames into stall-<date>.log, a
-     * compact top-5 line into stdout/logcat (feeds the daily AppLogger file)
-     * tagged [JankDiag] for grep. Thread.getStackTrace on a hung thread is
-     * safe and cheap (VM suspends just that thread for the walk); no count /
-     * breaker side effects — those live in [recordHang].
-     */
-    private fun writeStallSample(label: String, durationMs: Long, escalation: Int) {
-        val ctx = appContext ?: return
-        val mainStack = try {
-            Looper.getMainLooper().thread.stackTrace
-        } catch (t: Throwable) {
-            arrayOf<StackTraceElement>()
-        }
-        val ts = TIMESTAMP_FORMAT.format(Date())
-        val date = DATE_FORMAT.format(Date())
-        val builder = StringBuilder()
-        builder.append(
-            "===== HANG @ $ts (duration ~${durationMs}ms) sample=$label escalation=$escalation =====\n",
-        )
-        builder.append("thread: main\n")
-        for (frame in mainStack.take(25)) builder.append("  at $frame\n")
-        builder.append("\n")
+    /** 发作开始：计数一次 + 首帧采样。 */
+    private fun openEpisode(now: Long, gapMs: Long): Episode {
+        val fresh = Episode(peakGapMs = gapMs, sampledAt = now, resamples = 0)
+        bumpPersistedHangCount(gapMs)
+        return fresh
+    }
 
-        val top5 = mainStack.take(5).joinToString(" <- ") {
-            "${it.className.substringAfterLast('.')}.${it.methodName}:${it.lineNumber}"
+    /** 发作持续：刷新峰值，到步长就补一帧。 */
+    private fun continueEpisode(state: Episode, now: Long, gapMs: Long): Episode {
+        state.peakGapMs = maxOf(state.peakGapMs, gapMs)
+        if (now - state.sampledAt >= RESAMPLE_STEP_MS) {
+            state.sampledAt = now
+            state.resamples++
+            captureSample("mid-hang", gapMs, state.resamples)
         }
-        // [T-android-content-perf-diag] Attach the currently-rendering large
-        // message's structural fingerprint (if any) so a Matcher/Pattern stall
-        // stack maps straight to "this message, this content shape" from the log.
+        return state
+    }
+
+    /** 发作结束：一帧标注 post-recovery 的收口快照（预期闲栈，记录恢复时刻与峰值）。 */
+    private fun closeEpisode(state: Episode) {
+        captureSample("post-recovery", state.peakGapMs, state.resamples)
+        echo(
+            "[T-HANG-DIAG] hang episode ENDED peak=${state.peakGapMs}ms midHangSamples=${state.resamples + 1}",
+        )
+    }
+
+    /**
+     * 抓当前主线程栈并双通道落档：完整约 25 帧进 `stall-<日期>.log`；紧凑
+     * top-5 行走 stdout+logcat（进 AppLogger 日报），[JankDiag] 标签供 grep。
+     * 挂死线程上 getStackTrace 安全且便宜（VM 只暂停目标线程走栈）；本函数
+     * 无计数/断路副作用，那在 [bumpPersistedHangCount]。
+     */
+    private fun captureSample(label: String, durationMs: Long, escalation: Int) {
+        val ctx = appContext ?: return
+        val mainStack = currentMainThreadStack()
         val renderFields = ContentDiag.currentRenderLogFields()
-        println(
+        val top5 = mainStack.take(5).joinToString(" <- ") { frame ->
+            "${frame.className.substringAfterLast('.')}.${frame.methodName}:${frame.lineNumber}"
+        }
+        echo(
             "[T-HANG-DIAG][JankDiag] sample=$label escalation=$escalation duration=${durationMs}ms top5: $top5$renderFields",
         )
+        appendStallFile(ctx, label, durationMs, escalation, mainStack)
+    }
 
+    private fun currentMainThreadStack(): Array<StackTraceElement> = try {
+        Looper.getMainLooper().thread.stackTrace
+    } catch (t: Throwable) {
+        emptyArray()
+    }
+
+    /** stall 文件追加一段采样记录（文件名与各行格式为排障契约，冻结）。 */
+    private fun appendStallFile(
+        ctx: Context,
+        label: String,
+        durationMs: Long,
+        escalation: Int,
+        mainStack: Array<StackTraceElement>,
+    ) {
+        val now = Date()
+        val clock = CLOCK_FMT.format(now)
+        val day = DAY_FMT.format(now)
+        val body = buildString {
+            append("===== HANG @ $clock (duration ~${durationMs}ms) sample=$label escalation=$escalation =====\n")
+            append("thread: main\n")
+            for (frame in mainStack.take(25)) append("  at $frame\n")
+            append("\n")
+        }
         try {
             val dir = File(ctx.filesDir, STALL_LOG_DIR).also { it.mkdirs() }
-            val file = File(dir, "$STALL_LOG_PREFIX$date.log")
-            FileWriter(file, /* append = */ true).use { it.write(builder.toString()) }
+            File(dir, "$STALL_LOG_PREFIX$day.log").appendText(body)
         } catch (t: Throwable) {
             val msg = "[T-HANG-DIAG] FAILED to write stall log: ${t.javaClass.simpleName}: ${t.message}"
-            println(msg)
+            echo(msg)
             Log.w(TAG, msg)
         }
     }
 
-    private fun recordHang(durationMs: Long) {
+    /** 一次发作的计数与断路副作用。 */
+    private fun bumpPersistedHangCount(durationMs: Long) {
         val ctx = appContext ?: return
-        // [T-android-hangdetector-midhang-sample] The trip-time stack IS a
-        // mid-hang sample (the heartbeat is 3s stale and the main thread is
-        // still stuck); the watchdog keeps re-sampling every
-        // MID_HANG_RESAMPLE_MS via writeStallSample while the episode lasts.
-        writeStallSample("mid-hang", durationMs, escalation = 0)
+        // 起报那帧本身就是一次 mid-hang 采样（心跳已 3s 未落且主线程仍卡）。
+        captureSample("mid-hang", durationMs, escalation = 0)
 
-        val prefs = ctx.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
-        val newCount = prefs.getInt(KEY_HANG_COUNT, 0) + 1
+        val prefs = hangPrefs(ctx)
+        val count = prefs.getInt(KEY_HANG_COUNT, 0) + 1
         prefs.edit()
-            .putInt(KEY_HANG_COUNT, newCount)
+            .putInt(KEY_HANG_COUNT, count)
             .putLong(KEY_LAST_HANG_AT, System.currentTimeMillis())
             .apply()
-        // [T-android-render-breaker] Trip the render degrade one hang BEFORE
-        // the system would ANR-kill us (baseline showed death between #2/#3).
-        if (newCount >= RENDER_DEGRADE_HANG_COUNT && !_renderBreakerActive.value) {
+        // 比 ANR 击杀提前一次触发渲染降级（基线显示 #2~#3 之间进程即死）。
+        if (count >= RENDER_DEGRADE_N && !_renderBreakerActive.value) {
             _renderBreakerActive.value = true
-            Log.w(TAG, "render breaker TRIPPED at hang count=$newCount — streaming markdown degrades to plain text")
+            Log.w(TAG, "render breaker TRIPPED at hang count=$count — streaming markdown degrades to plain text")
         }
-        val tail = "hang detected duration=${durationMs}ms count=$newCount " +
-            "breakerActive=${newCount >= HANG_LIMIT_FOR_BREAKER}"
-        println("[T-HANG-DIAG] $tail")
-        Log.w(TAG, tail)
+        val summary = "hang detected duration=${durationMs}ms count=$count " +
+            "breakerActive=${count >= LAUNCH_BREAKER_N}"
+        echo("[T-HANG-DIAG] $summary")
+        Log.w(TAG, summary)
     }
+
+    // -- 小工具 ------------------------------------------------------------
+
+    private fun hangPrefs(context: Context) =
+        context.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
+
+    private fun clearCount(prefs: android.content.SharedPreferences) {
+        prefs.edit()
+            .putInt(KEY_HANG_COUNT, 0)
+            .putLong(KEY_LAST_HANG_AT, 0L)
+            .apply()
+    }
+
+    private fun seedRenderBreakerFromPersistedCount(context: Context) {
+        if (currentHangCount(context) >= RENDER_DEGRADE_N) {
+            _renderBreakerActive.value = true
+            Log.w(TAG, "render breaker seeded ACTIVE from persisted hang count")
+        }
+    }
+
+    private fun echoStartBanner() {
+        // stdout+logcat 双通道：设置里没开日志时 adb logcat 仍可见；开了日志
+        // AppLogger 会接管 System.out 落文件。captureSample 同理。
+        val banner = "[T-HANG-DIAG] HangDetector started: threshold=${HANG_TRIGGER_MS}ms " +
+            "interval=${HEARTBEAT_PERIOD_MS}ms limit=$LAUNCH_BREAKER_N"
+        echo(banner)
+        Log.i(TAG, banner)
+    }
+
+    private fun echo(line: String) = println(line)
 }

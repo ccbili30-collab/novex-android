@@ -1,11 +1,19 @@
 package com.openminis.app.tools
 
 import android.content.Context
+import novex.android.data.ContentPaths
 import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
-import novex.android.data.ContentPaths
 
+/**
+ * file_edit 工具（血统清剿 P3.7 就地真重写；工具定义文案与错误/成功串为
+ * 模型面契约冻结面）。
+ *
+ * 对既有文件做定点编辑：精确串替换。改文件前**必须**先 file_read 看过现
+ * 状；改既有文件优先 file_edit 而非 file_write——只需给出变化的那一段。
+ * old_string 必须在文件里恰好命中一处（含空白/缩进），除非 replace_all。
+ */
 object FileEditTool {
     const val NAME = "file_edit"
 
@@ -23,69 +31,61 @@ object FileEditTool {
         propertyOrdering = listOf("tool_title", "path", "old_string", "new_string", "replace_all"),
     )
 
-    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
-        return try {
-            val args = JSONObject(argsJson)
-            val path = args.optString("path", "")
-            val oldString = args.optString("old_string", "")
-            val newString = args.optString("new_string", "")
-            val replaceAll = args.optBoolean("replace_all", false)
-            val toolTitle = args.optString("tool_title", NAME)
+    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult = try {
+        runEdit(JSONObject(argsJson), sessionId, context)
+    } catch (e: Exception) {
+        ToolExecutionResult("Error editing file: ${e.message}", false)
+    }
 
-            if (path.isBlank()) {
-                return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
-            }
-            if (oldString.isEmpty()) {
-                return ToolExecutionResult("Error: 'old_string' is required and cannot be empty", false, toolTitle = toolTitle)
-            }
+    private fun runEdit(args: JSONObject, sessionId: String, context: Context): ToolExecutionResult {
+        val fail: (String) -> ToolExecutionResult = {
+            ToolExecutionResult(it, false, toolTitle = args.optString("tool_title", NAME))
+        }
 
+        val path = args.optString("path", "")
+        val oldText = args.optString("old_string", "")
+        val newText = args.optString("new_string", "")
+        val replaceAll = args.optBoolean("replace_all", false)
 
-            // T123: per-session resolver — see FileWriteTool for rationale.
-            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
-                ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
+        if (path.isBlank()) return fail("Error: 'path' is required")
+        if (oldText.isEmpty()) return fail("Error: 'old_string' is required and cannot be empty")
 
-            if (!file.exists()) {
-                return ToolExecutionResult("Error: File not found: $path", false, toolTitle = toolTitle)
-            }
+        // T123：按会话解析——理由见 FileWriteTool。
+        val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
+            ?: return fail("Error: Cannot resolve path: $path")
+        if (!file.exists()) return fail("Error: File not found: $path")
 
-            val content = file.readText()
-
-            // Count occurrences
-            var count = 0
-            var searchFrom = 0
-            while (true) {
-                val idx = content.indexOf(oldString, searchFrom)
-                if (idx < 0) break
-                count++
-                searchFrom = idx + oldString.length
-            }
-
-            if (count == 0) {
-                return ToolExecutionResult("Error: old_string not found in $path", false, toolTitle = toolTitle)
-            }
-
-            if (count > 1 && !replaceAll) {
-                return ToolExecutionResult(
-                    "Error: old_string found $count times in $path. Use replace_all=true to replace all occurrences, " +
-                        "or provide a more specific old_string that matches exactly once.",
-                    false, toolTitle = toolTitle
-                )
-            }
-
-            val newContent = if (replaceAll) {
-                content.replace(oldString, newString)
-            } else {
-                content.replaceFirst(oldString, newString)
-            }
-
-            file.writeText(newContent)
-            val replacements = if (replaceAll) count else 1
-            ToolExecutionResult(
-                "Edited $path ($replacements replacement(s), ${newContent.length} bytes)",
-                true, toolTitle = toolTitle
+        val original = file.readText()
+        val hits = countOccurrences(original, oldText)
+        if (hits == 0) return fail("Error: old_string not found in $path")
+        if (hits > 1 && !replaceAll) {
+            return fail(
+                "Error: old_string found $hits times in $path. Use replace_all=true to replace all occurrences, " +
+                    "or provide a more specific old_string that matches exactly once.",
             )
-        } catch (e: Exception) {
-            ToolExecutionResult("Error editing file: ${e.message}", false)
+        }
+
+        val revised = if (replaceAll) original.replace(oldText, newText)
+        else original.replaceFirst(oldText, newText)
+        file.writeText(revised)
+
+        val replacements = if (replaceAll) hits else 1
+        return ToolExecutionResult(
+            "Edited $path ($replacements replacement(s), ${revised.length} bytes)",
+            true,
+            toolTitle = args.optString("tool_title", NAME),
+        )
+    }
+
+    /** 非重叠出现次数：游标每次跳过整段命中。 */
+    private fun countOccurrences(haystack: String, needle: String): Int {
+        var total = 0
+        var cursor = 0
+        while (true) {
+            val at = haystack.indexOf(needle, cursor)
+            if (at < 0) return total
+            total++
+            cursor = at + needle.length
         }
     }
 }

@@ -1,13 +1,24 @@
 package com.openminis.app.tools
 
 import android.content.Context
+import com.openminis.app.logging.AppLogger
+import novex.android.data.ContentPaths
 import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
-import novex.android.data.ContentPaths
 
+/**
+ * file_write 工具（血统清剿 P3.7 就地真重写；工具定义文案、错误/成功串与
+ * 挂载写诊断日志为契约冻结面）。
+ *
+ * 往 Linux 文件系统写文件：比 shell_execute 快。文件不存在即建；追加模
+ * 式可续写既有文件。
+ */
 object FileWriteTool {
     const val NAME = "file_write"
+
+    private const val LOG_TAG = "FileWrite"
+    private const val MOUNTS_PREFIX = "/var/minis/mounts/"
 
     fun definition(): AgentToolDefinition = AgentToolDefinition(
         name = NAME,
@@ -23,76 +34,84 @@ object FileWriteTool {
         propertyOrdering = listOf("tool_title", "path", "content", "append", "create_dirs"),
     )
 
-    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
-        return try {
-            val args = JSONObject(argsJson)
-            val path = args.optString("path", "")
-            val content = args.optString("content", "")
-            val append = args.optBoolean("append", false)
-            val createDirs = args.optBoolean("create_dirs", false)
-            val toolTitle = args.optString("tool_title", NAME)
+    fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult = try {
+        val args = JSONObject(argsJson)
+        val req = ParsedCall(
+            path = args.optString("path", ""),
+            content = args.optString("content", ""),
+            append = args.optBoolean("append", false),
+            createDirs = args.optBoolean("create_dirs", false),
+            title = args.optString("tool_title", NAME),
+        )
+        runWrite(req, sessionId, context)
+    } catch (e: Exception) {
+        ToolExecutionResult("Error writing file: ${e.message}", false)
+    }
 
-            if (path.isBlank()) {
-                return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
-            }
+    private class ParsedCall(
+        val path: String,
+        val content: String,
+        val append: Boolean,
+        val createDirs: Boolean,
+        val title: String,
+    )
 
+    private fun runWrite(req: ParsedCall, sessionId: String, context: Context): ToolExecutionResult {
+        val fail: (String) -> ToolExecutionResult = { ToolExecutionResult(it, false, toolTitle = req.title) }
+        if (req.path.isBlank()) return fail("Error: 'path' is required")
 
-            // T123: per-session resolver so /var/minis/workspace/...,
-            // /var/minis/attachments/..., /var/minis/offloads/...,
-            // /var/minis/browser/... land in this session's host dir
-            // rather than the global bind-mount map (which is overwritten
-            // every time another session boots its shell, last-writer-wins).
-            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
-                ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
+        // T123：按会话解析——/var/minis/workspace/...、/var/minis/attachments/…、
+        // /var/minis/offloads/…、/var/minis/browser/… 要落进本会话的宿主目录，
+        // 而不是全局 bind-mount 表（别的会话一开 shell 就整表覆写，后写者赢）。
+        val file = ContentPaths.resolveSessionHostPath(sessionId, req.path, context)
+            ?: return fail("Error: Cannot resolve path: ${req.path}")
 
-            // Validate UTF-8
-            try {
-                content.toByteArray(Charsets.UTF_8)
-            } catch (e: Exception) {
-                return ToolExecutionResult("Error: Content is not valid UTF-8", false, toolTitle = toolTitle)
-            }
-
-            // T123: mirror iOS AIChatViewModel L8339 — auto-create the
-            // parent dir whenever it doesn't exist, regardless of the
-            // create_dirs flag. Per-session subdirs (workspace, etc.) are
-            // materialized lazily, so a fresh session writing into
-            // /var/minis/workspace/foo/bar.md would otherwise hit "Parent
-            // directory does not exist" on the very first call.
-            val parent = file.parentFile
-            if (parent != null && (createDirs || !parent.exists())) {
-                parent.mkdirs()
-            }
-
-            if (append) {
-                file.appendText(content)
-            } else {
-                file.writeText(content)
-            }
-
-            val bytes = file.length()
-            // Diagnose "write reported success but nothing on disk" (Android 10
-            // legacy-storage FUSE shadow writes): confirm the file is actually
-            // there with the expected size right after writing. A mounted-folder
-            // write that silently no-ops shows exists=false / size mismatch here.
-            if (path.startsWith("/var/minis/mounts/")) {
-                val landed = file.exists() && file.length() == bytes
-                com.openminis.app.logging.AppLogger.info(
-                    "FileWrite",
-                    "mount write path=$path host=${file.absolutePath} bytes=$bytes " +
-                        "exists=${file.exists()} landedOk=$landed",
-                )
-                if (!landed) {
-                    com.openminis.app.logging.AppLogger.warning(
-                        "FileWrite",
-                        "mount write to $path reported success but did NOT persist to " +
-                            "${file.absolutePath} — likely missing WRITE_EXTERNAL_STORAGE / " +
-                            "shadowed FUSE view on this device",
-                    )
-                }
-            }
-            ToolExecutionResult("Wrote to $path ($bytes bytes)", true, toolTitle = toolTitle)
+        // UTF-8 合法性校验。
+        try {
+            req.content.toByteArray(Charsets.UTF_8)
         } catch (e: Exception) {
-            ToolExecutionResult("Error writing file: ${e.message}", false)
+            return fail("Error: Content is not valid UTF-8")
+        }
+
+        // T123：对齐 iOS AIChatViewModel L8339——父目录不存在时一律自动创建，
+        // 不看 create_dirs 旗标。会话子目录（workspace 等）是惰性物化的，
+        // 否则新会话第一次写 /var/minis/workspace/foo/bar.md 就会撞上
+        // 「父目录不存在」。
+        ensureParentFor(file, req.createDirs)
+
+        if (req.append) file.appendText(req.content) else file.writeText(req.content)
+
+        val bytes = file.length()
+        diagnoseMountLanding(req.path, file, bytes)
+        return ToolExecutionResult("Wrote to ${req.path} ($bytes bytes)", true, toolTitle = req.title)
+    }
+
+    private fun ensureParentFor(file: java.io.File, explicitCreate: Boolean) {
+        val parent = file.parentFile ?: return
+        if (explicitCreate || !parent.exists()) parent.mkdirs()
+    }
+
+    /**
+     * 诊断「写报告成功、盘上却什么都没有」（Android 10 legacy-storage 的
+     * FUSE 影子写）：写完立刻回看文件是否真在、尺寸是否如预期。挂载目录
+     * 的静默空写在这里现形（exists=false / 尺寸错位）。
+     */
+    private fun diagnoseMountLanding(path: String, file: java.io.File, bytes: Long) {
+        if (!path.startsWith(MOUNTS_PREFIX)) return
+        val present = file.exists()
+        val landed = present && file.length() == bytes
+        AppLogger.info(
+            LOG_TAG,
+            "mount write path=$path host=${file.absolutePath} bytes=$bytes " +
+                "exists=$present landedOk=$landed",
+        )
+        if (!landed) {
+            AppLogger.warning(
+                LOG_TAG,
+                "mount write to $path reported success but did NOT persist to " +
+                    "${file.absolutePath} — likely missing WRITE_EXTERNAL_STORAGE / " +
+                    "shadowed FUSE view on this device",
+            )
         }
     }
 }

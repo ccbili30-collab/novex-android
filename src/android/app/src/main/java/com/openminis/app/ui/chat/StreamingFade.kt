@@ -15,49 +15,40 @@ import androidx.compose.ui.text.SpanStyle
 import androidx.compose.ui.text.buildAnnotatedString
 
 /**
- * [T-android-stream-fade] Word-level fade-in for streamed markdown text.
+ * [T-android-stream-fade] 流式 markdown 的逐词淡入（血统清剿 P3.7 就地真
+ * 重写；时间常量、缓动曲线与 CompositionLocal 名为行为冻结面）。
  *
- * Mirror of iOS TextFadeAnimator: newly appended characters render at α=0
- * and ease to α=1 over [FADE_DURATION_MS], with a small staggered delay
- * across word boundaries so the appearance reads as "words landing in
- * sequence" rather than "a single block flashing on". Only the streaming
- * last block opts in via [LocalAppendOnlyFade]; everything else (history,
- * cold-loaded sessions, completed messages) renders fully opaque.
+ * iOS TextFadeAnimator 的镜像：新追加的字符以 α=0 起渲，在 [FADE_DURATION_MS]
+ * 内缓到 α=1，词界之间带一点错峰延迟——观感是「词挨个落定」，不是「一整
+ * 块闪现」。只有流式尾块经 [LocalAppendOnlyFade] 选择性加入；其余（历史、
+ * 冷加载会话、已完成消息）全不透明渲染。
  *
- * Implementation:
- *  - Each MdText with the local set to true holds a [FadeController] that
- *    tracks the previous plainText prefix. When the new plainText extends
- *    that prefix, the suffix gets sliced into word ranges, each tagged with
- *    a (startTimeNanos, staggerOffsetMs) pair.
- *  - A single `withFrameNanos` loop in the composable advances animation
- *    progress and writes the current alpha to a snapshot-state map. The
- *    MdText reads that map when composing its AnnotatedString overlay, so
- *    only this one MdText recomposes per frame — sibling blocks are inert.
- *  - When all ranges reach α=1 the loop suspends until a new append
- *    arrives, keeping idle cost at zero.
- *  - A guard caps the in-flight word count: bursts beyond [MAX_FADE_WORDS]
- *    are emitted fully opaque instead, matching iOS's TextFadeAnimator
- *    `maxAnimatedWords = 160` short-circuit so a 1k-token reflow can't
- *    saturate the frame budget.
+ * 实现要点：
+ *  - 置位的每个 MdText 持一个 [FadeController]，追踪上一次 plainText 前
+ *    缀。新 plainText 是其延伸时，后缀切成词区间，各挂
+ *    (起始纳秒, 错峰毫秒) 一对；
+ *  - 组合内单个 `withFrameNanos` 循环推进动画进度、把当前 alpha 写进快照
+ *    态 map。MdText 组装 AnnotatedString 覆盖层时读它——每帧只有这一个
+ *    MdText 重组，兄弟块纹丝不动；
+ *  - 全部区间到 α=1 后循环挂起，等下一次追加再醒，空闲成本为零；
+ *  - 护栏：在飞词数超 [MAX_FADE_WORDS] 的突发直接全不透明放行，对齐 iOS
+ *    TextFadeAnimator 的 `maxAnimatedWords = 160` 短路——1k token 的重排
+ *    不许把帧预算吃满。
  */
 
 internal val LocalAppendOnlyFade = compositionLocalOf { false }
 
-// [T-android-streaming-incremental-inline] True only for the LIVE streaming tail
-// block. When set, RenderBlock's Paragraph branch routes inline/math through
-// the incremental cache (frozen closed prefix + fresh unclosed suffix) instead
-// of re-scanning the whole growing paragraph every throttle tick. Off (false)
-// for every frozen/history block, which keeps the plain per-block cache.
+// [T-android-streaming-incremental-inline] 仅对**活的**流式尾块为 true。置
+// 位时 RenderBlock 的 Paragraph 分支把行内/数学改走增量缓存（冻结闭合前缀
+// + 新鲜未闭合后缀），不再每个节流拍都全段重扫。冻结/历史块一律 false，
+// 保持逐块朴素缓存。
 internal val LocalLiveIncremental = compositionLocalOf { false }
 
-// [T-android-stream-fade] Fade made more legible after the dual-path flush +
-// smooth scroll landed: a flush batch is ~5–12 words and the newline fast-path
-// can fire again in <100ms, so a tight 100ms stagger window made the whole
-// batch light up almost together and the per-word reveal was invisible.
-// Widening the stagger window to 300ms (and the per-word cap to 90ms) spreads
-// the words within a batch into a clearly sequential left-to-right reveal even
-// when the next batch arrives quickly; the 350ms per-word fade is unchanged
-// (longer starts to feel laggy).
+// [T-android-stream-fade] 双路冲洗 + 平滑滚动落地后淡入的可读性调整：一个
+// 冲洗批次约 5–12 词，换行快路 100ms 内又能触发，100ms 的紧错峰窗会让整
+// 批几乎同时亮起、逐词揭示完全不可见。错峰窗放宽到 300ms（每词上限 90ms）
+// 后，即便下一批很快到，批内词也拉开成清晰的从左到右次序落定；每词 350ms
+// 的淡入时长不变（再长就开始显拖沓）。
 private const val FADE_DURATION_MS = 350L
 private const val STAGGER_WINDOW_MS = 300L
 private const val PER_WORD_STAGGER_MS = 90L
@@ -70,30 +61,28 @@ private data class FadeRange(
 )
 
 internal class FadeController {
-    /** plainText prefix already seen — anything beyond this is fresh. */
+    /** 已见过的 plainText 前缀——超出它的都是新鲜的。 */
     var lastPlainText: String = ""
         private set
 
-    /** Active animating ranges. Frozen at α=1 ranges are removed each tick. */
+    /** 在飞的动画区间；α=1 的冻结区间每拍移除。 */
     private val rangesState: SnapshotStateList<FadeRange> = mutableListOf<FadeRange>().toMutableStateList()
 
-    /** start-time nanos per range (parallel to rangesState; same indexing). */
+    /** 各区间的起始纳秒（与 rangesState 平行同下标）。 */
     private val rangeStartNanos = ArrayDeque<Long>()
 
-    /** Per-range current alpha, updated each frame; read in [overlay]. */
+    /** 各区间当前 alpha，逐帧更新；[overlay] 读。 */
     val alphas: SnapshotStateMap<Int, Float> = SnapshotStateMap()
 
-    /** True when at least one range is still under α=1. Drives the frame loop. */
+    /** 还有区间未到 α=1 时为 true——帧循环的驱动位。 */
     val hasActiveRanges: Boolean get() = rangesState.isNotEmpty()
 
     fun ingest(newPlainText: String) {
         if (newPlainText == lastPlainText) return
-        // On a hard reset (text shrank or diverged from prefix), drop all
-        // in-flight ranges — the caller is rendering a brand-new block.
+        // 硬重置（文本缩短或不再是指定前缀的延伸）：清空全部在飞区间——
+        // 调用方在渲染一个全新的块。
         if (!newPlainText.startsWith(lastPlainText)) {
-            rangesState.clear()
-            rangeStartNanos.clear()
-            alphas.clear()
+            dropAllRanges()
             lastPlainText = newPlainText
             return
         }
@@ -102,98 +91,97 @@ internal class FadeController {
         lastPlainText = newPlainText
         if (suffix.isEmpty()) return
 
-        // Split suffix into word-like runs separated by whitespace. Punctuation
-        // stays attached to its preceding word (iOS does the same), keeping
-        // the rhythm of "words landing" rather than "every glyph landing".
-        val words = mutableListOf<IntRange>()
-        var cursor = 0
-        var inWord = false
-        var wordStart = 0
-        for (i in suffix.indices) {
-            val c = suffix[i]
-            val isWs = c.isWhitespace()
-            if (!isWs && !inWord) {
-                wordStart = i; inWord = true
-            } else if (isWs && inWord) {
-                words.add(wordStart until i); inWord = false
-            }
-        }
-        if (inWord) words.add(wordStart until suffix.length)
-
-        // Whitespace-only suffix: nothing visible to fade — skip.
+        val words = splitIntoWordRuns(suffix)
+        // 全空白后缀：没有可见的东西可淡——跳过。
         if (words.isEmpty()) return
 
-        // Stagger budget mirrors iOS: window is fixed (100ms), so per-word
-        // stagger shrinks as word count grows; capped at 60ms per word.
         val totalWords = words.size + rangesState.size
         if (totalWords > MAX_FADE_WORDS) {
-            // Too many in flight — flush everything to α=1 and skip the new
-            // ranges so we don't spend frames rendering an invisible wall.
-            rangesState.clear()
-            rangeStartNanos.clear()
-            alphas.clear()
+            // 在飞太多——全部冲到 α=1、新区间不建，别花帧去渲染一堵隐
+            // 形墙。
+            dropAllRanges()
             return
         }
+        // 错峰预算对齐 iOS：窗口固定，词越多每词错峰越短；单词有上限。
         val perWordStaggerMs = minOf(PER_WORD_STAGGER_MS, STAGGER_WINDOW_MS / words.size.coerceAtLeast(1))
 
-        for ((idx, wr) in words.withIndex()) {
-            val absStart = base + wr.first
-            val absEnd = base + wr.last + 1
-            val staggerMs = idx * perWordStaggerMs
-            rangesState.add(FadeRange(absStart, absEnd, staggerMs))
+        words.forEachIndexed { idx, word ->
+            rangesState.add(FadeRange(base + word.first, base + word.last + 1, idx * perWordStaggerMs))
             rangeStartNanos.addLast(System.nanoTime())
         }
     }
 
+    private fun dropAllRanges() {
+        rangesState.clear()
+        rangeStartNanos.clear()
+        alphas.clear()
+    }
+
     /**
-     * Advance every range to its current alpha based on [nowNanos]. Returns
-     * false when no ranges remain animating (caller can suspend the loop).
+     * 后缀切成「空白分隔的词样跑段」。标点跟着前一个词走（iOS 同款）——
+     * 保持「词在落定」的节奏，而不是「每个字形各自落定」。
+     */
+    private fun splitIntoWordRuns(suffix: String): List<IntRange> {
+        val words = mutableListOf<IntRange>()
+        var wordStart = -1
+        for (i in suffix.indices) {
+            val whitespace = suffix[i].isWhitespace()
+            if (!whitespace && wordStart < 0) {
+                wordStart = i
+            } else if (whitespace && wordStart >= 0) {
+                words.add(wordStart until i)
+                wordStart = -1
+            }
+        }
+        if (wordStart >= 0) words.add(wordStart until suffix.length)
+        return words
+    }
+
+    /**
+     * 依 [nowNanos] 推进每个区间到当前 alpha。无区间仍在动画时返回 false
+     * （调用方可挂起循环）。
      */
     fun tick(nowNanos: Long): Boolean {
         if (rangesState.isEmpty()) return false
-        val finished = mutableListOf<Int>()
+        val settled = mutableListOf<Int>()
         for (i in rangesState.indices) {
-            val r = rangesState[i]
-            val startNs = rangeStartNanos.elementAt(i)
-            val elapsedMs = (nowNanos - startNs) / 1_000_000L - r.staggerMs
-            val alpha = if (elapsedMs <= 0) 0f
-            else if (elapsedMs >= FADE_DURATION_MS) 1f
-            else {
-                val t = elapsedMs.toFloat() / FADE_DURATION_MS
-                // Ease-out cubic 1 - (1-t)^3 (matches iOS animator curve).
-                val inv = 1f - t
-                1f - inv * inv * inv
+            val range = rangesState[i]
+            val startedAt = rangeStartNanos.elementAt(i)
+            val visibleMs = (nowNanos - startedAt) / 1_000_000L - range.staggerMs
+            val alpha = when {
+                visibleMs <= 0 -> 0f
+                visibleMs >= FADE_DURATION_MS -> 1f
+                else -> {
+                    val t = visibleMs.toFloat() / FADE_DURATION_MS
+                    // 缓出三次方 1 - (1-t)^3（iOS 动画器同曲线）。
+                    val inv = 1f - t
+                    1f - inv * inv * inv
+                }
             }
-            alphas[r.start] = alpha
-            if (alpha >= 1f) finished.add(i)
+            alphas[range.start] = alpha
+            if (alpha >= 1f) settled.add(i)
         }
-        // Pop finished ranges from the end so indices shift predictably.
-        for (i in finished.asReversed()) {
-            val r = rangesState.removeAt(i)
+        // 从尾摘除已收区间，下标漂移可控。
+        for (i in settled.asReversed()) {
+            val range = rangesState.removeAt(i)
             rangeStartNanos.removeAt(i)
-            alphas.remove(r.start)
+            alphas.remove(range.start)
         }
         return rangesState.isNotEmpty()
     }
 
     /**
-     * Build an AnnotatedString that re-colours each active range to apply
-     * its current alpha. Inactive (α=1) ranges drop out automatically as
-     * [tick] removes them; the surrounding text and original spans are
-     * preserved.
+     * 构建一条把每个活跃区间按当前 alpha 重新着色的 AnnotatedString。非活
+     * 跃（α=1）区间随 [tick] 移除自然退出；周围文本与原有 span 原样保留。
      */
     fun overlay(base: AnnotatedString, baseColor: Color): AnnotatedString {
         if (rangesState.isEmpty()) return base
         return buildAnnotatedString {
             append(base)
-            for (r in rangesState) {
-                val a = alphas[r.start] ?: 0f
-                if (r.end > base.length) continue
-                addStyle(
-                    SpanStyle(color = baseColor.copy(alpha = a)),
-                    r.start,
-                    r.end,
-                )
+            for (range in rangesState) {
+                val alpha = alphas[range.start] ?: 0f
+                if (range.end > base.length) continue
+                addStyle(SpanStyle(color = baseColor.copy(alpha = alpha)), range.start, range.end)
             }
         }
     }
@@ -204,30 +192,27 @@ internal fun rememberFadeController(): FadeController =
     remember { FadeController() }
 
 /**
- * Drives the per-frame tick for [controller]. Suspends when nothing is
- * animating; resumes whenever [controller.hasActiveRanges] flips back to
- * true. Single instance per MdText so each animating block runs independently.
+ * 为 [controller] 驱动逐帧 tick。无动画时挂起；[controller.hasActiveRanges]
+ * 翻回 true 时复醒。每个 MdText 单实例——各动画块互相独立运转。
  */
 @Composable
 internal fun FadeFrameDriver(controller: FadeController) {
-    // ticker is read inside withFrameNanos so the body re-suspends when no
-    // ranges are active; a state read on hasActiveRanges restarts it.
+    // active 在 withFrameNanos 内被读到——没有活跃区间时循环体重新挂起；
+    // 对 hasActiveRanges 的一次状态读把它重新点火。
     val active = controller.hasActiveRanges
     LaunchedEffect(active) {
         if (!active) return@LaunchedEffect
         while (true) {
-            val anyActive = withFrameNanos { now -> controller.tick(now) }
-            if (!anyActive) break
+            val stillActive = withFrameNanos { now -> controller.tick(now) }
+            if (!stillActive) break
         }
     }
 }
 
 /**
- * Hold a stable mutable holder for the most recent base color so the
- * overlay() call doesn't need MdText to pass it through composition every
- * time. Currently unused externally but kept as a hook for future fade
- * extensions (color-shift, ramp-up speed) that depend on the surrounding
- * theme color.
+ * 为最近的基础色持一个稳定可变壳，overlay() 就不必让 MdText 每次经组合
+ * 传色。当前无外部使用者，留作未来淡入扩展（色偏、提速）的挂点——它们
+ * 都会依赖周围的主题色。
  */
 internal data class FadeColorHolder(var color: Color = Color.Unspecified) {
     val state = mutableStateOf(color)

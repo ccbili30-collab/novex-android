@@ -1,9 +1,10 @@
 package com.openminis.app.ui.markdown
 
 /**
- * Lightweight markdown parser that converts raw markdown text into a list of block nodes.
- * Supports: headings, code blocks (fenced), blockquotes, bullet/numbered/task lists,
- * thematic breaks, tables, and paragraphs. Inline parsing is handled separately.
+ * 轻量 markdown 解析器：原文 → 块节点表（血统清剿 P3.7 就地真重写；
+ * Block 形状、全部正则、数学抽取语义与 MdParser 日志行为契约冻结面）。
+ * 支持：标题、围栏代码块、引用块、无序/有序/任务列表、分隔线、表格、
+ * 段落。行内解析另行处理。
  */
 object MarkdownParser {
 
@@ -18,17 +19,16 @@ object MarkdownParser {
         data object ThematicBreak : Block()
 
         /**
-         * Display-mode LaTeX. Either extracted from `$$ … $$` / `\[ … \]`,
-         * or promoted from a paragraph that contained nothing but a single
-         * inline-math placeholder. mhchem (\ce{…}, \pu{…}) is supported via
-         * the bundled assets/katex/mhchem.min.js extension.
+         * 展示模式 LaTeX。来源有二：从 `$$ … $$` / `\[ … \]` 抽取，或由
+         * 「只含单个行内数学占位的段落」升级。mhchem（\ce{…}、\pu{…}）经
+         * 内置 assets/katex/mhchem.min.js 扩展支持。
          */
         data class MathBlock(val latex: String) : Block()
 
         /**
-         * Media blocks extracted from `![alt](url)` when the line only contains
-         * that one image-syntax node. Routing by file extension mirrors iOS
-         * SelectableMarkdownView (nativeImageExts / nativeVideoExts / nativeAudioExts).
+         * 从 `![alt](url)` 抽出的媒体块——仅当该行只有这一个图片语法节点。
+         * 按扩展名路由，对齐 iOS SelectableMarkdownView
+         * （nativeImageExts / nativeVideoExts / nativeAudioExts）。
          */
         data class Image(val alt: String, val url: String) : Block()
         data class Video(val alt: String, val url: String) : Block()
@@ -36,56 +36,51 @@ object MarkdownParser {
     }
 
     /**
-     * A single extracted math expression, identified by a unique placeholder
-     * inserted into the markdown stream before block-parsing. After the AST
-     * is built, the placeholders are looked up by id and restored either as
-     * MathBlock (display) or kept inline (rendered by the inline pass).
+     * 一条抽取出的数学式，以块解析前插入 markdown 流的唯一占位符标识。
+     * AST 建好后按 id 回查：展示式还原成 MathBlock，行内式留在文本里由
+     * 行内趟渲染。
      */
     data class MathSpan(val placeholder: String, val latex: String, val isBlock: Boolean)
 
     /**
-     * Holder shared with [MarkdownText] so the inline parser can also resolve
-     * placeholders to their original LaTeX. Threaded through composition by
-     * passing the whole list of spans alongside the parsed blocks.
+     * 与 [MarkdownText] 共享的容器：行内解析器也能把占位符解析回原 LaTeX。
+     * 经组合把整表 spans 随解析块一起传递。
      */
     data class ParseResult(val blocks: List<Block>, val mathSpans: List<MathSpan>)
-
-    /** Object Replacement Character (U+FFFC) — sentinel used by math placeholders. */
-    private const val ORC = '￼'
-
-    private val nativeVideoExts = setOf("mp4", "mov", "m4v", "avi", "mkv", "webm")
-    private val nativeAudioExts = setOf("mp3", "m4a", "wav", "aac", "ogg", "flac")
-
-    /** Regex for a standalone `![alt](url)` node on its own line. */
-    private val standaloneImageRegex = Regex("""^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$""")
-
-    /**
-     * Classify a media URL by file extension. Extracts the extension from the
-     * *last path segment only* so filenames that contain '#' or '?' (either
-     * literal or percent-encoded) still get their real extension. Handles both
-     * unencoded names (e.g. `foo#China.mp4`) and encoded ones (`foo%23China.mp4`).
-     */
-    private fun mediaBlockFor(alt: String, url: String): Block {
-        val lastSeg = url.substringAfterLast('/')
-        val decoded = runCatching { java.net.URLDecoder.decode(lastSeg, "UTF-8") }.getOrDefault(lastSeg)
-        val ext = decoded.substringAfterLast('.', "").lowercase()
-        return when (ext) {
-            in nativeVideoExts -> Block.Video(alt, url)
-            in nativeAudioExts -> Block.Audio(alt, url)
-            else -> Block.Image(alt, url)
-        }
-    }
 
     data class ListItem(val content: String, val checked: Boolean? = null)
 
     enum class Alignment { LEFT, CENTER, RIGHT }
 
+    /** Object Replacement Character（U+FFFC）——数学占位符的哨兵字符。 */
+    private const val ORC = '￼'
+
+    private const val LOG_TAG = "MdParser"
+
+    // ── 正则表（冻结面：口径即行为） ────────────────────────────────────
+    private val THEMATIC_BREAK = Regex("^\\s{0,3}([-*_])\\s*\\1\\s*\\1(\\s*\\1)*\\s*$")
+    private val ATX_HEADING = Regex("^(#{1,6})\\s+(.+)$")
+    private val BULLET_ITEM = Regex("^\\s{0,3}[-*+]\\s+(.*)$")
+    private val BULLET_ITEM_PREFIX = Regex("^\\s{0,3}[-*+]\\s")
+    private val BULLET_PARA_BREAK = Regex("^\\s{0,3}[-*+]\\s+")
+    // 有序表标记位数钳在 2：防止「2020. 年的…」这类以年份/大数开头的段落
+    // 被误判成第 2020 项（用户报告）。真实列表很少超过 99 项；CommonMark
+    // 自己放到 9 位，我们刻意更紧。
+    private val NUMBERED_ITEM = Regex("^\\s{0,3}(\\d{1,2})[.)\\s]\\s*(.*)$")
+    private val NUMBERED_PARA_BREAK = Regex("^\\s{0,3}\\d{1,2}[.)\\s]\\s")
+    private val SEPARATOR_CELL = Regex("^:?-+:?$")
+    private val MATH_PLACEHOLDER_SCAN = Regex("$ORC" + "MATH(\\d+)" + "$ORC")
+
+    private val nativeVideoExts = setOf("mp4", "mov", "m4v", "avi", "mkv", "webm")
+    private val nativeAudioExts = setOf("mp3", "m4a", "wav", "aac", "ogg", "flac")
+
+    /** 整行只含一个 `![alt](url)` 节点的形态。 */
+    private val standaloneImageRegex = Regex("""^\s*!\[([^\]]*)\]\(([^)\s]+)\)\s*$""")
+
     /**
-     * Top-level entry: extract math, run the standard block parser on the
-     * placeholder-substituted text, then run the math-restore pass that
-     * promotes single-math paragraphs to MathBlock. Inline math placeholders
-     * stay in the paragraph text so the inline pass can render them via
-     * KaTeX. Mirrors iOS MarkdownMathExtractor.extract → cmark → restore.
+     * 顶层入口：抽数学 → 对占位符替换后的文本跑标准块解析 → 跑数学还原趟
+     * （单一数学段升 MathBlock）。行内占位符留在段落文本里，行内趟经
+     * KaTeX 渲染。对齐 iOS MarkdownMathExtractor.extract → cmark → restore。
      */
     fun parseWithMath(markdown: String): ParseResult {
         val (cleaned, spans) = extractMath(markdown)
@@ -95,186 +90,201 @@ object MarkdownParser {
     }
 
     fun parse(markdown: String): List<Block> {
-        android.util.Log.d("MdParser", "parse() len=${markdown.length} preview=${markdown.take(160).replace("\n","\\n")}")
+        android.util.Log.d(LOG_TAG, "parse() len=${markdown.length} preview=${markdown.take(160).replace("\n", "\\n")}")
         val lines = markdown.lines()
         val blocks = mutableListOf<Block>()
-        var i = 0
-
-        while (i < lines.size) {
-            val line = lines[i]
-
-            // Fenced code block
-            if (line.trimStart().startsWith("```")) {
-                val indent = line.indexOf('`')
-                val fence = line.trimStart()
-                val lang = fence.removePrefix("```").trim()
-                val codeLines = mutableListOf<String>()
-                i++
-                while (i < lines.size) {
-                    val cl = lines[i]
-                    if (cl.trimStart().startsWith("```") && cl.trim() == "```") {
-                        i++
-                        break
-                    }
-                    codeLines.add(cl)
-                    i++
-                }
-                blocks.add(Block.CodeBlock(lang, codeLines.joinToString("\n")))
-                continue
+        var cursor = 0
+        while (cursor < lines.size) {
+            val consumed = consumeBlockAt(lines, cursor, blocks)
+            if (consumed > cursor) {
+                cursor = consumed
+            } else {
+                // 兜底前进，防死循环（理论不可达：空行分支必 +1）。
+                cursor++
             }
-
-            // Thematic break
-            if (line.matches(Regex("^\\s{0,3}([-*_])\\s*\\1\\s*\\1(\\s*\\1)*\\s*$"))) {
-                blocks.add(Block.ThematicBreak)
-                i++
-                continue
-            }
-
-            // ATX Heading
-            val headingMatch = Regex("^(#{1,6})\\s+(.+)$").find(line)
-            if (headingMatch != null) {
-                val level = headingMatch.groupValues[1].length
-                val content = headingMatch.groupValues[2].trimEnd().removeSuffix("#").trimEnd()
-                blocks.add(Block.Heading(level, content))
-                i++
-                continue
-            }
-
-            // Blockquote
-            if (line.trimStart().startsWith("> ") || line.trimStart() == ">") {
-                val quoteLines = mutableListOf<String>()
-                while (i < lines.size && (lines[i].trimStart().startsWith("> ") || lines[i].trimStart() == ">")) {
-                    val ql = lines[i].trimStart()
-                    quoteLines.add(if (ql == ">") "" else ql.removePrefix("> "))
-                    i++
-                }
-                val inner = parse(quoteLines.joinToString("\n"))
-                blocks.add(Block.Blockquote(inner))
-                continue
-            }
-
-            // Table (must have at least header + separator)
-            if (i + 1 < lines.size && isTableSeparator(lines[i + 1])) {
-                val table = parseTable(lines, i)
-                if (table != null) {
-                    blocks.add(table.first)
-                    i = table.second
-                    continue
-                }
-            }
-
-            // Bullet list (-, *, +)
-            val bulletMatch = Regex("^\\s{0,3}[-*+]\\s+(.*)$").find(line)
-            if (bulletMatch != null) {
-                val items = mutableListOf<ListItem>()
-                while (i < lines.size) {
-                    val bm = Regex("^\\s{0,3}[-*+]\\s+(.*)$").find(lines[i])
-                    if (bm == null) break
-                    val content = bm.groupValues[1]
-                    items.add(parseListItem(content))
-                    i++
-                    // Collect continuation lines (indented)
-                    while (i < lines.size && lines[i].startsWith("  ") && !Regex("^\\s{0,3}[-*+]\\s").matches(lines[i])) {
-                        items[items.lastIndex] = items.last().copy(
-                            content = items.last().content + "\n" + lines[i].trimStart()
-                        )
-                        i++
-                    }
-                }
-                blocks.add(Block.BulletList(items))
-                continue
-            }
-
-            // Numbered list. Marker digits are capped at 2 so a paragraph
-            // starting with a year or big number ("2020. 年的…") isn't
-            // misparsed as ordered-list item #2020 (user report). Real lists
-            // rarely exceed 99 items; CommonMark itself caps markers at 9
-            // digits, we deliberately go tighter.
-            val numMatch = Regex("^\\s{0,3}(\\d{1,2})[.)\\s]\\s*(.*)$").find(line)
-            if (numMatch != null) {
-                val startNum = numMatch.groupValues[1].toIntOrNull() ?: 1
-                val items = mutableListOf<ListItem>()
-                while (i < lines.size) {
-                    val nm = Regex("^\\s{0,3}(\\d{1,2})[.)\\s]\\s*(.*)$").find(lines[i])
-                    if (nm == null) break
-                    items.add(ListItem(nm.groupValues[2]))
-                    i++
-                }
-                blocks.add(Block.NumberedList(startNum, items))
-                continue
-            }
-
-            // Standalone image / video / audio on its own line:
-            //   ![alt](minis://workspace/clip.mp4)
-            // Routed by extension so the media renderer can pick the right preview.
-            val mediaMatch = standaloneImageRegex.find(line)
-            if (mediaMatch != null) {
-                val alt = mediaMatch.groupValues[1]
-                val url = mediaMatch.groupValues[2]
-                val blk = mediaBlockFor(alt, url)
-                android.util.Log.d("MdParser", "media match: alt=\"$alt\" url=$url -> ${blk::class.simpleName}")
-                blocks.add(blk)
-                i++
-                continue
-            } else if (line.contains("![") && line.contains("](")) {
-                android.util.Log.d("MdParser", "image-like line did NOT match standalone regex: ${line.take(160)}")
-            }
-
-            // Blank line — skip
-            if (line.isBlank()) {
-                i++
-                continue
-            }
-
-            // Paragraph (collect contiguous non-blank lines that don't match other patterns)
-            val paraLines = mutableListOf(line)
-            i++
-            while (i < lines.size) {
-                val pl = lines[i]
-                if (pl.isBlank() || pl.trimStart().startsWith("```") ||
-                    pl.trimStart().startsWith("# ") || pl.trimStart().startsWith("> ") ||
-                    Regex("^\\s{0,3}[-*+]\\s+").containsMatchIn(pl) ||
-                    // Keep in sync with the numbered-list marker above (≤2 digits).
-                    Regex("^\\s{0,3}\\d{1,2}[.)\\s]\\s").containsMatchIn(pl) ||
-                    pl.matches(Regex("^\\s{0,3}([-*_])\\s*\\1\\s*\\1(\\s*\\1)*\\s*$")) ||
-                    standaloneImageRegex.containsMatchIn(pl)
-                ) break
-                paraLines.add(pl)
-                i++
-            }
-            blocks.add(Block.Paragraph(paraLines.joinToString("\n")))
         }
-
         return blocks
     }
 
-    private fun parseListItem(content: String): ListItem {
-        // Task list: [x] or [ ]
-        if (content.startsWith("[x] ") || content.startsWith("[X] ")) {
-            return ListItem(content.substring(4), checked = true)
+    /**
+     * 在 [start] 处按优先级尝试各类块，产出的块追加进 [sink]，返回消费后的
+     * 行游标。优先级即匹配序：围栏 → 分隔线 → 标题 → 引用 → 表格 →
+     * 无序 → 有序 → 独立媒体行 → 空行 → 段落。
+     */
+    private fun consumeBlockAt(lines: List<String>, start: Int, sink: MutableList<Block>): Int {
+        val line = lines[start]
+
+        // 围栏代码块。
+        if (line.trimStart().startsWith("```")) {
+            return consumeFence(lines, start, sink)
         }
-        if (content.startsWith("[ ] ")) {
-            return ListItem(content.substring(4), checked = false)
+
+        // 分隔线。
+        if (line.matches(THEMATIC_BREAK)) {
+            sink.add(Block.ThematicBreak)
+            return start + 1
         }
-        return ListItem(content)
+
+        // ATX 标题。
+        ATX_HEADING.find(line)?.let { hit ->
+            val level = hit.groupValues[1].length
+            val title = hit.groupValues[2].trimEnd().removeSuffix("#").trimEnd()
+            sink.add(Block.Heading(level, title))
+            return start + 1
+        }
+
+        // 引用块。
+        if (isBlockquoteLine(line)) {
+            return consumeBlockquote(lines, start, sink)
+        }
+
+        // 表格（至少要表头 + 分隔行）。
+        if (start + 1 < lines.size && isTableSeparator(lines[start + 1])) {
+            parseTable(lines, start)?.let { (table, next) ->
+                sink.add(table)
+                return next
+            }
+        }
+
+        // 无序列表（-、*、+）。
+        BULLET_ITEM.find(line)?.let {
+            return consumeBulletList(lines, start, sink)
+        }
+
+        // 有序列表（标记位数 ≤2，见 NUMBERED_ITEM 注释）。
+        NUMBERED_ITEM.find(line)?.let { hit ->
+            val startNumber = hit.groupValues[1].toIntOrNull() ?: 1
+            val items = mutableListOf<ListItem>()
+            var i = start
+            while (i < lines.size) {
+                val nm = NUMBERED_ITEM.find(lines[i]) ?: break
+                items.add(ListItem(nm.groupValues[2]))
+                i++
+            }
+            sink.add(Block.NumberedList(startNumber, items))
+            return i
+        }
+
+        // 独占一行的图片/视频/音频：
+        //   ![alt](minis://workspace/clip.mp4)
+        // 按扩展名路由，媒体渲染器好挑对的预览。
+        standaloneImageRegex.find(line)?.let { hit ->
+            val alt = hit.groupValues[1]
+            val url = hit.groupValues[2]
+            val block = mediaBlockFor(alt, url)
+            android.util.Log.d(LOG_TAG, "media match: alt=\"$alt\" url=$url -> ${block::class.simpleName}")
+            sink.add(block)
+            return start + 1
+        }
+        if (line.contains("![") && line.contains("](")) {
+            android.util.Log.d(LOG_TAG, "image-like line did NOT match standalone regex: ${line.take(160)}")
+        }
+
+        // 空行——跳过。
+        if (line.isBlank()) return start + 1
+
+        // 段落：收集连续非空、且不像其他块开头的行。
+        return consumeParagraph(lines, start, sink)
     }
+
+    private fun consumeFence(lines: List<String>, start: Int, sink: MutableList<Block>): Int {
+        val opener = lines[start].trimStart()
+        val language = opener.removePrefix("```").trim()
+        val body = mutableListOf<String>()
+        var i = start + 1
+        while (i < lines.size) {
+            val inner = lines[i]
+            if (inner.trimStart().startsWith("```") && inner.trim() == "```") {
+                i++
+                break
+            }
+            body.add(inner)
+            i++
+        }
+        sink.add(Block.CodeBlock(language, body.joinToString("\n")))
+        return i
+    }
+
+    private fun isBlockquoteLine(line: String): Boolean {
+        val t = line.trimStart()
+        return t.startsWith("> ") || t == ">"
+    }
+
+    private fun consumeBlockquote(lines: List<String>, start: Int, sink: MutableList<Block>): Int {
+        val quoted = mutableListOf<String>()
+        var i = start
+        while (i < lines.size && isBlockquoteLine(lines[i])) {
+            val stripped = lines[i].trimStart()
+            quoted.add(if (stripped == ">") "" else stripped.removePrefix("> "))
+            i++
+        }
+        sink.add(Block.Blockquote(parse(quoted.joinToString("\n"))))
+        return i
+    }
+
+    private fun consumeBulletList(lines: List<String>, start: Int, sink: MutableList<Block>): Int {
+        val items = mutableListOf<ListItem>()
+        var i = start
+        while (i < lines.size) {
+            val hit = BULLET_ITEM.find(lines[i]) ?: break
+            items.add(parseListItem(hit.groupValues[1]))
+            i++
+            // 收集缩进续行。
+            while (i < lines.size && lines[i].startsWith("  ") && !BULLET_ITEM_PREFIX.matches(lines[i])) {
+                items[items.lastIndex] = items.last().copy(
+                    content = items.last().content + "\n" + lines[i].trimStart(),
+                )
+                i++
+            }
+        }
+        sink.add(Block.BulletList(items))
+        return i
+    }
+
+    private fun consumeParagraph(lines: List<String>, start: Int, sink: MutableList<Block>): Int {
+        val paraLines = mutableListOf(lines[start])
+        var i = start + 1
+        while (i < lines.size) {
+            val next = lines[i]
+            val breaksParagraph = next.isBlank() ||
+                next.trimStart().startsWith("```") ||
+                next.trimStart().startsWith("# ") ||
+                next.trimStart().startsWith("> ") ||
+                BULLET_PARA_BREAK.containsMatchIn(next) ||
+                // 与有序表标记口径保持同步（≤2 位数字）。
+                NUMBERED_PARA_BREAK.containsMatchIn(next) ||
+                next.matches(THEMATIC_BREAK) ||
+                standaloneImageRegex.containsMatchIn(next)
+            if (breaksParagraph) break
+            paraLines.add(next)
+            i++
+        }
+        sink.add(Block.Paragraph(paraLines.joinToString("\n")))
+        return i
+    }
+
+    private fun parseListItem(content: String): ListItem =
+        when {
+            // 任务列表：[x] 或 [ ]。
+            content.startsWith("[x] ") || content.startsWith("[X] ") -> ListItem(content.substring(4), checked = true)
+            content.startsWith("[ ] ") -> ListItem(content.substring(4), checked = false)
+            else -> ListItem(content)
+        }
 
     private fun isTableSeparator(line: String): Boolean {
         val trimmed = line.trim()
         if (!trimmed.contains('-')) return false
-        val cells = trimmed.split('|').filter { it.isNotBlank() }
-        return cells.all { it.trim().matches(Regex("^:?-+:?$")) }
+        return trimmed.split('|')
+            .filter { it.isNotBlank() }
+            .all { it.trim().matches(SEPARATOR_CELL) }
     }
 
     private fun parseTable(lines: List<String>, startIdx: Int): Pair<Block.Table, Int>? {
-        val headerLine = lines[startIdx]
-        val separatorLine = lines[startIdx + 1]
+        val headers = splitTableRow(lines[startIdx])
+        val separatorCells = splitTableRow(lines[startIdx + 1])
+        if (headers.isEmpty() || separatorCells.isEmpty()) return null
 
-        val headers = splitTableRow(headerLine)
-        val sepCells = splitTableRow(separatorLine)
-        if (headers.isEmpty() || sepCells.isEmpty()) return null
-
-        val alignments = sepCells.map { cell ->
+        val alignments = separatorCells.map { cell ->
             val trimmed = cell.trim()
             when {
                 trimmed.startsWith(':') && trimmed.endsWith(':') -> Alignment.CENTER
@@ -283,66 +293,75 @@ object MarkdownParser {
             }
         }
 
-        var i = startIdx + 2
         val rows = mutableListOf<List<String>>()
+        var i = startIdx + 2
         while (i < lines.size) {
             val row = lines[i]
             if (row.isBlank() || !row.contains('|')) break
             rows.add(splitTableRow(row))
             i++
         }
-
         return Block.Table(headers, alignments, rows) to i
     }
 
     private fun splitTableRow(line: String): List<String> {
         val trimmed = line.trim().removePrefix("|").removeSuffix("|")
-        // [T-minis-url-fullwidth-pipe-android] Fast path: the only reason to
-        // protect a `|` from the cell split is a markdown link whose URL
-        // contains a raw ASCII pipe, e.g. `[f](minis://ns/a|b.png)` — the model
-        // (or a hand-authored row) can emit an un-encoded `|` inside the URL,
-        // and a naive `split('|')` would chop the link in two. App-generated
-        // minis:// URLs already percent-encode `|` to `%7C`, so this is purely
-        // defence-in-depth. Rows WITHOUT a `](` link keep the original exact
-        // `split('|')` behaviour verbatim — important because the paren-aware
-        // walk below would otherwise swallow a `|` after an unbalanced `(` in a
-        // plain text cell (e.g. `| a (note | b |`). Fullwidth `｜` (U+FF5C) is
-        // never split by either path since `split('|')` matches only U+007C.
+        // [T-minis-url-fullwidth-pipe-android] 快路：只有 markdown 链接的
+        // URL 里带裸 ASCII 竖线（如 `[f](minis://ns/a|b.png)）时才需要保护
+        // `|` 不被切——模型（或手写行）可能在 URL 里放出未编码的 `|`，朴
+        // 素 `split('|')` 会把链接腰斩。应用自己生成的 minis:// URL 已把
+        // `|` 百分号编码成 %7C，这里纯属纵深防御。**不含** `](` 链接的行
+        // 保持原始 `split('|')` 逐字不变——括号感知的走查否则会吞掉普通文
+        // 本单元格里不平衡 `(` 之后的 `|`（如 `| a (note | b |`）。全角
+        // `｜`（U+FF5C）两条路都不切——`split('|')` 只认 U+007C。
         if (!trimmed.contains("](")) {
             return trimmed.split('|').map { it.trim() }
         }
         val cells = mutableListOf<String>()
-        val current = StringBuilder()
-        var depth = 0
+        val cell = StringBuilder()
+        var parenDepth = 0
         for (ch in trimmed) {
-            if (ch == '(' && depth == 0) depth++
-            else if (ch == ')' && depth > 0) depth--
-            if (ch == '|' && depth == 0) {
-                cells.add(current.toString().trim())
-                current.clear()
+            if (ch == '(' && parenDepth == 0) parenDepth++
+            else if (ch == ')' && parenDepth > 0) parenDepth--
+            if (ch == '|' && parenDepth == 0) {
+                cells.add(cell.toString().trim())
+                cell.clear()
             } else {
-                current.append(ch)
+                cell.append(ch)
             }
         }
-        cells.add(current.toString().trim())
+        cells.add(cell.toString().trim())
         return cells
     }
 
-    // ─── Math extraction ──────────────────────────────────────────────────────
+    /** 按扩展名给媒体 URL 分类。只从**最后一个路径段**取扩展名——文件名带
+     *  `#` 或 `?`（字面或百分号编码）也能拿到真扩展。两种形态都处理：
+     *  未编码（`foo#China.mp4`）与已编码（`foo%23China.mp4`）。 */
+    private fun mediaBlockFor(alt: String, url: String): Block {
+        val lastSegment = url.substringAfterLast('/')
+        val decoded = runCatching { java.net.URLDecoder.decode(lastSegment, "UTF-8") }.getOrDefault(lastSegment)
+        val ext = decoded.substringAfterLast('.', "").lowercase()
+        return when (ext) {
+            in nativeVideoExts -> Block.Video(alt, url)
+            in nativeAudioExts -> Block.Audio(alt, url)
+            else -> Block.Image(alt, url)
+        }
+    }
+
+    // ─── 数学抽取 ──────────────────────────────────────────────────────────
     //
-    // Walks the source character-by-character, swallowing four math delimiters:
+    // 逐字符走原文，吞四种数学定界符：
     //
-    //   $$ … $$    display math
-    //   \[ … \]    display math (LaTeX-style)
-    //   $ … $      inline math
-    //   \( … \)    inline math (LaTeX-style)
+    //   $$ … $$    展示数学
+    //   \[ … \]    展示数学（LaTeX 式）
+    //   $ … $      行内数学
+    //   \( … \)    行内数学（LaTeX 式）
     //
-    // Fenced code blocks and inline code spans are skipped verbatim so the
-    // delimiters inside them survive (chat transcripts often paste raw
-    // markdown source). Each match is replaced with a sentinel like
-    // ￼ MATH<n> ￼ so the placeholder cannot collide with normal
-    // Markdown syntax (￼ = Object Replacement Character, never appears
-    // in user prose). Mirrors iOS MarkdownMathExtractor.extract verbatim.
+    // 围栏代码块与行内代码 span 逐字跳过——里面的定界符原样存活（聊天记
+    // 录常贴原始 markdown 源）。每处命中替换成形如 ￼ MATH<n> ￼ 的哨兵，
+    // 占位符不可能与正常 Markdown 语法相撞（￼ = Object Replacement
+    // Character，用户散文里永不出现）。逐字对齐 iOS
+    // MarkdownMathExtractor.extract。
 
     private fun extractMath(markdown: String): Pair<String, List<MathSpan>> {
         val spans = mutableListOf<MathSpan>()
@@ -355,128 +374,89 @@ object MarkdownParser {
         var fenceChar = '`'
         var fenceLen = 0
 
-        // [T-android-latex-code-mask] Precomputed once: which indices sit
-        // inside a fence or inline code, so a closing `$`/`$$` can never be
-        // matched across a code boundary (issue #117 defect 3).
+        // [T-android-latex-code-mask] 一次性预计算：哪些下标落在围栏或行
+        // 内代码内——闭 `$`/`$$` 永远无法跨代码边界配对（issue #117 缺陷
+        // 三）。
         val codeMask = buildCodeMask(chars)
 
         fun atLineStart(idx: Int): Boolean = idx == 0 || chars[idx - 1] == '\n' || chars[idx - 1] == '\r'
 
+        /** 命中即登记一个 span 并把占位符写给 out；未命中返回 false。 */
+        fun capture(latex: String, display: Boolean, advanceTo: Int): Boolean {
+            spans.add(MathSpan(makePlaceholder(spans.size), latex, display))
+            out.append(spans.last().placeholder)
+            i = advanceTo
+            return true
+        }
+
         while (i < n) {
-            // Detect opening fence at line start
-            if (!inFence && atLineStart(i)) {
-                val c = chars[i]
-                if (c == '`' || c == '~') {
-                    var fl = 0
-                    var j = i
-                    while (j < n && chars[j] == c) { fl++; j++ }
-                    if (fl >= 3) {
-                        inFence = true
-                        fenceChar = c
-                        fenceLen = fl
-                        while (i < n && chars[i] != '\n') { out.append(chars[i]); i++ }
-                        if (i < n) { out.append(chars[i]); i++ }
-                        continue
-                    }
-                }
+            // 行首探测开栏。
+            if (!inFence && atLineStart(i) && openFenceAt(chars, i) != null) {
+                val (fc, fl) = openFenceAt(chars, i)!!
+                inFence = true
+                fenceChar = fc
+                fenceLen = fl
+                i = copyThroughEndOfLine(chars, i, out)
+                continue
             }
 
             if (inFence) {
-                if (atLineStart(i) && chars[i] == fenceChar) {
-                    var fl = 0
-                    var j = i
-                    while (j < n && chars[j] == fenceChar) { fl++; j++ }
-                    if (fl >= fenceLen) {
-                        inFence = false
-                        while (i < n && chars[i] != '\n') { out.append(chars[i]); i++ }
-                        if (i < n) { out.append(chars[i]); i++ }
-                        continue
-                    }
+                if (atLineStart(i) && chars[i] == fenceChar && backtickRun(chars, i) >= fenceLen) {
+                    inFence = false
+                    i = copyThroughEndOfLine(chars, i, out)
+                    continue
                 }
                 out.append(chars[i]); i++
                 continue
             }
 
-            // Inline code spans — copy verbatim, including the dollar signs inside.
+            // 行内代码 span——逐字拷贝，美元符号原样在内。
             if (chars[i] == '`') {
-                var run = 0
-                var j = i
-                while (j < n && chars[j] == '`') { run++; j++ }
-                var k = j
-                var found = false
-                while (k <= n - run) {
-                    var match = 0
-                    while (k + match < n && chars[k + match] == '`') match++
-                    if (match == run) {
-                        for (idx in i until k + match) out.append(chars[idx])
-                        i = k + match
-                        found = true
-                        break
-                    }
-                    k += if (match > 0) match else 1
-                }
-                if (found) continue
-                for (idx in i until j) out.append(chars[idx])
-                i = j
+                i = copyInlineCodeRun(chars, i, out)
                 continue
             }
 
-            // \$ — preserve escaped dollar verbatim.
+            // \$ —— 转义美元逐字保留。
             if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '$') {
                 out.append(chars[i]); out.append(chars[i + 1])
                 i += 2
                 continue
             }
 
-            // \[ … \] — display math.
+            // \[ … \] —— 展示数学。
             if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '[') {
-                val end = findClose(chars, i + 2, "\\]")
-                if (end != null) {
-                    val latex = stripBlockquoteMarkers(chars.substring(i + 2, end))
-                    spans.add(MathSpan(makePlaceholder(spans.size), latex, true))
-                    out.append(spans.last().placeholder)
-                    i = end + 2
-                    continue
-                }
+                val close = findClose(chars, i + 2, "\\]")
+                if (close != null &&
+                    capture(stripBlockquoteMarkers(chars.substring(i + 2, close)), display = true, advanceTo = close + 2)
+                ) continue
             }
 
-            // \( … \) — inline math.
+            // \( … \) —— 行内数学。
             if (chars[i] == '\\' && i + 1 < n && chars[i + 1] == '(') {
-                val end = findClose(chars, i + 2, "\\)")
-                if (end != null) {
-                    val latex = chars.substring(i + 2, end)
-                    spans.add(MathSpan(makePlaceholder(spans.size), latex, false))
-                    out.append(spans.last().placeholder)
-                    i = end + 2
-                    continue
-                }
+                val close = findClose(chars, i + 2, "\\)")
+                if (close != null &&
+                    capture(chars.substring(i + 2, close), display = false, advanceTo = close + 2)
+                ) continue
             }
 
-            // $$ … $$ — display math.
+            // $$ … $$ —— 展示数学。
             if (chars[i] == '$' && i + 1 < n && chars[i + 1] == '$') {
-                val end = findDoubleDollar(chars, i + 2, codeMask)
-                // [T-android-latex-code-mask] The closer must be outside code
-                // (codeMask, above) AND a multi-line body must still look like
-                // a formula — otherwise an unclosed `$$` swallows prose.
-                if (end != null && isPlausibleDisplayBody(chars.substring(i + 2, end))) {
-                    val latex = stripBlockquoteMarkers(chars.substring(i + 2, end))
-                    spans.add(MathSpan(makePlaceholder(spans.size), latex, true))
-                    out.append(spans.last().placeholder)
-                    i = end + 2
-                    continue
+                val close = findDoubleDollar(chars, i + 2, codeMask)
+                // [T-android-latex-code-mask] 闭符必须在代码外（上面的
+                // codeMask），且多行正文仍得像条公式——否则一个未闭合的
+                // `$$` 会吞掉整段散文。
+                if (close != null && isPlausibleDisplayBody(chars.substring(i + 2, close))) {
+                    if (capture(stripBlockquoteMarkers(chars.substring(i + 2, close)), display = true, advanceTo = close + 2)) continue
                 }
             }
 
-            // $ … $ — inline math (with currency-skip heuristic).
+            // $ … $ —— 行内数学（带货币跳过启发）。
             if (chars[i] == '$' && i + 1 < n && chars[i + 1] != '$' && chars[i + 1] != ' ') {
-                val end = findSingleDollar(chars, i + 1, codeMask)
-                if (end != null) {
-                    val latex = chars.substring(i + 1, end)
+                val close = findSingleDollar(chars, i + 1, codeMask)
+                if (close != null) {
+                    val latex = chars.substring(i + 1, close)
                     if (looksLikeMath(latex)) {
-                        spans.add(MathSpan(makePlaceholder(spans.size), latex, false))
-                        out.append(spans.last().placeholder)
-                        i = end + 1
-                        continue
+                        if (capture(latex, display = false, advanceTo = close + 1)) continue
                     }
                 }
             }
@@ -490,35 +470,79 @@ object MarkdownParser {
 
     private fun makePlaceholder(idx: Int): String = "${ORC}MATH$idx$ORC"
 
+    /** 行首的 ```` ``` ````/`~~~` 开栏探测：返回 (栏字符, 栏长) 或 null。 */
+    private fun openFenceAt(chars: String, at: Int): Pair<Char, Int>? {
+        val c = chars[at]
+        if (c != '`' && c != '~') return null
+        val run = backtickRun(chars, at)
+        return if (run >= 3) c to run else null
+    }
+
+    private fun backtickRun(chars: String, at: Int): Int {
+        var len = 0
+        val c = chars[at]
+        while (at + len < chars.length && chars[at + len] == c) len++
+        return len
+    }
+
+    /** 把 [from] 起到行尾（含换行）拷进 [sink]，返回新游标。 */
+    private fun copyThroughEndOfLine(chars: String, from: Int, sink: StringBuilder): Int {
+        var i = from
+        while (i < chars.length && chars[i] != '\n') {
+            sink.append(chars[i]); i++
+        }
+        if (i < chars.length) {
+            sink.append(chars[i]); i++
+        }
+        return i
+    }
+
+    /** 拷贝一个行内代码跑段（含定界反引号）；返回新游标。 */
+    private fun copyInlineCodeRun(chars: String, from: Int, sink: StringBuilder): Int {
+        val n = chars.length
+        val run = backtickRun(chars, from)
+        val afterRun = from + run
+        var k = afterRun
+        while (k <= n - run) {
+            var match = 0
+            while (k + match < n && chars[k + match] == '`') match++
+            if (match == run) {
+                for (idx in from until k + match) sink.append(chars[idx])
+                return k + match
+            }
+            k += if (match > 0) match else 1
+        }
+        // 无配对闭跑：把开跑逐字倒出来。
+        for (idx in from until afterRun) sink.append(chars[idx])
+        return afterRun
+    }
+
     /**
-     * Strip blockquote markers from a multi-line math body. Math is extracted
-     * before block-level parsing, so a display formula written inside a
-     * blockquote drags the continuation lines' `> ` markers into the LaTeX:
+     * 从多行数学正文里剥引用标记。数学在块解析**之前**抽取，写在引用块里
+     * 的展示式会把续行的 `> ` 标记拖进 LaTeX：
      *
      *     > $$
      *     > E = mc^2
      *     > $$
      *
-     * used to yield `"\n> E = mc^2\n> "` and render a literal `>`. Only strip
-     * when *every* non-blank line after the first carries a `^ {0,3}> ?`
-     * marker — that proves the span really sits inside a quote, and protects
-     * legitimate formula content whose lines begin with `>` (comparisons,
-     * matrix rows). Mirrors iOS MarkdownMathExtractor.stripBlockquoteMarkers.
+     * 曾产出 `"\n> E = mc^2\n> "` 并渲染出字面 `>`。只有当首行之后**每一
+     * 条**非空行都带 `^ {0,3}> ?` 标记才剥——那证明这段真在引用里，同时保
+     * 护行首以 `>` 开头的合法公式内容（比较式、矩阵行）。对齐 iOS
+     * MarkdownMathExtractor.stripBlockquoteMarkers。
      */
     private fun stripBlockquoteMarkers(latex: String): String {
         if (!latex.contains('\n')) return latex
 
-        // The opening `$$` / `\[` is consumed by the caller, so the first
-        // segment is the tail of the marker line and never carries a marker
-        // of its own — validate and strip only lines 2…n.
+        // 开头的 `$$` / `\[` 已被调用方吃掉：首段是标记行的尾巴、自身不带
+        // 标记——只校验并剥离第 2…n 行。
         val lines = latex.split("\n").toMutableList()
         var sawMarker = false
         for (idx in 1 until lines.size) {
             val line = lines[idx]
             var cursor = 0
             while (cursor < line.length && line[cursor] == ' ' && cursor < 3) cursor++
-            if (cursor >= line.length) continue // blank line: neutral
-            if (line[cursor] != '>') return latex // a bare line — not a quote
+            if (cursor >= line.length) continue // 空行：中性
+            if (line[cursor] != '>') return latex // 有一条素行——不是引用
             sawMarker = true
             cursor++
             if (cursor < line.length && line[cursor] == ' ') cursor++
@@ -534,7 +558,10 @@ object MarkdownParser {
         while (i <= n - close.length) {
             var match = true
             for (j in close.indices) {
-                if (chars[i + j] != close[j]) { match = false; break }
+                if (chars[i + j] != close[j]) {
+                    match = false
+                    break
+                }
             }
             if (match) return i
             i++
@@ -543,20 +570,17 @@ object MarkdownParser {
     }
 
     /**
-     * [T-android-latex-code-mask] (issue #117 defect 3, iOS bce7e2ed)
+     * [T-android-latex-code-mask]（issue #117 缺陷三，iOS bce7e2ed）
      *
-     * The main [extractMath] loop skips fenced blocks and inline code when
-     * deciding where a formula may *open*, but the closing-delimiter searches
-     * were blind forward scans. So one bare `$$` in prose — a model that
-     * forgot to close it, or text merely *explaining* LaTeX — paired with a
-     * `$$` inside a later ``` fence and swallowed every paragraph between
-     * them, including the fence's own opening line. The renderer then saw the
-     * orphaned closing ``` as a NEW fence and turned the remainder into a code
-     * block: the "a whole section suddenly disappeared" symptom.
+     * 主 [extractMath] 循环决定公式可以在哪里**开**时会跳过围栏与行内代
+     * 码，但闭定界符的搜索是盲扫。于是散文里一个裸 `$$`（模型忘了闭合，
+     * 或文本只是在*讲解* LaTeX）与后面 ``` 围栏里的一个 `$$` 配了对，把两
+     * 者之间的每一段都吞了进去——连同围栏自己的开行。渲染器接着把落单的
+     * 闭 ``` 当成**新**围栏，把余文全变成代码块：即「一整节凭空消失」的
+     * 症状。
      *
-     * This precomputes, once per parse, which indices sit inside fenced blocks
-     * or inline code, mirroring the main loop's rules. A closer inside the mask
-     * is rejected.
+     * 这里在每次解析前一次性预计算哪些下标落在围栏或行内代码里，规则镜像
+     * 主循环。掩码内的闭符一律拒绝。
      */
     private fun buildCodeMask(chars: String): BooleanArray {
         val n = chars.length
@@ -575,11 +599,17 @@ object MarkdownParser {
                 if (c == '`' || c == '~') {
                     var fl = 0
                     var j = i
-                    while (j < n && chars[j] == c) { fl++; j++ }
+                    while (j < n && chars[j] == c) {
+                        fl++; j++
+                    }
                     if (fl >= 3) {
                         inFence = true; fenceChar = c; fenceLen = fl
-                        while (i < n && chars[i] != '\n') { mask[i] = true; i++ }
-                        if (i < n) { mask[i] = true; i++ }
+                        while (i < n && chars[i] != '\n') {
+                            mask[i] = true; i++
+                        }
+                        if (i < n) {
+                            mask[i] = true; i++
+                        }
                         continue
                     }
                 }
@@ -588,31 +618,43 @@ object MarkdownParser {
                 if (atLineStart(i) && chars[i] == fenceChar) {
                     var fl = 0
                     var j = i
-                    while (j < n && chars[j] == fenceChar) { fl++; j++ }
+                    while (j < n && chars[j] == fenceChar) {
+                        fl++; j++
+                    }
                     if (fl >= fenceLen) {
                         inFence = false
-                        while (i < n && chars[i] != '\n') { mask[i] = true; i++ }
-                        if (i < n) { mask[i] = true; i++ }
+                        while (i < n && chars[i] != '\n') {
+                            mask[i] = true; i++
+                        }
+                        if (i < n) {
+                            mask[i] = true; i++
+                        }
                         continue
                     }
                 }
                 mask[i] = true; i++
                 continue
             }
-            // Inline code span: `…` / ``…`` — same run-matching rule the main
-            // loop uses when it copies these verbatim.
+            // 行内代码 span：`…` / ``…``——与主循环逐字拷贝时同一条跑段配
+            // 对规则。
             if (chars[i] == '`') {
                 var run = 0
                 var j = i
-                while (j < n && chars[j] == '`') { run++; j++ }
+                while (j < n && chars[j] == '`') {
+                    run++; j++
+                }
                 var k = j
                 var closed = -1
                 while (k < n) {
                     if (chars[k] == '`') {
                         var r2 = 0
                         var m = k
-                        while (m < n && chars[m] == '`') { r2++; m++ }
-                        if (r2 == run) { closed = m; break }
+                        while (m < n && chars[m] == '`') {
+                            r2++; m++
+                        }
+                        if (r2 == run) {
+                            closed = m; break
+                        }
                         k = m
                     } else k++
                 }
@@ -627,23 +669,19 @@ object MarkdownParser {
     }
 
     /**
-     * [T-android-latex-code-mask] A multi-line `$$` body must still look like a
-     * formula, so a genuinely unclosed `$$` cannot eat prose even when the
-     * closer is outside any code span. Single-line `$$…$$` is accepted
-     * unconditionally, leaving ordinary display math untouched. Mirrors iOS.
+     * [T-android-latex-code-mask] 多行 `$$` 正文还得像条公式——真没闭合
+     * 的 `$$` 即便闭符在代码外也吞不了散文。单行 `$$…$$` 无条件接受，普
+     * 通展示数学不受影响。对齐 iOS。
      */
     private fun isPlausibleDisplayBody(body: String): Boolean {
         if (!body.contains('\n')) return true
-        // A blank line means a paragraph break — prose, not one formula.
+        // 空行 = 段落断——是散文，不是一条公式。
         if (Regex("\\n[ \\t]*\\n").containsMatchIn(body)) return false
-        // The conventional block shape puts the closing `$$` alone on its own
-        // line, i.e. the body ends with a newline (plus optional indent). That
-        // is a strong enough signal on its own — requiring a LaTeX glyph here
-        // too would wrongly demote glyph-free but valid math such as
-        // "$$\n1 + 2 = 3\n$$" to plain text.
+        // 惯例块形态里闭 `$$` 独占一行，即正文以换行（可带缩进）收尾——
+        // 这一个信号已足够强；这里再要求 LaTeX 字形会把无字形但合法的数
+        // 学（如 "$$\n1 + 2 = 3\n$$"）错贬成纯文本。
         if (Regex("\\n[ \\t]*$").containsMatchIn(body)) return true
-        // Otherwise the closer is mid-line, which is the shape a stray
-        // delimiter in prose produces — require a LaTeX-ish glyph.
+        // 否则闭符在行中——散文里散落定界符的形态：要求一个 LaTeX 味字形。
         return body.any { it == '\\' || it == '^' || it == '_' || it == '{' || it == '}' }
     }
 
@@ -663,7 +701,9 @@ object MarkdownParser {
         val n = chars.length
         var i = from
         while (i < n) {
-            if (chars[i] == '\\' && i + 1 < n) { i += 2; continue }
+            if (chars[i] == '\\' && i + 1 < n) {
+                i += 2; continue
+            }
             if (chars[i] == '$' && (i == 0 || chars[i - 1] != ' ') &&
                 (codeMask == null || !codeMask[i])
             ) return i
@@ -674,40 +714,37 @@ object MarkdownParser {
     }
 
     /**
-     * Currency-skip heuristic: $5 / $10.99 should stay as plain text. Treat
-     * the `$ … $` content as math only if it has a math-ish character
-     * (`\\^_{}` / common big-symbol unicode) or is longer than 2 chars (so
-     * `x+y` qualifies but bare digits like `5` do not). Mirrors iOS.
+     * 货币跳过启发：$5 / $10.99 该保持纯文本。`$ … $` 的内容只有在带数
+     * 学味字符（`\\^_{}` / 常见大符号 Unicode）或长于 2 字符（`x+y` 过、
+     * 裸数字 `5` 不过）时才算数学。对齐 iOS。
      */
     private fun looksLikeMath(content: String): Boolean {
         if (content.isEmpty()) return false
-        // T208 Layer B: previous heuristic rejected single-letter math like
-        // `$c$` or `$i$` — `length > 2` returned false and the literal
-        // dollar-wrapped text leaked into the rendered output. Any of:
-        //   - obvious LaTeX glyphs (`\`, `^`, `_`, `{`, `}`, integrals…)
-        //   - short alphanumeric content with no whitespace and no leading
-        //     digit (currency like `$5` filtered out by the leading-digit
-        //     check; `$5.99` further filtered by the dot rule below)
-        // qualifies as math. Mirrors iOS MarkdownMathExtractor.looksLikeMath.
+        // T208 B 层：旧启发会拒掉单字母数学如 `$c$`、`$i$`——`length > 2`
+        // 返回 false，美元包裹的字面文本就漏进了渲染输出。以下任一即算
+        // 数学：
+        //   - 明显的 LaTeX 字形（`\`、`^`、`_`、`{`、`}`、积分号…）
+        //   - 无空白、首字符非数字的短字母数字内容（`$5` 类货币被首字数
+        //     字滤掉；`$5.99` 进一步被点号规则滤掉）
+        // 对齐 iOS MarkdownMathExtractor.looksLikeMath。
         val mathChars = charArrayOf('\\', '^', '_', '{', '}', '∫', '∑', '∏', '√', '+', '-', '=', '<', '>')
         for (c in content) {
             if (c in mathChars) return true
         }
-        // Currency heuristic: `$5`, `$5.99`, `$1,000` look numeric. Skip.
+        // 货币启发：`$5`、`$5.99`、`$1,000` 都是数字样——跳过。
         if (content[0].isDigit()) return false
-        // Whitespace at either edge usually means a stray dollar, not math.
+        // 两端带空白多半是散落美元，不是数学。
         if (content.first().isWhitespace() || content.last().isWhitespace()) return false
-        // Short ASCII identifier-ish content (`$c$`, `$x$`, `$pi$`) up to
-        // 30 chars is almost certainly a variable reference.
+        // 短的 ASCII 标识符样内容（`$c$`、`$x$`、`$pi$`，≤30 字符）几乎必
+        // 是变量引用。
         if (content.length <= 30 && content.all { it.isLetterOrDigit() }) return true
         return content.length > 2
     }
 
     /**
-     * Walk the AST replacing math placeholders. Display-math placeholders
-     * promote (or replace) their containing paragraph to a [Block.MathBlock];
-     * inline placeholders remain in the paragraph text so the inline parser
-     * can render them by looking up the placeholder in the [MathSpan] list.
+     * 走一遍 AST 替换数学占位符。展示式占位符把所在段落升级（或替换）为
+     * [Block.MathBlock]；行内占位符留在段落文本里，行内解析器查
+     * [MathSpan] 表渲染。
      */
     private fun restoreMath(blocks: List<Block>, spans: List<MathSpan>): List<Block> {
         if (spans.isEmpty()) return blocks
@@ -715,10 +752,10 @@ object MarkdownParser {
         return blocks.flatMap { restoreBlock(it, byPlaceholder) }
     }
 
-    private fun restoreBlock(block: Block, map: Map<String, MathSpan>): List<Block> {
-        return when (block) {
+    private fun restoreBlock(block: Block, map: Map<String, MathSpan>): List<Block> =
+        when (block) {
             is Block.Paragraph -> restoreParagraph(block.content, map)
-            is Block.Heading -> listOf(block)  // headings keep their inline placeholders
+            is Block.Heading -> listOf(block) // 标题保留行内占位符
             is Block.Blockquote -> listOf(Block.Blockquote(block.blocks.flatMap { restoreBlock(it, map) }))
             is Block.BulletList,
             is Block.NumberedList,
@@ -730,46 +767,40 @@ object MarkdownParser {
             is Block.Video,
             is Block.Audio -> listOf(block)
         }
-    }
 
     /**
-     * Splits a paragraph that contains math placeholders. Each display-math
-     * placeholder breaks the paragraph and emits a [Block.MathBlock] of its
-     * own; inline placeholders stay embedded so the inline parser can render
-     * them through KaTeX. A paragraph that contained nothing but a single
-     * display-math placeholder collapses to one MathBlock with no surrounding
-     * Paragraph stub.
+     * 拆分含数学占位符的段落。每个展示式占位符截断段落、独立产出一个
+     * [Block.MathBlock]；行内占位符嵌在原处以便行内趟经 KaTeX 渲染。整段
+     * 只含单个展示式占位符时收拢成一个 MathBlock，不留残段。
      */
     private fun restoreParagraph(content: String, map: Map<String, MathSpan>): List<Block> {
         if (!content.contains(ORC)) return listOf(Block.Paragraph(content))
 
         val out = mutableListOf<Block>()
         val buf = StringBuilder()
-        val regex = Regex("$ORC" + "MATH(\\d+)" + "$ORC")
         var lastEnd = 0
-        for (match in regex.findAll(content)) {
-            val full = match.value
-            val span = map[full] ?: continue
-            // Append text before this placeholder.
-            if (match.range.first > lastEnd) {
-                buf.append(content, lastEnd, match.range.first)
+        for (hit in MATH_PLACEHOLDER_SCAN.findAll(content)) {
+            val span = map[hit.value] ?: continue
+            // 占位符之前的文本先接上。
+            if (hit.range.first > lastEnd) {
+                buf.append(content, lastEnd, hit.range.first)
             }
             if (span.isBlock) {
-                // Flush any accumulated text as a paragraph, then emit the math block.
+                // 已累积文本冲成段落，再产数学块。
                 if (buf.isNotBlank()) {
                     out.add(Block.Paragraph(buf.toString().trimEnd()))
                 }
                 buf.clear()
                 out.add(Block.MathBlock(span.latex))
             } else {
-                // Keep inline placeholder in-stream — inline pass will render it.
-                buf.append(full)
+                // 行内占位符留流——行内趟渲染。
+                buf.append(hit.value)
             }
-            lastEnd = match.range.last + 1
+            lastEnd = hit.range.last + 1
         }
         if (lastEnd < content.length) buf.append(content, lastEnd, content.length)
         if (buf.isNotBlank()) out.add(Block.Paragraph(buf.toString().trimEnd()))
-        // Empty paragraph (only whitespace remained) — drop entirely.
+        // 空段落（只剩空白）——整体丢弃。
         return if (out.isEmpty()) listOf(Block.Paragraph(content)) else out
     }
 }

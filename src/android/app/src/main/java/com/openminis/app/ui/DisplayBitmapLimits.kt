@@ -4,64 +4,53 @@ import coil.request.ImageRequest
 import coil.size.Precision
 
 /**
- * [T-android-canvas-large-bitmap-crash] Decode-size ceiling for images we hand
- * to Compose / Canvas for DISPLAY.
+ * [T-android-canvas-large-bitmap-crash] 交给 Compose / Canvas **显示**的图片
+ * 解码尺寸上限（血统清剿 P3.7 就地真重写；上限常量与 Coil 装配为行为冻结
+ * 面）。
  *
- * Background: a markdown attachment (`telecom_whole_market.png`, a very tall
- * chart) crashed on a vivo V2454DA / Android 16 with
+ * 背景：一张 markdown 附件（`telecom_whole_market.png`，超长图表）在 vivo
+ * V2454DA / Android 16 上崩了：
  *
  *     java.lang.RuntimeException: Canvas: trying to draw too large(215040000bytes) bitmap
  *       at android.graphics.RecordingCanvas.throwIfCannotDraw
  *
- * 215,040,000 bytes / 4 (ARGB_8888) = 53.76 Mpx — e.g. a ~3000x17920 chart.
- * `RecordingCanvas` refuses any bitmap above roughly 100MB (the exact ceiling
- * tracks the GPU's max texture dimension), so the draw throws and takes the
- * process down from `ThreadedRenderer.draw`.
+ * 215,040,000 字节 / 4（ARGB_8888）= 53.76 Mpx——约 3000x17920 的图。
+ * `RecordingCanvas` 拒收约 100MB 以上的位图（确切上限随 GPU 最大纹理维度
+ * 浮动），绘制一抛，进程就随 `ThreadedRenderer.draw` 一起没。
  *
- * Why it got that big: the markdown image renderer used
+ * 为什么会解这么大：markdown 图片渲染器用的是
  * `SubcomposeAsyncImage(model = file, contentScale = ContentScale.FillWidth)`
- * with NO `ImageRequest` size. Coil sizes a request from the layout
- * constraints, but the markdown column is vertically scrollable, so the height
- * constraint is `Constraints.Infinity`. With an unbounded dimension Coil falls
- * back to the image's INTRINSIC size and decodes the PNG at full resolution.
- * A wide-but-short image survives that (width is bounded); a very tall one does
- * not.
+ * 且**不带** `ImageRequest` 尺寸。Coil 按布局约束定请求尺寸，但 markdown
+ * 列纵向可滚，高度约束是 `Constraints.Infinity`——无界维度下 Coil 回落图
+ * 片**固有**尺寸，PNG 按全分辨率解码。宽而矮的图能扛住（宽度有界）；细
+ * 长的就扛不住。
  *
- * The fix caps the decode instead of scaling after the fact: capping at the
- * `ImageRequest` level means the giant bitmap is never allocated, which also
- * removes the OOM risk that a decode-then-downscale approach would keep.
+ * 修法是钳**解码**而非事后缩放：在 `ImageRequest` 层钳顶，巨图根本不会
+ * 被分配，先解码后降采样方案里残留的 OOM 风险也一并消失。
  *
- * This is a DISPLAY-side guard only. It is unrelated to
- * [com.openminis.app.provider.ImageBudget], which caps bytes sent to LLM
- * providers on the network path.
+ * 仅显示侧守卫。与网络侧钳发送字节的
+ * [com.openminis.app.provider.ImageBudget] 无关。
  */
 object DisplayBitmapLimits {
 
     /**
-     * Longest-edge ceiling, in pixels, for a bitmap decoded for on-screen
-     * display.
+     * 屏显位图解码的最长边上限（像素）。
      *
-     * 4096 is the max texture dimension essentially every GPU in our install
-     * base supports, so a bitmap within this bound is always drawable. The
-     * worst case it admits is 4096x4096 ARGB_8888 = 64MB, comfortably under
-     * the ~100MB `RecordingCanvas` ceiling. It is also far above any phone or
-     * tablet viewport, so a fullscreen/zoomed viewer still has ample detail to
-     * pan around in.
+     * 4096 是装机量里几乎所有 GPU 都支持的最大纹理维度——界内的位图恒可
+     * 绘制。放行的最坏情形 4096x4096 ARGB_8888 = 64MB，稳居 ~100MB 的
+     * `RecordingCanvas` 上限之下；又远超任何手机/平板视口，全屏/缩放查看
+     * 器仍有充足细节可平移浏览。
      */
     const val MAX_DISPLAY_EDGE_PX = 4096
 
     /**
-     * Apply the display decode ceiling to an [ImageRequest.Builder].
+     * 把显示解码上限装到 [ImageRequest.Builder] 上。
      *
-     * Uses `Precision.INEXACT` so Coil is free to honour the ceiling by
-     * downsampling to the nearest power-of-two sample size rather than
-     * producing an exactly-sized bitmap — cheaper, and we only care about the
-     * upper bound, not an exact pixel count.
+     * 用 `Precision.INEXACT`：Coil 可以用二次幂采样率落到界内，而不必产
+     * 出精确尺寸的位图——更省，而我们在乎的只是上界、不是精确像素数。
      *
-     * Coil scales DOWN to fit this bound and never scales up, so normal-sized
-     * images (the overwhelming majority) decode exactly as they did before and
-     * their rendering is unchanged. Only images that would otherwise exceed the
-     * ceiling are affected.
+     * Coil 只向下缩、绝不放大，常规尺寸图片（绝大多数）解码与从前完全一
+     * 样、渲染不变；受影响的只有本会越界的图。
      */
     fun ImageRequest.Builder.limitDisplaySize(): ImageRequest.Builder =
         size(MAX_DISPLAY_EDGE_PX, MAX_DISPLAY_EDGE_PX)

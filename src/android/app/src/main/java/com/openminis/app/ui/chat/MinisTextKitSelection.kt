@@ -6,43 +6,41 @@ import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.mutableStateMapOf
 import androidx.compose.runtime.mutableStateOf
-import androidx.compose.runtime.remember
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.positionInWindow
 import androidx.compose.ui.text.TextLayoutResult
+import androidx.compose.ui.unit.IntSize
 
 /**
- * MinisTextKit — a self-contained text selection layer that survives
- * LazyColumn item recycling.
+ * MinisTextKit——自成一体、能在 LazyColumn 条目回收下存活的选择层（血统
+ * 清剿 P3.7 就地真重写；类型形状、全部公开方法名与选择/命中/复制语义为
+ * 消费方依赖面冻结）。
  *
- * Compose's built-in [androidx.compose.foundation.text.selection.SelectionContainer]
- * pairs each text node with a [androidx.compose.foundation.text.selection.Selectable]
- * registered on a per-SelectionContainer registrar. When a LazyColumn item
- * scrolls out of the viewport, its Selectable disposes → the registrar drops
- * the anchor → the active selection collapses.
+ * Compose 内建的 [androidx.compose.foundation.text.selection.SelectionContainer]
+ * 把每个文本节点配对一个注册在该 SelectionContainer 登记器上的
+ * [androidx.compose.foundation.text.selection.Selectable]。LazyColumn 条目滚
+ * 出视口时 Selectable dispose → 登记器丢锚 → 活动选区塌缩。
  *
- * MinisTextKit avoids that by keeping the *authoritative selection state*
- * outside the LazyColumn entirely. Each visible text fragment registers a
- * [TextShard] with [SelectionController] while it's composed; when it
- * scrolls off-screen the registration drops but the [selection] state, keyed
- * by stable (messageId, shardId, charOffset), persists. When the shard
- * scrolls back into view it re-registers and the selection highlight is
- * redrawn automatically.
+ * MinisTextKit 把**权威选区态**整个提在 LazyColumn 之外绕开这一点。每个
+ * 可见文本分片在组合期间向 [SelectionController] 注册一个 [TextShard]；
+ * 滚出屏后注册消失，但按稳定 (messageId, shardId, charOffset) 键存的
+ * [selection] 仍在。分片滚回视野时重新注册，选区高亮自动重画。
  *
- * This file defines only the state holder and the registration ABI.
- * Hit-test, drag gestures, and highlight drawing are implemented in
- * [MinisMarkdownView] and consumed by [StreamingMarkdownText] via
- * [LocalMinisSelectionController].
+ * 本文件只定义状态持有者与注册 ABI。命中测试、拖拽手势与高亮绘制在
+ * [MinisMarkdownView] 实现，[StreamingMarkdownText] 经
+ * [LocalMinisSelectionController] 消费。
  */
 
 /**
- * A handle, stable across recompositions, that identifies a single text-bearing
- * node inside a chat message. The combination (messageId, shardId) is unique
- * within the chat list — messageId scopes to a single ChatMessage, shardId
- * scopes to a fragment within that message (one paragraph / code block /
- * heading, matching [splitMarkdownIntoBlockTexts]).
+ * 跨重组稳定的句柄，标识聊天消息里的一个承文本节点。(messageId, shardId)
+ * 组合在聊天列表内唯一——messageId 圈定单条 ChatMessage，shardId 圈定该消
+ * 息内的一个分片（一段/一个代码块/一个标题，对齐
+ * splitMarkdownIntoBlockTexts）。
  */
 data class TextShardId(
     val messageId: String,
@@ -50,286 +48,109 @@ data class TextShardId(
 )
 
 /**
- * Per-shard payload registered with [SelectionController]. The controller
- * uses [textLayoutResult] for hit-testing screen points → character offsets
- * and the inverse (offset → bounding box) for highlight rendering. The
- * controller does NOT capture the LayoutCoordinates reference; it captures
- * the *position-in-window* recomputed every layout pass via [positionInWindow].
+ * 注册到 [SelectionController] 的按分片负载。控制器用 [textLayoutResult]
+ * 做屏点→字符偏移的命中测试及其逆（偏移→包围盒）供高亮渲染。控制器**不**
+ * 持有 LayoutCoordinates 引用；持有的是每趟布局经 [positionInWindow] 重算
+ * 的「窗口内位置」。
  */
 class TextShard(
     val id: TextShardId,
-    /** Plain text actually shown to the user — used for copy fallback. */
+    /** 用户实际看到的纯文本——复制回落用。 */
     val plainText: String,
-    /** The TextLayoutResult of the rendered Text composable. */
+    /** 已渲染 Text 可组合件的 TextLayoutResult。 */
     val textLayoutResult: TextLayoutResult,
-    /** Top-left in window coordinates, refreshed by the shard's owner. */
+    /** 窗口坐标下的左上角，由分片属主每趟刷新。 */
     val positionInWindow: () -> Offset,
-    /** Size of the laid-out text in pixels. */
-    val sizePx: () -> androidx.compose.ui.unit.IntSize,
+    /** 已布局文本的像素尺寸。 */
+    val sizePx: () -> IntSize,
     /**
-     * Optional mapping from a rendered AnnotatedString character offset back
-     * to a raw markdown source offset. When null, copy falls back to
-     * [plainText.substring]. When provided, copy can return raw markdown
-     * (preserving `**bold**`, links, etc.).
+     * 可选：渲染后 AnnotatedString 字符偏移 → 原始 markdown 源偏移的映射。
+     * null 时复制回落 [plainText.substring]；给了它，「复制 markdown」能返
+     * 回原始 markdown（保住 `**粗体**`、链接等）。
      */
     val renderedToRawOffset: ((Int) -> Int)? = null,
-    /** The raw markdown source for this shard. Used together with [renderedToRawOffset] for "copy markdown" paths. */
+    /** 本分片的原始 markdown 源。与 [renderedToRawOffset] 配合走「复制 markdown」路径。 */
     val rawMarkdown: String? = null,
     /**
-     * True when this shard is a self-contained unit that a long-press should
-     * select in full — currently, a table cell.
+     * true = 本分片是长按应整件选中的自足单元——现指表格单元格。
      *
-     * Prose wants the sentence-level expansion [SelectionController] normally
-     * applies; a table cell does not. A cell's text is usually punctuation-free
-     * ("Alice Smith", "张三 项目经理"), so that scan runs to both ends and picks
-     * up the whole cell anyway — but a cell that DOES contain punctuation
-     * ("1,200", "v1.2, beta") would select only a fragment, which is never what
-     * someone long-pressing a table wants. Marking the cell atomic makes the
-     * cell boundary the rule instead of an accident of its content.
+     * 散文本该要 [SelectionController] 常规的句级扩展；表格单元格不该。
+     * 单元格文本通常无标点（"Alice Smith"、"张三 项目经理"），句级扫描也
+     * 会扫到两端、把整格收进来；但**带**标点的格（"1,200"、"v1.2, beta"）
+     * 会只选中一截——长按表格的人永远不会想要那个。把格标为原子，格界就
+     * 是规则、而不是内容的偶然。
      */
     val isAtomicUnit: Boolean = false,
 )
 
-/**
- * Identifies one endpoint of a selection. Stable across LazyColumn recycle:
- * even if the owning shard is currently not composed, the controller can
- * still emit the persisted selection back to the user as soon as the shard
- * re-registers.
- */
+/** 选区的一个端点。跨 LazyColumn 回收稳定：属主分片当前未组合也不妨碍控
+ *  制器在它重新注册后把持久选区发还给用户。 */
 data class TextPosition(
     val shard: TextShardId,
-    /** Character offset within the shard's [TextShard.plainText]. */
+    /** 分片 [TextShard.plainText] 内的字符偏移。 */
     val charOffset: Int,
 )
 
-/** A live text selection, possibly spanning multiple shards / messages. */
+/** 一条活选区，可跨分片/跨消息。 */
 data class TextSelection(
     val start: TextPosition,
     val end: TextPosition,
 )
 
 /**
- * Owns the active selection plus the registry of currently-composed shards.
- * Hoist one of these per logical "text surface" — for ChatScreen that means
- * one controller for the entire LazyColumn, owned above the LazyColumn so
- * its lifetime exceeds any individual item's lifetime.
+ * 持有活动选区 + 当前已组合分片的登记表。每个逻辑「文本面」提升一个——
+ * ChatScreen 就是整个 LazyColumn 一个，握在 LazyColumn 之上，寿命超过任
+ * 何单条的条目。
  */
 class SelectionController {
-    /** Which of the two selection endpoints a drag is adjusting. */
+    /** 拖拽在调的是选区的哪个端点。 */
     enum class Handle { Start, End }
 
-    /** Active selection or null when nothing is selected. */
+    /** 活动选区；未选中为 null。 */
     val selection = mutableStateOf<TextSelection?>(null)
 
     /**
-     * Message-level markdown snapshots captured at selection time so the
-     * "Copy Markdown / Copy Rich Text" actions stay available even after
-     * the originating shard scrolls out of viewport (the
-     * MessageBoundsRegistry would have removed it by then). Keyed by
-     * messageId; populated by [rememberMessageMarkdown] (called when a
-     * shard registers), kept across the selection's lifetime, cleared on
-     * [clearSelection].
-     */
-    // Snapshot-state map so writes from a SideEffect during one frame
-    // invalidate any downstream reader (e.g. the toolbar's `md =
-    // resolveSelectionMarkdown()` call) on the next frame, surfacing the
-    // markdown buttons the moment a shard has published its source.
-    private val messageMarkdownCache = androidx.compose.runtime.mutableStateMapOf<String, String>()
-
-    /** Called by shard owners to publish the parent message's joined markdown. */
-    fun rememberMessageMarkdown(messageId: String, markdown: String) {
-        if (markdown.isEmpty()) return
-        // Skip if already correct — avoid re-emitting on every recomposition.
-        if (messageMarkdownCache[messageId] == markdown) return
-        messageMarkdownCache[messageId] = markdown
-    }
-
-    /** Resolve the active selection's parent message markdown. Null when
-     *  the selection spans multiple messages OR the cache never saw it. */
-    fun selectionMessageMarkdown(): String? {
-        val msgId = singleMessageId() ?: return null
-        return messageMarkdownCache[msgId]
-    }
-
-    /**
-     * [T-android-markdown-table-copy-actions] Table actions for the message
-     * currently under selection, so the SINGLE selection toolbar can append
-     * "Copy Table" / "Copy Table Image" alongside Copy / Copy Markdown / etc.
-     * (instead of the table rendering a second, separate popup). A
-     * [RenderTable] publishes its [TableActions] keyed by messageId while it's
-     * composed; the toolbar reads them for the selected message.
+     * 手势处理器发布的拖拽意图。用户正拖（长按二段或手柄拖动）时，
+     * [DragIntent.point] 是最新指尖的窗口坐标、[DragIntent.handle] 指明更
+     * 新哪个端点；抬指置 null。
      *
-     * [copyTableMarkdown] returns the table's exact markdown source.
-     * [copyTableImage] captures + clipboards the rendered table bitmap.
-     */
-    class TableActions(
-        val copyTableMarkdown: () -> Unit,
-        val copyTableImage: () -> Unit,
-    )
-
-    private val tableActionsByMessage =
-        androidx.compose.runtime.mutableStateMapOf<String, TableActions>()
-
-    /** Publish a table's actions for [messageId] (called while it's composed). */
-    fun rememberTableActions(messageId: String, actions: TableActions) {
-        tableActionsByMessage[messageId] = actions
-    }
-
-    /** Drop a table's actions when it leaves composition. */
-    fun forgetTableActions(messageId: String) {
-        tableActionsByMessage.remove(messageId)
-    }
-
-    /**
-     * Table actions for the message under the active single-message selection,
-     * or null when there's no selection, it spans messages, or that message has
-     * no table composed.
-     */
-    fun selectionTableActions(): TableActions? {
-        val msgId = singleMessageId() ?: return null
-        return tableActionsByMessage[msgId]
-    }
-
-    /**
-     * Drag intent published by the gesture handler. While the user is
-     * actively dragging (long-press phase 2 OR handle drag), `point` is the
-     * latest finger position in window coords and `handle` identifies which
-     * endpoint to update. When the finger lifts, set to null.
-     *
-     * A separate effect in ChatScreen watches this state together with the
-     * LazyColumn's scroll position so the selection keeps tracking even
-     * when the finger is stationary inside the edge auto-scroll zone (new
-     * shards scroll into view and the selection extends to them).
+     * ChatScreen 里另有一个 effect 盯着它与 LazyColumn 滚动位——指尖停在
+     * 边缘自动滚区内不动，选区也持续跟进（新分片滚进视野、选区伸进去）。
      */
     val dragIntent = mutableStateOf<DragIntent?>(null)
 
     data class DragIntent(val point: Offset, val handle: Handle)
 
-    /**
-     * Currently-composed shards, keyed by their stable id. A shard registers
-     * on enter-composition (DisposableEffect) and unregisters on dispose.
-     */
-    private val shards = mutableStateMapOf<TextShardId, TextShard>()
+    // ─── 选区状态操作 ───────────────────────────────────────────────────────
 
-    fun register(shard: TextShard) {
-        shards[shard.id] = shard
-    }
-
-    fun unregister(id: TextShardId) {
-        shards.remove(id)
-    }
-
-    /** Read-only snapshot of currently-composed shards. */
-    internal fun currentShards(): Map<TextShardId, TextShard> = shards
-
-    /**
-     * Hit-test a window-space point against every currently composed shard.
-     * Returns the [TextPosition] of the character nearest to that point, or
-     * null if the point isn't over any registered shard.
-     */
-    fun hitTest(windowPoint: Offset): TextPosition? {
-        val (shard, localPoint) = locateShard(windowPoint) ?: return null
-        val offset = shard.textLayoutResult.getOffsetForPosition(localPoint)
-            .coerceIn(0, shard.plainText.length)
-        return TextPosition(shard.id, offset)
-    }
-
-    /**
-     * Stricter hit-test that ONLY returns a position when the point falls
-     * directly inside a registered shard's rect — no nearest-shard fallback.
-     * Used by the long-press path so a press on a non-selectable region
-     * (e.g. a user message bubble, which intentionally skips MinisTextKit
-     * shard registration so it can show its own long-press menu) doesn't
-     * snap to whichever assistant shard happens to be closest.
-     */
-    fun hitTestStrict(windowPoint: Offset): TextPosition? {
-        for (shard in shards.values) {
-            val origin = shard.positionInWindow()
-            if (origin == Offset.Zero) continue
-            val size = shard.sizePx()
-            val rect = Rect(origin, Offset(size.width.toFloat(), size.height.toFloat()).let { d ->
-                androidx.compose.ui.geometry.Size(d.x, d.y)
-            })
-            if (rect.contains(windowPoint)) {
-                val local = windowPoint - origin
-                val offset = shard.textLayoutResult.getOffsetForPosition(local)
-                    .coerceIn(0, shard.plainText.length)
-                return TextPosition(shard.id, offset)
-            }
-        }
-        return null
-    }
-
-    /** Find a registered shard covering [windowPoint], plus the corresponding local-space point. */
-    private fun locateShard(windowPoint: Offset): Pair<TextShard, Offset>? {
-        var best: Pair<TextShard, Offset>? = null
-        for (shard in shards.values) {
-            val origin = shard.positionInWindow()
-            val size = shard.sizePx()
-            val rect = Rect(origin, Offset(size.width.toFloat(), size.height.toFloat()).let { d ->
-                androidx.compose.ui.geometry.Size(d.x, d.y)
-            })
-            if (rect.contains(windowPoint)) {
-                return shard to (windowPoint - origin)
-            }
-            // No direct hit; remember nearest-vertically shard as a fallback
-            // so dragging out the side of a shard still extends sensibly.
-            if (best == null) {
-                val clampedX = windowPoint.x.coerceIn(rect.left, rect.right.coerceAtLeast(rect.left))
-                val clampedY = windowPoint.y.coerceIn(rect.top, rect.bottom.coerceAtLeast(rect.top))
-                best = shard to Offset(clampedX - origin.x, clampedY - origin.y)
-            } else {
-                val (curBest, _) = best!!
-                val curOrigin = curBest.positionInWindow()
-                val curSize = curBest.sizePx()
-                val curCenterY = curOrigin.y + curSize.height / 2f
-                val newCenterY = origin.y + size.height / 2f
-                if (kotlin.math.abs(newCenterY - windowPoint.y) <
-                    kotlin.math.abs(curCenterY - windowPoint.y)
-                ) {
-                    val clampedX = windowPoint.x.coerceIn(rect.left, rect.right.coerceAtLeast(rect.left))
-                    val clampedY = windowPoint.y.coerceIn(rect.top, rect.bottom.coerceAtLeast(rect.top))
-                    best = shard to Offset(clampedX - origin.x, clampedY - origin.y)
-                }
-            }
-        }
-        return best
-    }
-
-    /** Begin a fresh selection collapsed at [pos] (long-press start). */
+    /** 从 [pos] 起折一条新选区（长按起点）。 */
     fun beginSelection(pos: TextPosition) {
         selection.value = TextSelection(start = pos, end = pos)
     }
 
     /**
-     * Begin a selection that snaps to the WORD under [pos]. Mirrors iOS long-
-     * press semantics: a one-finger long press should reveal a real, non-zero-
-     * width selection so the user gets immediate visual feedback and can drag
-     * handles outward to grow it. Falls back to a collapsed caret when the
-     * shard isn't registered or the character isn't part of a word.
+     * 以 [pos] 处的**词**为界起选。对齐 iOS 长按语义：单指长按要给出一条
+     * 真实、非零宽的选区——用户立刻有视觉反馈、可拖手柄外扩。分片未注册
+     * 或字符不在词内时回落折叠光标。
      */
     fun beginSelectionWord(pos: TextPosition) {
         val shard = currentShards()[pos.shard]
-        if (shard == null) {
+        if (shard == null || shard.plainText.isEmpty()) {
             beginSelection(pos)
             return
         }
         val text = shard.plainText
-        if (text.isEmpty()) {
-            beginSelection(pos)
-            return
-        }
-        // A table cell selects as a whole cell — see TextShard.isAtomicUnit.
+        // 表格单元格整格选中——见 TextShard.isAtomicUnit。
         if (shard.isAtomicUnit) {
-            val start = text.indexOfFirst { !it.isWhitespace() }
-            if (start < 0) {
+            val cellStart = text.indexOfFirst { !it.isWhitespace() }
+            if (cellStart < 0) {
                 beginSelection(pos)
                 return
             }
-            val end = text.indexOfLast { !it.isWhitespace() } + 1
+            val cellEnd = text.indexOfLast { !it.isWhitespace() } + 1
             selection.value = TextSelection(
-                start = TextPosition(pos.shard, start),
-                end = TextPosition(pos.shard, end),
+                start = TextPosition(pos.shard, cellStart),
+                end = TextPosition(pos.shard, cellEnd),
             )
             return
         }
@@ -345,72 +166,58 @@ class SelectionController {
     }
 
     /**
-     * Compute the word range surrounding [offset] in [text]. Uses
-     * [java.text.BreakIterator.getWordInstance] so the result honors locale
-     * rules. When [offset] sits on whitespace / punctuation, scan outward
-     * for the nearest word so a long-press near a paragraph end / between
-     * two CJK glyphs still produces a non-collapsed selection. Falls back
-     * to "select this single character" when no word can be found nearby,
-     * which still gives the user a visible selection to drag.
+     * 计算 [text] 中包住 [offset] 的词区间——按**句级**扩展而非纯词切分：
+     * [offset] 落在空白/标点上时向外找最近的词边界，段落末尾/两个 CJK 字
+     * 形之间的长按仍能得到非折叠选区；实在找不到词回落「选这一个字符」，
+     * 用户仍有可见选区可拖。
      */
     private fun wordBoundsAt(text: String, offset: Int): Pair<Int, Int> {
         if (text.isEmpty()) return 0 to 0
         val len = text.length
         val clamped = offset.coerceIn(0, len)
 
-        // Sentence-level selection: long-press should grab a meaningful
-        // chunk of text — for Latin that's a word-ish run, for CJK we
-        // expand to the next punctuation/whitespace boundary on either
-        // side so the user gets a clause-sized selection (matching the
-        // expectation set by other Chinese readers). System TextView's
-        // word-iterator behavior on CJK is too aggressive (single-char
-        // selection) and the resulting near-collapsed highlight isn't
-        // discoverable. Define "sentence stops" as the union of common
-        // Latin + CJK punctuation plus newline.
+        // 句级选择：长按要抓一段有意义的文本——拉丁取词样跑段，CJK 向两侧
+        // 扩到标点/空白边界，用户拿到从句大小的选区（中文阅读器的惯例）。
+        // 系统 TextView 的词迭代器对 CJK 太激进（单字选择），近乎折叠的高
+        // 亮不可发现。「句停点」= 常见拉丁 + CJK 标点加换行的并集。
         val sentenceStops = setOf(
             '。', '？', '！', '；', '：', '，', '、',
             '.', '?', '!', ';', ':', ',',
             '\n', '\r',
         )
-        // Scan backward to find the LO bound: the index just after the
-        // nearest preceding sentence stop (or 0 if none).
+        // 向后扫 LO：最近前置句停点之后（无则 0）。
         var lo = clamped.coerceAtMost(len - 1).coerceAtLeast(0)
         while (lo > 0 && text[lo - 1] !in sentenceStops) lo--
-        // Skip leading whitespace inside the sentence so the selection
-        // doesn't begin on a space.
+        // 跳过句内前导空白，选区不从空格起头。
         while (lo < len && text[lo].isWhitespace()) lo++
-        // Scan forward to find the HI bound: the index of the first
-        // sentence stop at or after the press point (inclusive of the stop
-        // itself so the punctuation is part of the selection — feels more
-        // natural to copy).
+        // 向前扫 HI：按点起第一个句停点（停点本身计入——标点被选上，复制
+        // 时更自然）。
         var hi = clamped.coerceIn(0, len)
         while (hi < len && text[hi] !in sentenceStops) hi++
-        if (hi < len) hi++ // include the stop character itself
-        // Trim trailing whitespace.
+        if (hi < len) hi++ // 含停点字符
+        // 修尾随空白。
         while (hi > lo && text[hi - 1].isWhitespace()) hi--
         if (hi <= lo) {
-            // Degenerate — fall back to a single character so the user
-            // still gets a visible selection to drag.
+            // 退化——回落单字符，用户仍有可见选区可拖。
             val s = clamped.coerceIn(0, (len - 1).coerceAtLeast(0))
             return s to (s + 1).coerceAtMost(len)
         }
         return lo to hi
     }
 
-    /** Extend the active selection's end anchor to [pos] (drag update). */
+    /** 把活动选区尾锚延到 [pos]（拖动更新）。 */
     fun extendSelectionTo(pos: TextPosition) {
-        val cur = selection.value ?: return
-        selection.value = cur.copy(end = pos)
+        selection.value = selection.value?.copy(end = pos)
     }
 
-    /** Replace start anchor (left handle drag). */
+    /** 换首锚（左手柄拖动）。 */
     fun replaceStart(pos: TextPosition) {
         val cur = selection.value ?: return
         if (cur.start == pos) return
         selection.value = cur.copy(start = pos)
     }
 
-    /** Replace end anchor (right handle drag). */
+    /** 换尾锚（右手柄拖动）。 */
     fun replaceEnd(pos: TextPosition) {
         val cur = selection.value ?: return
         if (cur.end == pos) return
@@ -423,160 +230,233 @@ class SelectionController {
     }
 
     /**
-     * Return the messageId common to BOTH endpoints of the active selection,
-     * or null when the selection spans multiple messages (or there's no
-     * selection). Used by the floating toolbar to decide whether
-     * "Copy Markdown / Copy Rich Text" buttons should appear — those need
-     * an unambiguous source message.
+     * 活动选区两端共同所属的 messageId；跨消息（或无选区）为 null。浮动工
+     * 具条用它决定「复制 Markdown / 复制富文本」按钮出不出现——那两个需
+     * 要一个无歧义的源消息。
      */
     fun singleMessageId(): String? {
         val sel = selection.value ?: return null
-        val a = sel.start.shard.messageId
-        val b = sel.end.shard.messageId
-        return if (a == b) a else null
+        return sel.start.shard.messageId.takeIf { it == sel.end.shard.messageId }
+    }
+
+    // ─── 消息 markdown 快照（选区期间有效） ───────────────────────────────
+
+    /**
+     * 选区时刻抓下的消息级 markdown 快照——源分片滚出视口后（届时
+     * MessageBoundsRegistry 已把它移除）「复制 Markdown / 复制富文本」仍可
+     * 用。按 messageId 键控；分片注册时经 [rememberMessageMarkdown] 填入，
+     * 选区存续期保留，[clearSelection] 清空。
+     */
+    // 快照态 map：一帧内 SideEffect 的写让下游读者（如工具条的
+    // `md = resolveSelectionMarkdown()`）下一帧即失效——分片一公布源，
+    // markdown 按钮立刻现身。
+    private val messageMarkdownCache = mutableStateMapOf<String, String>()
+
+    /** 分片属主调：公布父消息的拼接 markdown。 */
+    fun rememberMessageMarkdown(messageId: String, markdown: String) {
+        if (markdown.isEmpty()) return
+        // 已正确则跳过——别每次重组都重发。
+        if (messageMarkdownCache[messageId] == markdown) return
+        messageMarkdownCache[messageId] = markdown
+    }
+
+    /** 活动选区父消息的 markdown。选区跨消息或缓存没见过时为 null。 */
+    fun selectionMessageMarkdown(): String? {
+        return messageMarkdownCache[singleMessageId() ?: return null]
+    }
+
+    // ─── 表格动作（供单一选区工具条） ──────────────────────────────────────
+
+    /**
+     * [T-android-markdown-table-copy-actions] 当前选中消息的表格动作——单一
+     * 选区工具条可以把「复制表格 / 复制表格图像」排在 复制 / 复制 Markdown
+     * 等旁边（而不是表格自己再弹第二个浮层）。[RenderTable] 在组合期间按
+     * messageId 公布它的 [TableActions]；工具条为选中消息读取。
+     *
+     * [copyTableMarkdown] 返回表格的精确 markdown 源；[copyTableImage] 捕
+     * 获渲染表格位图并进剪贴板。
+     */
+    class TableActions(
+        val copyTableMarkdown: () -> Unit,
+        val copyTableImage: () -> Unit,
+    )
+
+    private val tableActionsByMessage = mutableStateMapOf<String, TableActions>()
+
+    /** 公布某消息的表格动作（组合期间调）。 */
+    fun rememberTableActions(messageId: String, actions: TableActions) {
+        tableActionsByMessage[messageId] = actions
+    }
+
+    /** 表格离开组合时撤下。 */
+    fun forgetTableActions(messageId: String) {
+        tableActionsByMessage.remove(messageId)
+    }
+
+    /** 单消息选区下该消息的表格动作；无选区/跨消息/无表格组合时 null。 */
+    fun selectionTableActions(): TableActions? {
+        return tableActionsByMessage[singleMessageId() ?: return null]
+    }
+
+    // ─── 分片登记表 ────────────────────────────────────────────────────────
+
+    /**
+     * 当前已组合的分片，按稳定 id 键控。分片进组合时注册
+     * （DisposableEffect），销毁时注销。
+     */
+    private val shards = mutableStateMapOf<TextShardId, TextShard>()
+
+    /** 当前已组合分片的只读快照（内部 + isShardBetween 扩展读）。 */
+    internal fun currentShards(): Map<TextShardId, TextShard> = shards
+
+    fun register(shard: TextShard) {
+        shards[shard.id] = shard
+    }
+
+    fun unregister(id: TextShardId) {
+        shards.remove(id)
+    }
+
+    /** 当前已组合分片的只读快照。 */
+    private fun shardWindowRect(shard: TextShard): Rect {
+        val origin = shard.positionInWindow()
+        val size = shard.sizePx()
+        return Rect(origin, Size(size.width.toFloat(), size.height.toFloat()))
+    }
+
+    // ─── 命中测试 ──────────────────────────────────────────────────────────
+
+    /**
+     * 对全部已组合分片做窗口坐标点命中。返回离该点最近的字符的
+     * [TextPosition]；点不在任何注册分片上为 null。
+     */
+    fun hitTest(windowPoint: Offset): TextPosition? {
+        val (shard, localPoint) = locateShard(windowPoint) ?: return null
+        val charOffset = shard.textLayoutResult.getOffsetForPosition(localPoint)
+            .coerceIn(0, shard.plainText.length)
+        return TextPosition(shard.id, charOffset)
     }
 
     /**
-     * Window-space point at which to draw the small "handle" knob for an
-     * endpoint, or null if that endpoint's shard isn't currently composed.
-     * The point is the bottom of the cursor line at the endpoint's char
-     * offset — start handle sits at the LEFT of the first selected char,
-     * end handle at the RIGHT of the last selected char (mirrors iOS /
-     * Android-native text-selection handles).
+     * 严格命中：点**直接落在**某注册分片矩形内才返回位置——不做最近分片回
+     * 落。长按路径用：按在不可选区（如用户消息气泡——它刻意不注册
+     * MinisTextKit 分片、好弹自己的长按菜单）不该吸附到恰好最近的某个助
+     * 手分片上。
+     */
+    fun hitTestStrict(windowPoint: Offset): TextPosition? {
+        for (shard in shards.values) {
+            if (shard.positionInWindow() == Offset.Zero) continue
+            if (!shardWindowRect(shard).contains(windowPoint)) continue
+            val local = windowPoint - shard.positionInWindow()
+            val charOffset = shard.textLayoutResult.getOffsetForPosition(local)
+                .coerceIn(0, shard.plainText.length)
+            return TextPosition(shard.id, charOffset)
+        }
+        return null
+    }
+
+    /** 找罩住 [windowPoint] 的注册分片及对应局部坐标点；无直接命中时给垂
+     *  直最近的分片（拖出分片侧边仍能合理延伸）。 */
+    private fun locateShard(windowPoint: Offset): Pair<TextShard, Offset>? {
+        var nearest: Pair<TextShard, Offset>? = null
+        for (shard in shards.values) {
+            val origin = shard.positionInWindow()
+            val rect = shardWindowRect(shard)
+            if (rect.contains(windowPoint)) {
+                return shard to (windowPoint - origin)
+            }
+            // 记住垂直最近的分片作回落。
+            val clampedX = windowPoint.x.coerceIn(rect.left, rect.right.coerceAtLeast(rect.left))
+            val clampedY = windowPoint.y.coerceIn(rect.top, rect.bottom.coerceAtLeast(rect.top))
+            val candidate = shard to Offset(clampedX - origin.x, clampedY - origin.y)
+            val incumbent = nearest
+            if (incumbent == null) {
+                nearest = candidate
+            } else {
+                val incumbentCenterY = incumbent.first.positionInWindow().y + incumbent.first.sizePx().height / 2f
+                val candidateCenterY = origin.y + shard.sizePx().height / 2f
+                if (kotlin.math.abs(candidateCenterY - windowPoint.y) <
+                    kotlin.math.abs(incumbentCenterY - windowPoint.y)
+                ) {
+                    nearest = candidate
+                }
+            }
+        }
+        return nearest
+    }
+
+    // ─── 手柄锚点与几何 ────────────────────────────────────────────────────
+
+    /**
+     * 画某端点小「手柄」旋钮的窗口坐标点；该端点分片当前未组合时 null。
+     * 点取端点字符偏移所在光标行的行底——首手柄在首个选中字符**左**侧、尾
+     * 手柄在末个选中字符**右**侧（对齐 iOS / Android 原生选择手柄）。
      */
     fun handleAnchor(handle: Handle): Offset? {
         val sel = selection.value ?: return null
-        val ordered = orderedEndpoints(sel) ?: return null
-        val (first, last) = ordered
+        val (first, last) = orderedEndpoints(sel) ?: return null
         val endpoint = when (handle) {
             Handle.Start -> first
             Handle.End -> last
         }
         val shard = shards[endpoint.shard] ?: return null
-        // When the shard is registered but its LayoutCoordinates have
-        // detached (the row scrolled out of view but the composable hasn't
-        // disposed yet), positionInWindow falls back to Offset.Zero — that
-        // would slam the handle Popup to the top-left corner of the window.
-        // Return null instead so the host simply hides the handle until the
-        // shard re-attaches, matching system text-selection UX.
+        // 分片已注册但 LayoutCoordinates 已分离（行滚出视野、可组合件还没
+        // dispose）时 positionInWindow 回落 Offset.Zero——那会把手柄 Popup
+        // 摔到窗口左上角。改回 null，宿主先藏手柄等分片重挂——对齐系统选
+        // 择 UX。
         val origin = shard.positionInWindow()
         if (origin == Offset.Zero) return null
         val tlr = shard.textLayoutResult
         val laidOutLen = tlr.layoutInput.text.length
-        val clampedOffset = endpoint.charOffset.coerceIn(0, laidOutLen)
         if (laidOutLen <= 0) return null
+        val clampedOffset = endpoint.charOffset.coerceIn(0, laidOutLen)
         val box = runCatching {
-            when (handle) {
-                Handle.Start -> {
-                    val charForStart = clampedOffset.coerceAtMost(laidOutLen - 1).coerceAtLeast(0)
-                    tlr.getBoundingBox(charForStart)
-                }
-                Handle.End -> {
-                    val charForEnd = (clampedOffset - 1).coerceIn(0, laidOutLen - 1)
-                    tlr.getBoundingBox(charForEnd)
-                }
-            }
+            tlr.getBoundingBox(anchorCharIndex(handle, clampedOffset, laidOutLen))
         }.getOrNull() ?: return null
-        val (lx, by) = when (handle) {
+        val (localX, bottomY) = when (handle) {
             Handle.Start -> box.left to box.bottom
             Handle.End -> box.right to box.bottom
         }
-        val result = Offset(origin.x + lx, origin.y + by)
-        return result
+        return Offset(origin.x + localX, origin.y + bottomY)
     }
 
+    /** 手柄锚对应的字符下标：Start 取偏移处字符、End 取前一字符（右缘）。 */
+    private fun anchorCharIndex(handle: Handle, clampedOffset: Int, laidOutLen: Int): Int =
+        when (handle) {
+            Handle.Start -> clampedOffset.coerceAtMost(laidOutLen - 1).coerceAtLeast(0)
+            Handle.End -> (clampedOffset - 1).coerceIn(0, laidOutLen - 1)
+        }
+
     /**
-     * If the window-space point [p] lies within the visible-hit-target of
-     * either handle's drag knob, return which one. The handle knob hangs
-     * BELOW the line of text the endpoint sits on (anchor.y is the bottom
-     * of the cursor line), so we look for [p] inside the rectangle
+     * 窗口点 [p] 落在任一手柄旋钮的可视命中区内时，返回命中的手柄。旋钮
+     * 挂在端点所在文本行**下方**（anchor.y 是光标行行底），故命中区取
      *   x ∈ [anchor.x − hitSlopPx, anchor.x + hitSlopPx]
      *   y ∈ [anchor.y − 4, anchor.y + hitSlopPx]
-     * The asymmetric vertical box stops "long-press, then tap below the
-     * selected text to scroll" from being mistaken for a handle grab —
-     * which was the cause of the "selection drifts as I scroll" bug.
+     * 不对称的竖向盒把「长按后点选区下方滚动」与「抓手柄」区分开——后者
+     * 正是「一滚选区就漂移」缺陷的成因。
      */
     fun grabHandleAt(p: Offset, hitSlopPx: Float): Handle? {
-        val start = handleAnchor(Handle.Start)
-        val end = handleAnchor(Handle.End)
-        // Generous circular hit area centered slightly BELOW each anchor
-        // (the visible dot hangs ~hitSlopPx below the text baseline that
-        // anchor.y reports). hitSlopPx defaults to 48 dp at the call site —
-        // about a thumb-pad's worth of forgiveness in any direction.
-        fun within(anchor: Offset?): Float {
-            if (anchor == null) return Float.MAX_VALUE
-            // Bias center downward so a press AT the dot's visible position
-            // counts; the dot is ~hitSlopPx/2 below anchor.y.
-            val cx = anchor.x
-            val cy = anchor.y + hitSlopPx / 2f
-            val dx = p.x - cx
-            val dy = p.y - cy
-            return kotlin.math.sqrt(dx * dx + dy * dy)
-        }
-        val ds = within(start)
-        val de = within(end)
-        val nearest = if (ds <= de) Handle.Start to ds else Handle.End to de
+        val startDist = distanceToHandleAnchor(handleAnchor(Handle.Start), p, hitSlopPx)
+        val endDist = distanceToHandleAnchor(handleAnchor(Handle.End), p, hitSlopPx)
+        // 慷慨的圆形命中区，圆心略低于各锚点（可见圆点挂在 anchor.y 报告的
+        // 文字基线下约 hitSlopPx 处）。hitSlopPx 调用点默认 48 dp——拇指
+        // 指腹量级的宽容。
+        val nearest = if (startDist <= endDist) Handle.Start to startDist else Handle.End to endDist
         return if (nearest.second <= hitSlopPx * 1.5f) nearest.first else null
     }
 
-    private fun distance(a: Offset, b: Offset): Float {
-        val dx = a.x - b.x; val dy = a.y - b.y
+    /** 圆心向下偏 hitSlopPx/2（点在圆点可视位置上也算命中）。 */
+    private fun distanceToHandleAnchor(anchor: Offset?, p: Offset, hitSlopPx: Float): Float {
+        if (anchor == null) return Float.MAX_VALUE
+        val dx = p.x - anchor.x
+        val dy = p.y - (anchor.y + hitSlopPx / 2f)
         return kotlin.math.sqrt(dx * dx + dy * dy)
     }
 
     /**
-     * Compute the union bounding rectangle (window space) of the active
-     * selection, walking only registered shards. Used to position the
-     * floating toolbar. Returns null if no selection or none of the
-     * selection's shards are currently composed.
-     */
-    fun selectionWindowRect(): Rect? {
-        val sel = selection.value ?: return null
-        val ordered = orderedEndpoints(sel) ?: return null
-        val (first, last) = ordered
-        val firstShard = shards[first.shard] ?: return null
-        val lastShard = shards[last.shard] ?: return null
-        val firstBox = firstShard.textLayoutResult.getBoundingBox(
-            first.charOffset.coerceIn(0, firstShard.textLayoutResult.layoutInput.text.length - 1)
-                .coerceAtLeast(0)
-        )
-        val lastBox = lastShard.textLayoutResult.getBoundingBox(
-            last.charOffset.coerceIn(0, lastShard.textLayoutResult.layoutInput.text.length - 1)
-                .coerceAtLeast(0)
-        )
-        val topLeft = firstShard.positionInWindow() + Offset(firstBox.left, firstBox.top)
-        val bottomRight = lastShard.positionInWindow() + Offset(lastBox.right, lastBox.bottom)
-        return Rect(topLeft, bottomRight)
-    }
-
-    /**
-     * Union the visible parts of the active selection across all currently-
-     * composed shards. Returns the bounding rect of what's actually drawn
-     * on screen right now, in window coords — which may be a subset of the
-     * full logical selection when either endpoint shard has scrolled off-
-     * screen. Used by the floating toolbar to track the visible portion
-     * instead of vanishing the moment a selection endpoint goes off-view.
-     *
-     * Returns null when no part of the selection is currently drawable
-     * (both endpoints AND all in-between shards are off-screen). Callers
-     * are expected to fall back to a fixed anchor position in that case.
-     */
-    /**
-     * Window-space rect of the LAST visible line of the active selection —
-     * the line that contains the end handle (or, if the end handle's shard
-     * is off-screen, the bottom-most line of the lowest still-visible
-     * shard in the selection). Used by the floating toolbar to anchor
-     * itself above the END of the selection so the menu and the end
-     * handle stay clustered together rather than the menu floating up by
-     * the start handle (which can be many lines away).
-     */
-    /**
-     * Window-space horizontal mid-point between the two handles, used by
-     * the toolbar to center itself "between" the handles instead of above
-     * the geometric center of the highlight (which on multi-line selections
-     * sits in the middle of a paragraph). Falls back to null when neither
-     * endpoint is currently registered — caller should keep its own
-     * default.
+     * 两手柄之间的窗口横向中点——工具条用它把自己「居中在两柄之间」，而
+     * 不是高亮几何中心上方（多行选区的中心落在段落中间）。两端都未注册
+     * 时 null——调用方保自己的默认。
      */
     fun handlesCenterX(): Float? {
         val s = handleAnchor(Handle.Start)
@@ -589,23 +469,40 @@ class SelectionController {
         }
     }
 
+    // ─── 选区矩形 ──────────────────────────────────────────────────────────
+
     /**
-     * Window-space rect of the text line under a specific handle's
-     * endpoint — used during a handle drag so the floating toolbar can
-     * follow whichever handle the user is moving. Returns null when the
-     * handle's shard isn't currently registered (off-screen). Sized to
-     * the line height of the character under the endpoint, not the whole
-     * shard, so the toolbar hugs the actual moving line rather than the
-     * entire paragraph.
+     * 活动选区的联合包围矩形（窗口坐标），只走已注册分片。浮动工具条定位
+     * 用。无选区、或选区分片全未组合时 null。
+     */
+    fun selectionWindowRect(): Rect? {
+        val sel = selection.value ?: return null
+        val (first, last) = orderedEndpoints(sel) ?: return null
+        val firstShard = shards[first.shard] ?: return null
+        val lastShard = shards[last.shard] ?: return null
+        val firstBox = firstShard.textLayoutResult.getBoundingBox(
+            first.charOffset.coerceIn(0, firstShard.textLayoutResult.layoutInput.text.length - 1)
+                .coerceAtLeast(0),
+        )
+        val lastBox = lastShard.textLayoutResult.getBoundingBox(
+            last.charOffset.coerceIn(0, lastShard.textLayoutResult.layoutInput.text.length - 1)
+                .coerceAtLeast(0),
+        )
+        val topLeft = firstShard.positionInWindow() + Offset(firstBox.left, firstBox.top)
+        val bottomRight = lastShard.positionInWindow() + Offset(lastBox.right, lastBox.bottom)
+        return Rect(topLeft, bottomRight)
+    }
+
+    /**
+     * 特定手柄端点所在文本行的窗口矩形——手柄拖动期间浮动工具条跟着用户
+     * 在动的那只手柄走。手柄分片未注册（出屏）时 null。尺寸取端点字符的
+     * 行高而非整分片——工具条贴住实际移动的那一行，不是整段。
      */
     fun draggedHandleLineRect(handle: Handle): Rect? {
         val sel = selection.value ?: return null
-        // The Handle enum corresponds to the visual START / END of the
-        // selection in document order, not selection.start vs selection.end
-        // (which depend on which side the user grabbed first). Use the
-        // ordered pair so a "drag the right handle" gesture always tracks
-        // the bottom/right endpoint regardless of whether it's stored in
-        // selection.start or selection.end.
+        // Handle 枚举对应选区按文档序的**可视首/尾**，不是 selection.start
+        // vs selection.end（那两个取决于用户先抓哪边）。用有序对，「拖右手
+        // 柄」永远跟右/下端点，无论它存在 selection.start 还是 end。
         val ordered = orderedEndpoints(sel) ?: return null
         val endpoint = when (handle) {
             Handle.Start -> ordered.first
@@ -617,26 +514,22 @@ class SelectionController {
         val tlr = shard.textLayoutResult
         val len = tlr.layoutInput.text.length
         if (len <= 0) return null
-        val clamped = endpoint.charOffset.coerceIn(0, len)
-        val charIdx = when (handle) {
-            Handle.Start -> clamped.coerceAtMost(len - 1).coerceAtLeast(0)
-            Handle.End -> (clamped - 1).coerceIn(0, len - 1)
-        }
-        val box = runCatching { tlr.getBoundingBox(charIdx) }.getOrNull() ?: return null
-        return Rect(
-            left = origin.x + box.left,
-            top = origin.y + box.top,
-            right = origin.x + box.right,
-            bottom = origin.y + box.bottom,
-        )
+        val box = runCatching {
+            tlr.getBoundingBox(anchorCharIndex(handle, endpoint.charOffset.coerceIn(0, len), len))
+        }.getOrNull() ?: return null
+        return windowRectOf(origin, box)
     }
 
+    /**
+     * 活动选区**末条可见行**的窗口矩形——含尾手柄的那行（尾手柄分片出屏
+     * 时，取选区内最低仍可见分片的底行）。工具条锚在选区**末尾**上方——
+     * 菜单与尾手柄扎堆，而不是飘到首手柄（可能隔着很多行）旁边。
+     */
     fun visibleSelectionEndLineRect(): Rect? {
         val sel = selection.value ?: return null
-        val ordered = orderedEndpoints(sel) ?: return null
-        val (first, last) = ordered
+        val (first, last) = orderedEndpoints(sel) ?: return null
 
-        // Prefer the actual end shard if it's still composed and on screen.
+        // 尾分片仍组合且在屏：直接取它的行。
         val lastShard = shards[last.shard]
         if (lastShard != null && lastShard.positionInWindow() != Offset.Zero) {
             val tlr = lastShard.textLayoutResult
@@ -645,91 +538,77 @@ class SelectionController {
                 val charIdx = (last.charOffset - 1).coerceIn(0, len - 1)
                 val box = runCatching { tlr.getBoundingBox(charIdx) }.getOrNull()
                 if (box != null) {
-                    val origin = lastShard.positionInWindow()
-                    return Rect(
-                        left = origin.x + box.left,
-                        top = origin.y + box.top,
-                        right = origin.x + box.right,
-                        bottom = origin.y + box.bottom,
-                    )
+                    return windowRectOf(lastShard.positionInWindow(), box)
                 }
             }
         }
 
-        // Fallback: end handle's shard scrolled off-screen. Find the
-        // BOTTOM-most still-composed shard that's part of the selection —
-        // that's the visual "tail" of what the user sees as the highlight.
-        var bestShard: TextShard? = null
-        var bestBottom = Float.NEGATIVE_INFINITY
+        // 回落：尾手柄分片已出屏。找选区内仍在组合的最**底**分片——用户看
+        // 到的高亮「尾巴」。
+        var tail: TextShard? = null
+        var tailBottom = Float.NEGATIVE_INFINITY
         for ((id, shard) in shards) {
             val origin = shard.positionInWindow()
             if (origin == Offset.Zero) continue
-            val isFirst = id == first.shard
-            val isLast = id == last.shard
-            val isBetween = !isFirst && !isLast &&
-                isShardBetween(first.shard, last.shard, id)
-            if (!isFirst && !isLast && !isBetween) continue
+            if (!shardParticipatesIn(id, first, last)) continue
             val bottom = origin.y + shard.sizePx().height
-            if (bottom > bestBottom) {
-                bestBottom = bottom
-                bestShard = shard
+            if (bottom > tailBottom) {
+                tailBottom = bottom
+                tail = shard
             }
         }
-        val tail = bestShard ?: return null
-        val tlr = tail.textLayoutResult
-        val len = tlr.layoutInput.text.length
-        if (len <= 0) return null
-        // Use the LAST char of this shard for the visual line.
-        val lineCount = tlr.lineCount
-        if (lineCount <= 0) return null
-        val lastLine = lineCount - 1
+        val tailShard = tail ?: return null
+        val tlr = tailShard.textLayoutResult
+        if (tlr.layoutInput.text.length <= 0) return null
+        // 该分片**末字符**所在行作可视行。
+        val lastLine = tlr.lineCount - 1
+        if (lastLine < 0) return null
         val lineTop = runCatching { tlr.getLineTop(lastLine) }.getOrNull() ?: return null
         val lineBottom = runCatching { tlr.getLineBottom(lastLine) }.getOrNull() ?: return null
-        val origin = tail.positionInWindow()
-        // Approximate the line's visible x range via the shard's body width.
+        val origin = tailShard.positionInWindow()
+        // 用分片体宽近似该行的可视 x 范围。
         return Rect(
             left = origin.x,
             top = origin.y + lineTop,
-            right = origin.x + tail.sizePx().width,
+            right = origin.x + tailShard.sizePx().width,
             bottom = origin.y + lineBottom,
         )
     }
 
+    /**
+     * 活动选区在全部已组合分片上**可见部分**的联合。返回此刻屏上实际画
+     * 出来的包围矩形（窗口坐标）——任一端点出屏时它可能是完整逻辑选区的
+     * 子集。工具条跟可见部分走，而不是端点一出视野就消失。无可绘制部分
+     * （两端点与中间分片全出屏）时 null——调用方回落固定锚位。
+     */
     fun visibleSelectionWindowRect(): Rect? {
         val sel = selection.value ?: return null
-        val ordered = orderedEndpoints(sel) ?: return null
-        val (first, last) = ordered
+        val (first, last) = orderedEndpoints(sel) ?: return null
         var minL = Float.POSITIVE_INFINITY
         var minT = Float.POSITIVE_INFINITY
         var maxR = Float.NEGATIVE_INFINITY
         var maxB = Float.NEGATIVE_INFINITY
         for ((id, shard) in shards) {
-            val isFirstHere = id == first.shard
-            val isLastHere = id == last.shard
-            val isBetween = !isFirstHere && !isLastHere &&
-                isShardBetween(first.shard, last.shard, id)
-            if (!isFirstHere && !isLastHere && !isBetween) continue
+            if (!shardParticipatesIn(id, first, last)) continue
             val tlr = shard.textLayoutResult
             val laidOutLen = tlr.layoutInput.text.length
             if (laidOutLen <= 0) continue
-            val from = if (isFirstHere) first.charOffset.coerceIn(0, laidOutLen) else 0
-            val to = if (isLastHere) last.charOffset.coerceIn(0, laidOutLen) else laidOutLen
+            val from = if (id == first.shard) first.charOffset.coerceIn(0, laidOutLen) else 0
+            val to = if (id == last.shard) last.charOffset.coerceIn(0, laidOutLen) else laidOutLen
             val lo = minOf(from, to)
             val hi = maxOf(from, to)
             if (hi <= lo) continue
             val origin = shard.positionInWindow()
-            // The shard's positionInWindow falls back to Offset.Zero when
-            // the LayoutCoordinates have detached — skip those, they
-            // wouldn't be drawn anyway.
+            // positionInWindow 在 LayoutCoordinates 分离后回落
+            // Offset.Zero——跳过那些，反正也画不出来。
             if (origin == Offset.Zero) continue
             val startBox = runCatching {
-                tlr.getBoundingBox((lo).coerceAtMost(laidOutLen - 1).coerceAtLeast(0))
+                tlr.getBoundingBox(lo.coerceAtMost(laidOutLen - 1).coerceAtLeast(0))
             }.getOrNull() ?: continue
             val endBox = runCatching {
                 tlr.getBoundingBox((hi - 1).coerceIn(0, laidOutLen - 1))
             }.getOrNull() ?: continue
-            // Union both boxes — covers the case where the selection spans
-            // multiple lines within this shard.
+            // 两盒取并——盖住选区在本分片内跨多行的情形。
             val left = origin.x + minOf(startBox.left, endBox.left)
             val top = origin.y + minOf(startBox.top, endBox.top)
             val right = origin.x + maxOf(startBox.right, endBox.right)
@@ -743,11 +622,25 @@ class SelectionController {
         return Rect(minL, minT, maxR, maxB)
     }
 
+    /** 分片 id 是否参与该选区（是端点、或在两端点之间）。 */
+    private fun shardParticipatesIn(id: TextShardId, first: TextPosition, last: TextPosition): Boolean {
+        val isEndpoint = id == first.shard || id == last.shard
+        return isEndpoint || isShardBetween(first.shard, last.shard, id)
+    }
+
+    private fun windowRectOf(origin: Offset, box: androidx.compose.ui.geometry.Rect): Rect = Rect(
+        left = origin.x + box.left,
+        top = origin.y + box.top,
+        right = origin.x + box.right,
+        bottom = origin.y + box.bottom,
+    )
+
+    // ─── 端点排序 ──────────────────────────────────────────────────────────
+
     /**
-     * Returns (firstEndpoint, lastEndpoint) ordered by *visual* position so
-     * the caller can iterate left-to-right / top-to-bottom regardless of
-     * which handle the user grabbed. Requires both endpoints' shards to be
-     * registered (so we can compare window-y).
+     * 按**可视**位置返回（首端点, 尾端点）——调用方无从得知用户先抓哪个手
+     * 柄，也能左到右/上到下遍历。要求两端点分片都已注册（否则没有窗口 y
+     * 可比）。
      */
     fun orderedEndpoints(sel: TextSelection): Pair<TextPosition, TextPosition>? {
         val a = sel.start
@@ -755,50 +648,44 @@ class SelectionController {
         if (a.shard == b.shard) {
             return if (a.charOffset <= b.charOffset) a to b else b to a
         }
-        // Prefer stable document-order index when both endpoints have one,
-        // because that survives a shard being off-screen / unregistered.
-        // Fall back to y-comparison if we can't get an index for either.
-        val ka = shardOrderKey(a.shard)
-        val kb = shardOrderKey(b.shard)
-        if (ka != null && kb != null && a.shard.messageId == b.shard.messageId) {
-            return if (ka <= kb) a to b else b to a
+        // 两端点都有文档序键时优先用它——分片出屏/未注册也能比。键拿不到
+        // 再回落 y 比较。
+        val keyA = shardOrderKey(a.shard)
+        val keyB = shardOrderKey(b.shard)
+        if (keyA != null && keyB != null && a.shard.messageId == b.shard.messageId) {
+            return if (keyA <= keyB) a to b else b to a
         }
-        val sA = shards[a.shard] ?: return null
-        val sB = shards[b.shard] ?: return null
-        val yA = sA.positionInWindow().y
-        val yB = sB.positionInWindow().y
+        val shardA = shards[a.shard] ?: return null
+        val shardB = shards[b.shard] ?: return null
+        val yA = shardA.positionInWindow().y
+        val yB = shardB.positionInWindow().y
         return if (yA <= yB) a to b else b to a
     }
 
+    // ─── 选中文本提取 ──────────────────────────────────────────────────────
+
     /**
-     * Build the plain-text string covered by the active selection. Shards
-     * not currently composed are still included via [TextShard.plainText]
-     * lookups — but cross-message selections can only contain shards we've
-     * seen at least once. (In practice every shard in a sane selection will
-     * have been registered at the moment the user dragged across it.)
+     * 构建活动选区覆盖的纯文本。未组合的分片经 [TextShard.plainText] 查阅
+     * 仍计入——但跨消息选区只能含至少见过一次的分片（正常拖拽路径上，选
+     * 区里的每个分片被拖过时都注册过）。
      */
     fun selectedPlainText(documentRegistry: Map<TextShardId, String> = emptyMap()): String {
         val sel = selection.value ?: return ""
 
-        // [T-android-copy-selection-not-whole-message] orderedEndpoints()
-        // returns null only when an endpoint shard recycled off-screen AND has
-        // no document-order key (long drag). Fall back to the precise per-shard
-        // walk over whatever shards ARE still registered — NOT the whole cached
-        // message. (The prior fix [T-android-copy-long-reply-incomplete]
-        // returned the entire message markdown here and in the cross-shard
-        // branch below, which is why a partial multi-shard selection pasted the
-        // full reply.) If even the walk comes up empty (genuinely-degenerate
-        // single-shard recycle), keep the original collapsed substring.
+        // [T-android-copy-selection-not-whole-message] orderedEndpoints() 仅在
+        // 端点分片被回收出屏**且**无文档序键时（长拖）返回 null。此时回落
+        // 为对仍注册分片的精确逐片走查——**不是**整条缓存消息。（此前的
+        // [T-android-copy-long-reply-incomplete] 修复在这里和下面跨片分支
+        // 返回了整条消息 markdown——多分片部分选择粘出整条回复正是那个
+        // 原因。）走查也空（真退化的单分片回收）时保原折叠子串。
         val ordered = orderedEndpoints(sel) ?: run {
             val walked = crossShardSelectedText(sel.start, sel.end, documentRegistry)
             return walked.ifEmpty { collapsedFallback(sel) }
         }
         val (first, last) = ordered
 
-        // Single-shard selection — precise substring of the plainText.
-        // Intentionally NOT routed through the message cache: a within-one-
-        // shard selection is a normal short/partial-paragraph copy and must
-        // stay an exact substring.
+        // 单分片选择——plainText 的精确子串。刻意**不走**消息缓存：单分片
+        // 内的选择是普通的短选/半段复制，必须是精确子串。
         if (first.shard == last.shard) {
             val txt = shards[first.shard]?.plainText
                 ?: documentRegistry[first.shard]
@@ -812,56 +699,44 @@ class SelectionController {
     }
 
     /**
-     * [T-android-copy-selection-not-whole-message] Build the text covered by a
-     * cross-shard selection, bounded to the selection — never the whole
-     * message.
+     * [T-android-copy-selection-not-whole-message] 构建跨分片选区覆盖的文
+     * 本——以选区为界，绝不整条消息。
      *
-     * Primary path: the per-shard walk over registered [MdText] shards, sliced
-     * at both endpoints. That is exact for the common case (selection spans
-     * paragraphs / headings / list items, all of which ARE shards — Jackson's
-     * report).
+     * 主路：对已注册 MdText 分片的逐片走查、两端切片。常见情形（选区跨段
+     * 落/标题/列表项——全是分片）下精确。
      *
-     * The walk's only blind spot is non-shard blocks (code fences, tables,
-     * math display) that render via their own Text composables and so drop out
-     * of the shard registry. To recover THOSE without dumping the entire reply,
-     * we splice in the slice of the cached message markdown that sits strictly
-     * between the first selected shard's text and the last selected shard's
-     * text — and only when such a gap actually exists. If the markdown anchors
-     * can't be located, we keep the precise shard-walk result rather than
-     * falling back to the full message.
+     * 走查唯一的盲区是非分片块（代码围栏、表格、展示数学）——它们经自己的
+     * Text 可组合件渲染、不在分片登记表里。要不倾倒整条回复地找回它们，
+     * 就把缓存消息 markdown 中严格介于首选中分片文本与末选中分片文本之间
+     * 的片段拼接进来——且仅在真有此空档时。markdown 锚找不到就保留精确的
+     * 走查结果，不回落整条消息。
      */
     private fun crossShardSelectedText(
         first: TextPosition,
         last: TextPosition,
         documentRegistry: Map<TextShardId, String>,
     ): String {
-        val sb = StringBuilder()
-        val visitedOrder = registeredShardsInOrder()
+        val collected = StringBuilder()
         var started = false
-        for (id in visitedOrder) {
+        for (id in registeredShardsInOrder()) {
             val txt = shards[id]?.plainText ?: documentRegistry[id] ?: continue
             when (id) {
                 first.shard -> {
-                    sb.append(txt.substring(first.charOffset.coerceIn(0, txt.length), txt.length))
+                    collected.append(txt.substring(first.charOffset.coerceIn(0, txt.length), txt.length))
                     started = true
                 }
                 last.shard -> {
-                    if (started) sb.append('\n')
-                    sb.append(txt.substring(0, last.charOffset.coerceIn(0, txt.length)))
-                    started = true
+                    if (started) collected.append('\n')
+                    collected.append(txt.substring(0, last.charOffset.coerceIn(0, txt.length)))
                     break
                 }
-                else -> if (started) {
-                    sb.append('\n').append(txt)
-                }
+                else -> if (started) collected.append('\n').append(txt)
             }
         }
-        val walk = sb.toString()
+        val walk = collected.toString()
 
-        // Same-message selection: try to recover non-shard blocks (code /
-        // tables) inside the selected span by slicing the cached markdown
-        // between the selection's head and tail anchors. Cross-message
-        // selections have no single source string, so the walk stands.
+        // 同消息选择：试着用缓存在选区内 markdown 的头尾锚切片找回非分片
+        // 块（代码/表格）。跨消息没有单一源串，走查即终稿。
         if (first.shard.messageId == last.shard.messageId) {
             spliceNonShardSpan(first, last, walk, documentRegistry)?.let { return it }
         }
@@ -869,12 +744,10 @@ class SelectionController {
     }
 
     /**
-     * [T-android-copy-selection-not-whole-message] When a same-message cross-
-     * shard selection spans a non-shard block (code/table/math), return the
-     * slice of the cached message markdown bounded by the selection's head and
-     * tail anchors. Returns null when there's no cache, no usable anchors, or
-     * the selected span contains no extra (non-shard) content beyond the
-     * shard-walk text — in which case the caller keeps the exact shard walk.
+     * [T-android-copy-selection-not-whole-message] 同消息跨分片选区横跨非分
+     * 片块（代码/表格/数学）时，返回以选区头尾锚为界的缓存消息 markdown 切
+     * 片。无缓存、无可用锚、或选中段内没有超出走查文本的额外（非分片）内
+     * 容时返回 null——调用方保留精确走查。
      */
     private fun spliceNonShardSpan(
         first: TextPosition,
@@ -887,64 +760,57 @@ class SelectionController {
         val firstText = shards[first.shard]?.plainText ?: documentRegistry[first.shard] ?: return null
         val lastText = shards[last.shard]?.plainText ?: documentRegistry[last.shard] ?: return null
 
-        // Head anchor: a run of the selected text right after the start offset.
+        // 头锚：起始偏移之后一段选中文本；尾锚：结束偏移之前一段。
         val headSel = firstText.substring(first.charOffset.coerceIn(0, firstText.length))
-        // Tail anchor: a run of the selected text right before the end offset.
         val tailSel = lastText.substring(0, last.charOffset.coerceIn(0, lastText.length))
 
-        val headAnchor = anchorFor(headSel, fromStart = true)
-        val tailAnchor = anchorFor(tailSel, fromStart = false)
+        val headAnchor = distinctiveAnchor(headSel, fromStart = true)
+        val tailAnchor = distinctiveAnchor(tailSel, fromStart = false)
         if (headAnchor.isEmpty() || tailAnchor.isEmpty()) return null
 
-        val startIdx = md.indexOf(headAnchor)
-        if (startIdx < 0) return null
-        val tailIdx = md.indexOf(tailAnchor, startIdx + headAnchor.length)
-        if (tailIdx < 0) return null
-        val endIdx = tailIdx + tailAnchor.length
-        if (endIdx <= startIdx) return null
+        val sliceStart = md.indexOf(headAnchor)
+        if (sliceStart < 0) return null
+        val anchorTail = md.indexOf(tailAnchor, sliceStart + headAnchor.length)
+        if (anchorTail < 0) return null
+        val sliceEnd = anchorTail + tailAnchor.length
+        if (sliceEnd <= sliceStart) return null
 
-        val slice = md.substring(startIdx, endIdx)
-        // Only prefer the markdown slice when the selected span actually
-        // crosses a NON-SHARD block — a fenced code block (``` / ~~~), a table
-        // (pipe rows), or display math ($$). Those render via their own Text
-        // composables (no MinisTextKit shard), so the per-shard walk drops them
-        // and the markdown slice is the only way to recover them. For a plain
-        // run of paragraphs / headings / list items (all shards), the walk is
-        // already exact and formatting-free, so prefer it — returning the
-        // markdown slice there would re-introduce `#`, `**`, etc. the user
-        // didn't select as rendered text.
+        val slice = md.substring(sliceStart, sliceEnd)
+        // 只有选中段确实**横跨非分片块**时才偏好 markdown 切片——围栏代码
+        // （``` / ~~~）、表格（竖线行）或展示数学（$$）。那些经自己的 Text
+        // 可组合件渲染（无 MinisTextKit 分片），逐片走查会丢掉它们，切片是
+        // 唯一找回途径。纯段落/标题/列表项（全是分片）的连续段里走查已精
+        // 确且无格式符——此时返回切片反而把用户没选的 `#`、`**` 塞回去。
         return if (sliceCrossesNonShardBlock(slice)) slice else null
     }
 
     /**
-     * [T-android-copy-selection-not-whole-message] Heuristic: does this raw-
-     * markdown slice contain a block that doesn't register as a MinisTextKit
-     * text shard (fenced code, table, or display math)? Used to decide whether
-     * the markdown slice carries content the per-shard walk would have dropped.
+     * [T-android-copy-selection-not-whole-message] 启发式：原始 markdown 切
+     * 片里有没有**不注册**为 MinisTextKit 文本分片的块（围栏代码、表格、
+     * 展示数学）？用来判定 markdown 切片是否携带逐片走查会丢的内容。
      */
     private fun sliceCrossesNonShardBlock(slice: String): Boolean {
         if (slice.contains("```") || slice.contains("~~~")) return true
         if (slice.contains("$$")) return true
-        // A markdown table needs a header row plus a delimiter row of dashes
-        // and pipes (e.g. `|---|---|`). Look for that delimiter shape so a
-        // stray inline `|` in prose doesn't trigger a false positive.
+        // markdown 表格要表头行加分隔行（`|---|---|`）。认分隔行形态，散
+        // 文里孤立的行内 `|` 不误报。
         val tableDelimiter = Regex("""(?m)^\s*\|?\s*:?-{3,}.*\|""")
         return tableDelimiter.containsMatchIn(slice)
     }
 
     /**
-     * Pick a short, distinctive anchor substring from one end of a selected
-     * run so it can be located in the raw markdown. Trims whitespace and caps
-     * the length to keep the match cheap and resilient to inline formatting
-     * that lies deeper in the run. Returns "" when no usable anchor exists.
+     * 从选中跑段的一端挑一个短而独特的锚子串，供在原始 markdown 中定位。
+     * 修边空白、限长——匹配便宜、也对深处行内格式有韧性。无可用锚返回 ""。
      */
-    private fun anchorFor(selected: String, fromStart: Boolean): String {
+    private fun distinctiveAnchor(selected: String, fromStart: Boolean): String {
         val trimmed = selected.trim()
         if (trimmed.isEmpty()) return ""
         val cap = 24
-        return if (trimmed.length <= cap) trimmed
-        else if (fromStart) trimmed.substring(0, cap)
-        else trimmed.substring(trimmed.length - cap)
+        return when {
+            trimmed.length <= cap -> trimmed
+            fromStart -> trimmed.substring(0, cap)
+            else -> trimmed.substring(trimmed.length - cap)
+        }
     }
 
     private fun collapsedFallback(sel: TextSelection): String {
@@ -954,7 +820,7 @@ class SelectionController {
         return txt.substring(minOf(a, b), maxOf(a, b))
     }
 
-    /** Currently-composed shards in visual top-to-bottom order. */
+    /** 当前已组合分片，按可视自上而下排序。 */
     private fun registeredShardsInOrder(): List<TextShardId> =
         shards.values
             .sortedBy { it.positionInWindow().y }
@@ -962,10 +828,9 @@ class SelectionController {
 }
 
 /**
- * Composition local exposing the active [SelectionController] to descendants.
- * Default = a no-op controller so callers can pretend it's always there;
- * shards composed without a real controller simply never participate in any
- * selection. Wrap with [ProvideSelectionController] at the ChatScreen level.
+ * 向后代暴露活动 [SelectionController] 的 CompositionLocal。默认给个空控
+ * 制器让调用方可以装作它总在——没挂真控制器的分片只是永不参与任何选择。
+ * 在 ChatScreen 层用 [ProvideSelectionController] 包住。
  */
 val LocalMinisSelectionController = compositionLocalOf<SelectionController?> { null }
 
@@ -980,13 +845,11 @@ fun ProvideSelectionController(
 }
 
 /**
- * Helper for shard owners: registers the shard with the ambient controller
- * (if any) for the lifetime of the call site, then unregisters on dispose.
+ * 分片属主的助手：在调用点生命周期内把分片注册给环境控制器（若有），
+ * dispose 时注销。
  *
- * Pass the *currently up-to-date* [TextShard] every time — the helper holds
- * the reference under the same id, replacing on each recomposition so
- * position-in-window callbacks and TextLayoutResult always reflect the
- * latest measurement.
+ * 每次都传**当前最新**的 [TextShard]——助手按同 id 持有该引用、每次重组
+ * 替换，窗口位置回调和 TextLayoutResult 始终反映最新测量。
  */
 @Composable
 fun RegisterSelectionShard(shard: TextShard?) {
@@ -999,18 +862,16 @@ fun RegisterSelectionShard(shard: TextShard?) {
 }
 
 /**
- * Draw the active selection's highlight rectangles inside a single shard's
- * DrawScope. Call from a `Modifier.drawBehind` on the same node whose
- * [TextLayoutResult] backed the shard registration — the highlight is drawn
- * in the shard's local coordinate space and only the portion of the
- * selection that falls inside this shard.
+ * 在单个分片的 DrawScope 里画活动选区的高亮矩形。在以支撑该分片注册的
+ * [TextLayoutResult] 的同一节点的 `Modifier.drawBehind` 里调——高亮画在分
+ * 片局部坐标系，且只画落在本分片内的那部分选区。
  */
-fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionForShard(
+fun DrawScope.drawSelectionForShard(
     shardId: TextShardId,
     result: TextLayoutResult,
     selection: TextSelection,
     controller: SelectionController?,
-    color: androidx.compose.ui.graphics.Color,
+    color: Color,
 ) {
     val laidOutText = result.layoutInput.text.text
     val maxOffset = laidOutText.length
@@ -1024,18 +885,14 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionForShard(
     }
     val (first, last) = ordered
 
-    // Decide the [from, to] character range within this shard.
+    // 定本分片内的 [from, to] 字符区间。
     val isFirstHere = first.shard == shardId
     val isLastHere = last.shard == shardId
     if (!isFirstHere && !isLastHere) {
-        // This shard sits BETWEEN the two endpoints — only include it if
-        // the selection actually spans across us. Use shard order via the
-        // controller's snapshot of registered shards' window-y positions.
-        if (controller == null) {
-            return
-        }
-        val between = controller.isShardBetween(first.shard, last.shard, shardId)
-        if (!between) return
+        // 本分片位于两端点**之间**——只有选区真的横穿我们才包含。经控制
+        // 器的已注册分片窗口 y 快照判序。
+        if (controller == null) return
+        if (!controller.isShardBetween(first.shard, last.shard, shardId)) return
     }
 
     val from = if (isFirstHere) first.charOffset.coerceIn(0, maxOffset) else 0
@@ -1062,44 +919,29 @@ fun androidx.compose.ui.graphics.drawscope.DrawScope.drawSelectionForShard(
             if (box.right > right) right = box.right
         }
         if (!left.isFinite() || right <= left) continue
-        // If this is the last visible line of the selection in this shard
-        // and we DON'T contain the final endpoint, extend the highlight
-        // to the line's right edge so cross-shard selections feel continuous.
-        val isFinalLineHere = line == endLine && isLastHere
-        val drawRight = if (!isFinalLineHere) {
-            val lineRight = result.getLineRight(line)
-            maxOf(right, lineRight)
-        } else right
+        // 若这是本分片内选区的末条可视行、而我们**不含**最终端点，把高亮
+        // 延到行右缘——跨分片选择才有连续感。
+        val finalLineHere = line == endLine && isLastHere
+        val drawRight = if (!finalLineHere) maxOf(right, result.getLineRight(line)) else right
         val top = result.getLineTop(line)
         val bottom = result.getLineBottom(line)
         drawRect(
             color = color,
             topLeft = Offset(left, top),
-            size = androidx.compose.ui.geometry.Size(drawRight - left, bottom - top),
+            size = Size(drawRight - left, bottom - top),
         )
     }
 }
 
 /**
- * Tells whether shard [middle] lies (in visual top-to-bottom order) between
- * shards [a] and [b], using their current registered positions. Used by the
- * highlight code to decide whether a shard with no selection endpoint
- * inside it should still be filled (it lies in the middle of a multi-shard
- * range).
- */
-/**
- * Best-effort document-order index for a shard, extracted from the
- * trailing integer in its shardId string. Returns null if the shardId
- * doesn't carry a parseable index. Use case: ordering shards even when
- * one of them isn't currently registered with the SelectionController
- * (e.g. it scrolled off-screen and got disposed by LazyColumn).
+ * 尽力的文档序键：从 shardId 串尾的整数提取。不可解析为 null。用途：某个
+ * 分片当前未注册（滚出屏、被 LazyColumn dispose）时也能排序。
  *
- * Convention from ChatScreen.kt: shard ids look like
+ * ChatScreen.kt 的约定，shard id 形如：
  *   "mdblock:<parentBlockId>:<blockIndex>"   ← splitMarkdownIntoBlockTexts
- *   "text:<blockId>"                          ← single AssistantText block
- *   "legacy"                                  ← whole-message legacy path
- * The mdblock case is the only one that needs ordering today; the others
- * are single-shard so the comparison never has to disambiguate.
+ *   "text:<blockId>"                          ← 单 AssistantText 块
+ *   "legacy"                                  ← 整消息 legacy 路径
+ * 今天只有 mdblock 需要排序；其余是单分片，比较永远不必消歧。
  */
 private fun shardOrderKey(id: TextShardId): Int? {
     val s = id.shardId
@@ -1108,47 +950,43 @@ private fun shardOrderKey(id: TextShardId): Int? {
     return s.substring(lastColon + 1).toIntOrNull()
 }
 
+/**
+ * 分片 [middle] 是否（按可视自上而下序）位于 [a] 与 [b] 之间——按当前注册
+ * 位置。高亮代码用它判定：没有选区端点在内的分片是否仍该填充（它处在多
+ * 分片区间的中间）。
+ */
 internal fun SelectionController.isShardBetween(
     a: TextShardId,
     b: TextShardId,
     middle: TextShardId,
 ): Boolean {
-    // First try the document-order index baked into the shardId string —
-    // mdblock:<parent>:<index> / text:<blockId>. The numeric index is a
-    // stable document position, immune to a/b having scrolled off-screen
-    // (which would leave their TextShard entries unregistered and the
-    // y-comparison below unable to position them). The "messageId" axis
-    // is compared first so cross-message selections still slot correctly:
-    // a shard from message M1 only lies "between" two endpoints if they
-    // straddle M1 in the registered-shards' visual order.
+    // 先试 shardId 串里烤进的文档序索引——mdblock:<parent>:<index> /
+    // text:<blockId>。数字索引是稳定的文档位置，对 a/b 出屏免疫（出屏会使
+    // 它们的 TextShard 未注册、下面的 y 比较摆不了位）。先比 messageId 轴，
+    // 跨消息选择也摆得对：M1 的分片只有在两端点在已注册分片可视序上跨过
+    // M1 时才「居中」。
     val orderA = shardOrderKey(a)
     val orderB = shardOrderKey(b)
     val orderM = shardOrderKey(middle)
     if (orderA != null && orderB != null && orderM != null &&
         a.messageId == b.messageId && middle.messageId == a.messageId
     ) {
-        val lo = minOf(orderA, orderB)
-        val hi = maxOf(orderA, orderB)
-        return orderM in lo..hi
+        return orderM in minOf(orderA, orderB)..maxOf(orderA, orderB)
     }
-    // Fall back to y-based comparison when index parsing fails or the
-    // selection spans multiple messages.
-    val shards = currentShards()
-    val sa = shards[a] ?: return false
-    val sb = shards[b] ?: return false
-    val sm = shards[middle] ?: return false
-    val ya = sa.positionInWindow().y
-    val yb = sb.positionInWindow().y
-    val ym = sm.positionInWindow().y
-    val lo = minOf(ya, yb)
-    val hi = maxOf(ya, yb)
-    return ym in lo..hi
+    // 索引解析失败或选区跨消息：回落 y 比较。
+    val registry = currentShards()
+    val shardA = registry[a] ?: return false
+    val shardB = registry[b] ?: return false
+    val shardM = registry[middle] ?: return false
+    val yA = shardA.positionInWindow().y
+    val yB = shardB.positionInWindow().y
+    val yM = shardM.positionInWindow().y
+    return yM in minOf(yA, yB)..maxOf(yA, yB)
 }
 
 /**
- * Convenience for callers that already have a [LayoutCoordinates] from an
- * `onGloballyPositioned` modifier — wraps it into the `positionInWindow` and
- * `sizePx` closures the controller expects.
+ * 手里已有 `onGloballyPositioned` 修饰符给的 [LayoutCoordinates] 的调用方
+ * 的便捷件——包成控制器要的 `positionInWindow` 与 `sizePx` 闭包。
  */
 fun buildTextShard(
     id: TextShardId,
@@ -1164,18 +1002,17 @@ fun buildTextShard(
     textLayoutResult = layoutResult,
     isAtomicUnit = isAtomicUnit,
     positionInWindow = {
-        val c = coordinatesProvider()
-        if (c != null && c.isAttached) c.positionInWindow() else Offset.Zero
+        val coords = coordinatesProvider()
+        if (coords != null && coords.isAttached) coords.positionInWindow() else Offset.Zero
     },
     sizePx = {
-        val c = coordinatesProvider()
-        if (c != null && c.isAttached) {
-            androidx.compose.ui.unit.IntSize(c.size.width, c.size.height)
+        val coords = coordinatesProvider()
+        if (coords != null && coords.isAttached) {
+            IntSize(coords.size.width, coords.size.height)
         } else {
-            androidx.compose.ui.unit.IntSize.Zero
+            IntSize.Zero
         }
     },
     renderedToRawOffset = renderedToRawOffset,
     rawMarkdown = rawMarkdown,
 )
-

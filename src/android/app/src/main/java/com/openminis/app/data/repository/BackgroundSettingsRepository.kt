@@ -7,81 +7,74 @@ import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 
 /**
- * T180-bg-notif: persistence for background-related toggles. Currently
- * only "Task Notifications" lives here; iOS exposes the same toggle in
- * `EnhancedBackgroundSettingsView` bound to
- * `BackgroundKeepAliveManager.backgroundNotificationsEnabled`.
+ * T180-bg-notif：后台相关开关的持久层（血统清剿 P3.7 就地真重写；
+ * prefs 名与键集冻结）。目前住着三只布尔位 + 一对悬浮窗坐标：
  *
- * Default value is `true` to match iOS, where the toggle ships ON so
- * Live Activity and task-completion notifications work out-of-the-box
- * on first install. The user can opt out from Settings.
+ * - 「任务通知」——对齐 iOS `EnhancedBackgroundSettingsView` 绑定的
+ *   `BackgroundKeepAliveManager.backgroundNotificationsEnabled`。默认 true
+ *   与 iOS 一致：首装即开，Live Activity 与任务完成通知开箱可用，用户可
+ *   从设置里关。
+ * - 「后台悬浮工具态」——默认关：悬浮窗要 SYSTEM_ALERT_WINDOW，那是独立
+ *   的系统权限流程，用户不主动开就不出现。
+ * - 「灵动岛实况」（Android 16 Live Updates）——默认关：仅 Android 16+
+ *   且按应用授权才存在，开启时**替代**悬浮窗（AgentForegroundService.
+ *   applyOverlayState 里互斥），不能让升级用户的行为被静默改写。响应式：
+ *   翻转即重驱动前台服务的合成流，悬浮窗出现/消失不用重启应用。
+ *
+ * 布尔位全部以 StateFlow 对外——设置页拨开关，通知器/前台服务状态文案
+ * 等每个消费点立刻跟上。
  */
 class BackgroundSettingsRepository(context: Context) {
 
-    private val prefs: SharedPreferences =
+    private val store: SharedPreferences =
         context.applicationContext.getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
 
-    private val _taskNotificationsEnabled =
-        MutableStateFlow(prefs.getBoolean(KEY_TASK_NOTIFICATIONS, DEFAULT_TASK_NOTIFICATIONS))
+    /** 读持久值建初值 + 翻转即落盘的布尔位小骨架。 */
+    private fun persistedFlag(key: String, default: Boolean) =
+        MutableStateFlow(store.getBoolean(key, default))
 
-    /**
-     * Live state of the toggle. Compose surfaces collect this so flipping
-     * the switch in Settings is reflected immediately at every consumer
-     * (notifier, FG service status text, etc).
-     */
-    val taskNotificationsEnabled: StateFlow<Boolean> =
-        _taskNotificationsEnabled.asStateFlow()
+    private fun MutableStateFlow<Boolean>.persist(key: String) =
+        store.edit().putBoolean(key, value).apply()
+
+    private val _taskNotifications = persistedFlag(KEY_TASK_NOTIFICATIONS, DEFAULT_TASK_NOTIFICATIONS)
+
+    /** 任务完成通知开关（见类注释，默认开）。 */
+    val taskNotificationsEnabled: StateFlow<Boolean> = _taskNotifications.asStateFlow()
 
     fun setTaskNotificationsEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_TASK_NOTIFICATIONS, value).apply()
-        _taskNotificationsEnabled.value = value
+        _taskNotifications.value = value
+        _taskNotifications.persist(KEY_TASK_NOTIFICATIONS)
     }
 
-    /**
-     * T-bg-overlay phase 2: "show floating tool-status overlay while the
-     * app is backgrounded" toggle. Defaults to OFF — the overlay needs
-     * SYSTEM_ALERT_WINDOW which is a separate system permission flow, so
-     * we won't surface anything until the user opts in.
-     */
-    private val _backgroundOverlayEnabled =
-        MutableStateFlow(prefs.getBoolean(KEY_BG_OVERLAY_ENABLED, false))
-    val backgroundOverlayEnabled: StateFlow<Boolean> =
-        _backgroundOverlayEnabled.asStateFlow()
+    private val _backgroundOverlay = persistedFlag(KEY_BG_OVERLAY_ENABLED, false)
+
+    /** 后台悬浮工具态开关（默认关，需用户先过系统权限）。 */
+    val backgroundOverlayEnabled: StateFlow<Boolean> = _backgroundOverlay.asStateFlow()
 
     fun setBackgroundOverlayEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_BG_OVERLAY_ENABLED, value).apply()
-        _backgroundOverlayEnabled.value = value
+        _backgroundOverlay.value = value
+        _backgroundOverlay.persist(KEY_BG_OVERLAY_ENABLED)
     }
 
-    /**
-     * [T-android-dynamic-island] "Show live status on the dynamic island"
-     * toggle (Android 16 Live Updates). Defaults to OFF — the capability only
-     * exists on Android 16+ with the per-app grant, and when ON it REPLACES the
-     * floating overlay (mutual exclusion in AgentForegroundService.applyOverlayState),
-     * so we don't want it silently changing behavior on upgrade. Reactive:
-     * flipping it re-drives the FG service's combined flow so the overlay
-     * appears/disappears without an app restart.
-     */
-    private val _dynamicIslandEnabled =
-        MutableStateFlow(prefs.getBoolean(KEY_DYNAMIC_ISLAND_ENABLED, false))
-    val dynamicIslandEnabled: StateFlow<Boolean> =
-        _dynamicIslandEnabled.asStateFlow()
+    private val _dynamicIsland = persistedFlag(KEY_DYNAMIC_ISLAND_ENABLED, false)
+
+    /** 灵动岛实况开关（默认关，开启即替代悬浮窗）。 */
+    val dynamicIslandEnabled: StateFlow<Boolean> = _dynamicIsland.asStateFlow()
 
     fun setDynamicIslandEnabled(value: Boolean) {
-        prefs.edit().putBoolean(KEY_DYNAMIC_ISLAND_ENABLED, value).apply()
-        _dynamicIslandEnabled.value = value
+        _dynamicIsland.value = value
+        _dynamicIsland.persist(KEY_DYNAMIC_ISLAND_ENABLED)
     }
 
     /**
-     * Last persisted overlay position (window x/y in pixels) from the
-     * previous drag. -1 means "no remembered position — let the overlay
-     * controller pick a default near the bottom-left, 10 dp from each
-     * edge" ([T-bg-overlay-polish]).
+     * 上次拖拽后记住的悬浮窗位置（窗口像素坐标）。-1 = 没记过——让悬浮
+     * 控制器选默认位（左下角、各离边 10 dp，[T-bg-overlay-polish]）。
      */
-    fun getOverlayX(): Int = prefs.getInt(KEY_BG_OVERLAY_X, -1)
-    fun getOverlayY(): Int = prefs.getInt(KEY_BG_OVERLAY_Y, -1)
+    fun getOverlayX(): Int = store.getInt(KEY_BG_OVERLAY_X, -1)
+    fun getOverlayY(): Int = store.getInt(KEY_BG_OVERLAY_Y, -1)
+
     fun setOverlayPosition(x: Int, y: Int) {
-        prefs.edit().putInt(KEY_BG_OVERLAY_X, x).putInt(KEY_BG_OVERLAY_Y, y).apply()
+        store.edit().putInt(KEY_BG_OVERLAY_X, x).putInt(KEY_BG_OVERLAY_Y, y).apply()
     }
 
     companion object {

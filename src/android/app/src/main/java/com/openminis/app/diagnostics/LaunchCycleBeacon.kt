@@ -3,191 +3,194 @@ package com.openminis.app.diagnostics
 import android.content.Context
 import com.openminis.app.logging.AppLogger
 import java.io.File
+import java.io.RandomAccessFile
+import java.text.SimpleDateFormat
+import java.util.Date
+import java.util.Locale
+import java.util.TimeZone
 
 /**
- * Records when a process launch begins and when the previous launch ended
- * cleanly. Lets us distinguish "the user backgrounded and we got cleaned
- * up by MIUI / LMK" (no clean-exit marker; previous run's last tick was
- * recent, in foreground) from "we crashed" (ACRA / native handler already
- * wrote a `.log` file) or "normal launch after explicit exit" (clean-exit
- * marker present).
+ * 进程生命周期信标（血统清剿 P3.7 就地真重写，文件与行格式契约冻结）。
  *
- * The beacon is one small JSON-ish line per launch under
- * `filesDir/logs/launch-beacon.log`. We don't roll it — entries are tiny
- * and a long history helps spot MIUI-kill patterns over days.
+ * 每次启动在 `filesDir/logs/launch-beacon.log` 追加一行信标，使下次启动能把
+ * 上一轮周期归因到四类之一：
+ * - `clean_exit`——上一轮显式退出留了标记；
+ * - `crash_or_stall (…)`——窗口内出现过 crash-/native-crash-/stall- 工件；
+ * - `silent_kill (uptime_was=…)`——既无干净退出也无崩溃工件，指向 LMK /
+   MIUI 后台清理；
+ * - `first_launch` / `no_prior_launch`——无历史可判。
  *
- * Bug 2 in the v1.8-dev MIUI feedback report ("app crash" with no
- * crash-*.log file): adding this beacon means the next launch can log
- * "previous run had no clean exit and no crash report — likely LMK or
- * MIUI background cleanup", which is what we want to confirm.
+ * 信标行很小且不滚动——长历史正好用来横跨数日观察 MIUI 击杀模式。
+ *
+ * 消费方：聊天恢复横幅（[lastCycleWasCrash] 时要求二次确认再续载，防止
+ * 「一键续上刚才杀死进程的那份负载」）；启动断路器
+ * （[shouldForceHomeOnLaunch]）。文件名、行格式、判词串、[Perf][LongCtx]
+ * 结构化行均为现场排障契约，逐字保留。
  */
 object LaunchCycleBeacon {
 
     private const val FILE_NAME = "launch-beacon.log"
     private const val TAG = "LaunchBeacon"
 
+    /** 信标尾部读取窗口：16 KB 足够覆盖最近若干次启动记录。 */
+    private const val TAIL_BYTES = 16 * 1024
+
+    private val SESSION_ID_IN_STALL = Regex("session[=:]\\s*([0-9a-fA-F-]{8,})")
+
     /**
-     * [T-android-render-breaker] True when the PREVIOUS app cycle ended in
-     * crash_or_stall (set once at [recordLaunch]). Consumed by the chat Resume
-     * banner: in the ANR-restart loop the banner was an unguarded "continue"
-     * button that re-entered the exact load that killed the previous cycle —
-     * with this flag it warns and requires a confirming second tap.
+     * 上一轮周期是否以 crash_or_stall 收场（[recordLaunch] 时定一次）。
+     * 聊天恢复横幅消费：ANR 重启循环里，无守卫的「继续」按钮会把用户直接
+     * 送回杀死上一轮进程的那份加载——有此旗标后先警告、要点第二次才继续。
      */
     @Volatile
     var lastCycleWasCrash: Boolean = false
         private set
 
     /**
-     * [T-android-larky-longsession-followup] Snapshot of `restartCount` from
-     * the most recent [recordLaunch] call (the (launches − clean_exits) tail
-     * count computed in the crash_or_stall branch). Stored verbatim so the
-     * launch resolver can gate on it without re-reading the beacon file.
-     *
-     * Only updated when the prior verdict starts with "crash_or_stall" — for
-     * any other verdict (clean_exit / silent_kill / first_launch /
-     * no_prior_launch) this stays at 0, which means [shouldForceHomeOnLaunch]
-     * naturally returns false for users who didn't actually crash.
-     *
-     * Reset semantics: the field is process-scoped. It's recomputed once per
-     * process at [recordLaunch] (called from MinisApp.onCreate). A single
-     * cycle that does NOT end in crash_or_stall — even silent_kill, which
-     * dwarfs real crashes for daily users — resets the field to 0 on the
-     * very next launch, restoring auto-recovery. So a user who hits a
-     * crash-loop, then closes the app cleanly (or even gets MIUI-killed in
-     * the background), is back to normal launch behavior on their next tap.
+     * 最近一次 [recordLaunch] 算得的滚动重启计数（launches − clean_exits，
+     * 仅 crash_or_stall 分支写入）。进程作用域：非 crash 判词（含日常占比
+     * 最高的 silent_kill）下一次启动即归零，恢复正常自动恢复——崩溃循环后
+     * 干净退出一次（甚至被 MIUI 杀一次）的用户，再点开就是正常行为了。
      */
     @Volatile
     var lastRestartCount: Int = 0
         private set
 
     /**
-     * [T-android-larky-longsession-followup] Threshold for the
-     * "skip auto-recovery" breaker. When the previous launch ended in
-     * crash_or_stall AND [lastRestartCount] exceeds this value (strictly
-     * greater than), the launch resolver lands on the session list instead
-     * of auto-recovering the previous chat — protects against being thrown
-     * straight back into a session that's killing the process.
-     *
-     * The "> 3" wording in the spec means a fourth consecutive bad cycle
-     * triggers it; choosing 3 as the strict-greater-than threshold matches
-     * that interpretation while leaving the user 3 free retries (which can
-     * be normal if e.g. they hit a transient OOM that won't repeat).
+     * 「跳过自动恢复」断路器阈值：上一轮 crash_or_stall 且计数**严格大于**
+     * 此值时，启动落会话列表而非自动续载上一个聊天。规格里的「> 3」即第四
+     * 个连续坏周期才触发，给用户留三次自由重试（瞬时 OOM 之类可能不再现）。
      */
     const val RESTART_COUNT_FORCE_HOME_THRESHOLD: Int = 3
 
     /**
-     * [T-android-larky-longsession-followup] True when the previous cycle
-     * ended in crash_or_stall AND the rolling restart-count exceeds
-     * [RESTART_COUNT_FORCE_HOME_THRESHOLD]. Joined with the existing
-     * HangDetector / CrashFrequencyDetector breakers in AppNavigation's
-     * launch resolver — any one of them flips the launch to mode 3 (home),
-     * the others stay untouched.
-     *
-     * Always false for users whose previous cycle was clean_exit, silent_kill,
-     * first_launch, or no_prior_launch — those reset [lastRestartCount] to 0
-     * (it's only written in the crash_or_stall branch of [recordLaunch]).
+     * 与 HangDetector / CrashFrequencyDetector 的断路器并联（任一翻转即落
+     * 首页，其余互不干扰）。clean_exit / silent_kill / first_launch /
+     * no_prior_launch 用户恒 false（计数只在 crash_or_stall 分支写）。
      */
     fun shouldForceHomeOnLaunch(): Boolean =
         lastCycleWasCrash && lastRestartCount > RESTART_COUNT_FORCE_HOME_THRESHOLD
 
+    /** MinisApp.onCreate 记一行信标并归因上一周期。 */
     fun recordLaunch(context: Context) {
-        val file = beaconFile(context)
-        val previousTail = readTail(file)
+        val beacon = beaconFile(context)
+        val tail = tailOf(beacon)
         val now = System.currentTimeMillis()
-        val nowIso = isoLocal(now)
 
-        // Inspect previous record to classify the prior cycle.
-        val previousVerdict = classifyPrevious(previousTail, context, now)
-        lastCycleWasCrash = previousVerdict.startsWith("crash_or_stall")
-        AppLogger.info(TAG, "launch verdict for previous cycle: $previousVerdict")
+        val verdict = classifyPriorCycle(tail, context, now)
+        val crashed = verdict.startsWith(VERDICT_CRASH)
+        lastCycleWasCrash = crashed
+        AppLogger.info(TAG, "launch verdict for previous cycle: $verdict")
 
-        // [T-android-perf-logging] When the previous cycle ended in
-        // crash_or_stall, surface a structured Perf line so a low-memory
-        // ANR repro can be correlated against a recovery loop. restartCount
-        // = how many of the recent launch records are themselves preceded by
-        // crash artefacts (i.e. consecutive bad cycles) — a climbing count is
-        // the signature of "recovery keeps re-crashing on the same session".
-        if (previousVerdict.startsWith("crash_or_stall")) {
-            val restartCount = countRecentCrashLaunches(previousTail, context)
-            // [T-android-larky-longsession-followup] Snapshot the count so
-            // shouldForceHomeOnLaunch() can gate on it without re-reading
-            // the beacon. Cleared by the path above whenever the previous
-            // cycle is anything other than crash_or_stall (the var stays at
-            // its initialization value of 0 unless this branch overrides).
-            lastRestartCount = restartCount
-            val lastSessionId = readLastSessionId(context)
-            AppLogger.warning(
-                TAG,
-                "[Perf][LongCtx] step=launchBeacon.crashOrStall " +
-                    "reason=${previousVerdict.substringBefore(' ')} " +
-                    "detail=${previousVerdict.substringAfter('(', "").substringBefore(')')} " +
-                    "restartCount=$restartCount lastSessionId=$lastSessionId",
-            )
+        if (crashed) {
+            noteCrashCycle(verdict, tail, context)
         } else {
-            // Explicit reset for clarity: any verdict that's not
-            // crash_or_stall resets the gate count. Important when a user
-            // who previously hit the breaker has a single non-crash cycle
-            // (clean_exit / silent_kill) — they should be back to normal
-            // auto-recovery on the very next launch.
+            // 非 crash 判词显式归零：命中过断路器的用户只要有一个正常周期，
+            // 下次启动就回到正常自动恢复。
             lastRestartCount = 0
         }
 
-        appendLine(file, "[$nowIso] launch pid=${android.os.Process.myPid()}")
+        appendBeacon(beacon, "[${isoLocal(now)}] launch pid=${android.os.Process.myPid()}")
     }
 
-    /**
-     * [T-android-perf-logging] Count launch records in the beacon tail that
-     * sit between crash/stall artefacts — a rough "consecutive bad cycles"
-     * gauge. Cheap heuristic: number of `launch` lines minus the number
-     * followed by a `clean_exit`. Not exact, but a rising value across
-     * launches is what flags a recovery loop.
-     */
-    private fun countRecentCrashLaunches(tail: String, context: Context): Int {
-        val lines = tail.split('\n').filter { it.isNotBlank() }
-        val launches = lines.count { it.contains(" launch ") }
-        val cleanExits = lines.count { it.contains(" clean_exit ") }
-        return (launches - cleanExits).coerceAtLeast(0)
-    }
-
-    /**
-     * [T-android-perf-logging] Best-effort last-opened session id, read from
-     * the most recent stall-*.log header if present (the HangDetector writes
-     * the session id into its stall report). Returns "unknown" when no stall
-     * artefact carries one — keeps the log line populated without throwing.
-     */
-    private fun readLastSessionId(context: Context): String {
-        return try {
-            val logsDir = File(context.filesDir, "logs")
-            val stall = logsDir.listFiles()
-                ?.filter { it.name.startsWith("stall-") }
-                ?.maxByOrNull { it.lastModified() }
-                ?: return "unknown"
-            val head = stall.bufferedReader().use { it.readText().take(2000) }
-            Regex("session[=:]\\s*([0-9a-fA-F-]{8,})").find(head)?.groupValues?.get(1) ?: "unknown"
-        } catch (_: Throwable) {
-            "unknown"
-        }
-    }
-
+    /** 显式退出路径（onDestroy 等）留干净退出标记。 */
     fun recordCleanExit(context: Context) {
-        val now = System.currentTimeMillis()
-        appendLine(beaconFile(context), "[${isoLocal(now)}] clean_exit pid=${android.os.Process.myPid()}")
+        appendBeacon(
+            beaconFile(context),
+            "[${isoLocal(System.currentTimeMillis())}] clean_exit pid=${android.os.Process.myPid()}",
+        )
     }
+
+    // -- crash 分支的富化 ---------------------------------------------------
+
+    /**
+     * crash_or_stall 分支：滚动计数 + 结构化 Perf 行。低内存 ANR 复现可拿它
+     * 与恢复循环对时——计数爬升就是「恢复一直栽在同一个会话上」的特征。
+     */
+    private fun noteCrashCycle(verdict: String, tail: String, context: Context) {
+        lastRestartCount = recentBadCycles(tail)
+        val sessionId = latestStallSessionId(context)
+        AppLogger.warning(
+            TAG,
+            "[Perf][LongCtx] step=launchBeacon.crashOrStall " +
+                "reason=${verdict.substringBefore(' ')} " +
+                "detail=${verdict.substringAfter('(', "").substringBefore(')')} " +
+                "restartCount=$lastRestartCount lastSessionId=$sessionId",
+        )
+    }
+
+    /**
+     * 尾部信标里「launch 行数 − 其后紧跟 clean_exit 的行数」的粗粒度连续坏
+     * 周期估计。不精确，但跨启动看趋势足够——上升值就是恢复循环的旗。
+     */
+    private fun recentBadCycles(tail: String): Int {
+        val rows = tail.split('\n').filter { it.isNotBlank() }
+        val launches = rows.count { " launch " in it }
+        val exits = rows.count { " clean_exit " in it }
+        return (launches - exits).coerceAtLeast(0)
+    }
+
+    /**
+     * 尽力而为读最近一份 stall-*.log 头部的会话 id（HangDetector 会把会话
+     * id 写进 stall 报告）；读不到返回 "unknown"，保日志行字段在位不抛。
+     */
+    private fun latestStallSessionId(context: Context): String = try {
+        val stall = File(context.filesDir, "logs").listFiles()
+            ?.filter { it.name.startsWith("stall-") }
+            ?.maxByOrNull { it.lastModified() }
+            ?: return "unknown"
+        val head = stall.bufferedReader().use { it.readText().take(2000) }
+        SESSION_ID_IN_STALL.find(head)?.groupValues?.get(1) ?: "unknown"
+    } catch (_: Throwable) {
+        "unknown"
+    }
+
+    // -- 上一周期归因 -------------------------------------------------------
+
+    private const val VERDICT_CRASH = "crash_or_stall"
+
+    private fun classifyPriorCycle(tail: String, context: Context, now: Long): String {
+        if (tail.isBlank()) return "first_launch"
+        val rows = tail.split('\n').filter { it.isNotBlank() }
+        val lastLaunchRow = rows.lastOrNull { " launch " in it } ?: return "no_prior_launch"
+
+        // 最近一次 launch 之后若跟着 clean_exit，则上一周期干净收场。
+        val cleanAfterLaunch = rows
+            .takeLast(rows.size - (rows.indexOf(lastLaunchRow) + 1))
+            .any { " clean_exit " in it }
+        if (cleanAfterLaunch) return "clean_exit"
+
+        // 在「上次 launch → 现在」窗口里找崩溃/卡顿工件。
+        val launchAt = timestampOf(lastLaunchRow) ?: return "ambiguous_no_timestamp"
+        val logsDir = File(context.filesDir, "logs")
+        val artefacts = logsDir.listFiles().orEmpty().filter { f ->
+            val n = f.name
+            (n.startsWith("crash-") || n.startsWith("native-crash-") || n.startsWith("stall-")) &&
+                f.lastModified() in launchAt..now
+        }
+        if (artefacts.isNotEmpty()) {
+            return "crash_or_stall (${artefacts.joinToString { it.name }})"
+        }
+        // 无工件也无干净退出：OOM / LMK / MIUI 后台清理之属。
+        return "silent_kill (uptime_was=${now - launchAt}ms)"
+    }
+
+    // -- 信标文件 IO --------------------------------------------------------
 
     private fun beaconFile(context: Context): File =
         File(File(context.filesDir, "logs").also { it.mkdirs() }, FILE_NAME)
 
-    /** Last ~16 KB of the beacon log — enough to find the previous launch line. */
-    private fun readTail(file: File): String {
+    /** 尾部 16 KB，找上一条 launch 行足够。 */
+    private fun tailOf(file: File): String {
         if (!file.exists() || file.length() == 0L) return ""
         return try {
             val len = file.length()
-            val start = (len - 16 * 1024).coerceAtLeast(0)
-            java.io.RandomAccessFile(file, "r").use { raf ->
-                raf.seek(start)
-                val bytes = ByteArray((len - start).toInt())
-                raf.readFully(bytes)
-                String(bytes, Charsets.UTF_8)
+            val from = (len - TAIL_BYTES).coerceAtLeast(0)
+            RandomAccessFile(file, "r").use { raf ->
+                raf.seek(from)
+                val buf = ByteArray((len - from).toInt())
+                raf.readFully(buf)
+                String(buf, Charsets.UTF_8)
             }
         } catch (t: Throwable) {
             AppLogger.warning(TAG, "tail read failed: ${t.message}")
@@ -195,63 +198,29 @@ object LaunchCycleBeacon {
         }
     }
 
-    private fun classifyPrevious(tail: String, context: Context, now: Long): String {
-        if (tail.isBlank()) return "first_launch"
-        val lines = tail.split('\n').filter { it.isNotBlank() }
-        val lastLaunch = lines.lastOrNull { it.contains(" launch ") } ?: return "no_prior_launch"
-        val lastCleanExit = lines.lastOrNull { it.contains(" clean_exit ") }
-        // Order matters: if a clean_exit line follows the most recent launch,
-        // the previous cycle ended cleanly.
-        val cleanExitAfterLaunch = lastCleanExit != null &&
-            lines.indexOf(lastCleanExit) > lines.indexOf(lastLaunch)
-        if (cleanExitAfterLaunch) return "clean_exit"
-
-        // Look for crash artefacts produced between previous launch and now.
-        val logsDir = File(context.filesDir, "logs")
-        val previousLaunchMs = parseTs(lastLaunch) ?: return "ambiguous_no_timestamp"
-        val crashLogs = logsDir.listFiles()?.filter { f ->
-            val name = f.name
-            (name.startsWith("crash-") || name.startsWith("native-crash-") || name.startsWith("stall-")) &&
-                f.lastModified() in previousLaunchMs..now
-        }.orEmpty()
-        if (crashLogs.isNotEmpty()) {
-            return "crash_or_stall (${crashLogs.joinToString { it.name }})"
-        }
-        // No crash, no clean exit — likely OOM / LMK / MIUI background cleanup.
-        val ageMs = now - previousLaunchMs
-        return "silent_kill (uptime_was=${ageMs}ms)"
-    }
-
-    private fun parseTs(line: String): Long? {
-        // Lines look like "[2026-05-13T01:23:45.678] launch pid=…"
-        val open = line.indexOf('[')
-        val close = line.indexOf(']')
-        if (open != 0 || close <= 0) return null
-        val iso = line.substring(1, close)
-        return try {
-            val fmt = java.text.SimpleDateFormat(
-                "yyyy-MM-dd'T'HH:mm:ss.SSS",
-                java.util.Locale.US,
-            ).apply { timeZone = java.util.TimeZone.getDefault() }
-            fmt.parse(iso)?.time
-        } catch (_: Throwable) {
-            null
-        }
-    }
-
-    private fun isoLocal(ms: Long): String {
-        val fmt = java.text.SimpleDateFormat(
-            "yyyy-MM-dd'T'HH:mm:ss.SSS",
-            java.util.Locale.US,
-        ).apply { timeZone = java.util.TimeZone.getDefault() }
-        return fmt.format(java.util.Date(ms))
-    }
-
-    private fun appendLine(file: File, line: String) {
+    private fun appendBeacon(file: File, line: String) {
         try {
             file.appendText(line + "\n")
         } catch (t: Throwable) {
             AppLogger.warning(TAG, "append failed: ${t.message}")
         }
     }
+
+    // -- 时间戳 -------------------------------------------------------------
+
+    /** 信标行形如 `[2026-05-13T01:23:45.678] launch pid=…`。 */
+    private fun timestampOf(line: String): Long? {
+        val close = line.indexOf(']')
+        if (!line.startsWith("[") || close <= 0) return null
+        return try {
+            localIsoFormat().parse(line.substring(1, close))?.time
+        } catch (_: Throwable) {
+            null
+        }
+    }
+
+    private fun isoLocal(ms: Long): String = localIsoFormat().format(Date(ms))
+
+    private fun localIsoFormat() = SimpleDateFormat("yyyy-MM-dd'T'HH:mm:ss.SSS", Locale.US)
+        .apply { timeZone = TimeZone.getDefault() }
 }
