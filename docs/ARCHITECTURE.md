@@ -31,7 +31,7 @@ Gradle 实际启用的模块（`src/android/settings.gradle.kts`）：
 data (31) ◄─ repo (11)          repo/adapter/data 三角边界：data = schema 与 DTO（怎么存）；
 data ◄─ adapter (25)            repo = 旧三仓库内脏（存取机制）；adapter = novex.core
 ui.cards (19) ──72──► ui (42)   工作区端口（领域↔存储翻译）。改前先对号，别随机落点。
-ui.cards、bridge ──► data.ContentPaths（宿主路径解析）
+bridge ──► data.ContentPaths（ui.cards 零引用此件，边仅桥件有——净眼复核）（宿主路径解析）
 transport (1) ──► data.model（仅 DTO，无 DAO 直穿）──► thinking (3)
 models (2) / authkit (12) / sharekit (7) ──► data、logkit (2)
 runtime (9) / crashguard (2) / soul / navlink / netwatch / powerguard / vault / localekit：包间零依赖或仅 → logkit
