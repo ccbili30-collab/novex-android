@@ -21,35 +21,46 @@ object ChatViewModelStore {
 
     private const val TAG = "ChatVMStore"
 
-    private val stores = mutableMapOf<String, ViewModelStore>()
-    private val runtimeJobs = mutableMapOf<String, Job>()
+    /** 一个会话的全部运行态：VM 持有桶 + 正在跑的回合 Job。 */
+    private class Bucket {
+        var store: ViewModelStore? = null
+        var job: Job? = null
+    }
+
+    private val buckets = LinkedHashMap<String, Bucket>()
+
+    /** 已判死刑的会话键：删除流程标记，阻止新 Job 再挂上来。 */
     private val closedKeys = mutableSetOf<String>()
+
+    /** 删除请求登记过哪些键（含别名解析展开），失败时按它回滚 closed 标记。 */
     private val deletionKeys = mutableMapOf<String, Set<String>>()
 
-    /** 草稿 id → 落库后的正式 id；旧路由上的页面经此命中同一个 store。 */
+    /** 草稿 id → 落库后的正式 id；旧路由上的页面经此命中同一个桶。 */
     private val aliases = mutableMapOf<String, String>()
 
-    private fun resolveKey(sessionId: String): String = aliases[sessionId] ?: sessionId
+    private fun keyFor(sessionId: String): String = aliases[sessionId] ?: sessionId
+
+    private fun bucket(key: String) = buckets.getOrPut(key) { Bucket() }
 
     // ── 运行中 Job ──────────────────────────────────────────────────────────
 
     @Synchronized
     fun registerRuntime(sessionId: String, job: Job) {
-        val key = resolveKey(sessionId)
+        val key = keyFor(sessionId)
         if (key in closedKeys || sessionId in closedKeys) job.cancel()
-        else runtimeJobs[key] = job
+        else bucket(key).job = job
     }
 
     /** 删除会话前停掉它的运行中 Job（由会话外的协程调用）。 */
     suspend fun stopAndJoin(sessionId: String) {
         val job = withContext(Dispatchers.Main.immediate) {
             val running = synchronized(this@ChatViewModelStore) {
-                val key = resolveKey(sessionId)
+                val key = keyFor(sessionId)
                 val keys = deletionKeys.getOrPut(sessionId) {
                     aliases.filterValues { it == key }.keys + setOf(key, sessionId)
                 }
                 closedKeys += keys
-                runtimeJobs[key]
+                buckets[key]?.job
             }
             release(sessionId)
             running?.cancel()
@@ -62,9 +73,11 @@ object ChatViewModelStore {
     suspend fun finishDeletion(sessionId: String, deleted: Boolean) = withContext(Dispatchers.Main.immediate) {
         synchronized(this@ChatViewModelStore) {
             val keys = deletionKeys.remove(sessionId).orEmpty()
-            keys.forEach { key ->
-                runtimeJobs.remove(key)?.cancel()
-                stores.remove(key)?.clear()
+            for (key in keys) {
+                buckets.remove(key)?.let { bucket ->
+                    bucket.job?.cancel()
+                    bucket.store?.clear()
+                }
             }
             if (!deleted) closedKeys.removeAll(keys)
         }
@@ -74,10 +87,10 @@ object ChatViewModelStore {
 
     @Synchronized
     fun ownerFor(sessionId: String): ViewModelStoreOwner {
-        val key = resolveKey(sessionId)
-        val store = stores.getOrPut(key) {
-            Log.d(TAG, "allocate store for $key (total=${stores.size + 1})")
-            ViewModelStore()
+        val key = keyFor(sessionId)
+        val store = bucket(key).store ?: ViewModelStore().also {
+            Log.d(TAG, "allocate store for $key (total=${buckets.size})")
+            bucket(key).store = it
         }
         return object : ViewModelStoreOwner {
             override val viewModelStore: ViewModelStore get() = store
@@ -87,12 +100,11 @@ object ChatViewModelStore {
     /** 丢弃会话的 VM（onCleared 取消 viewModelScope），并清掉指向它的草稿别名。 */
     @Synchronized
     fun release(sessionId: String) {
-        val key = resolveKey(sessionId)
+        val key = keyFor(sessionId)
         aliases.entries.removeAll { it.value == key }
-        runtimeJobs.remove(key)
-        stores.remove(key)?.let {
+        buckets.remove(key)?.store?.let {
             it.clear()
-            Log.d(TAG, "release store for $key (remaining=${stores.size})")
+            Log.d(TAG, "release store for $key (remaining=${buckets.size})")
         }
     }
 
@@ -103,10 +115,14 @@ object ChatViewModelStore {
     @Synchronized
     fun rename(fromSessionId: String, toSessionId: String) {
         if (fromSessionId == toSessionId) return
-        stores.remove(fromSessionId)?.let { stores[toSessionId] = it }
-        runtimeJobs.remove(fromSessionId)?.let { job ->
-            if (fromSessionId in closedKeys || toSessionId in closedKeys) job.cancel()
-            else runtimeJobs[toSessionId] = job
+        val from = buckets.remove(fromSessionId)
+        if (from != null) {
+            val target = bucket(toSessionId)
+            target.store = from.store
+            from.job?.let { job ->
+                if (fromSessionId in closedKeys || toSessionId in closedKeys) job.cancel()
+                else target.job = job
+            }
         }
         aliases[fromSessionId] = toSessionId
         Log.d(TAG, "rename store $fromSessionId -> $toSessionId (alias kept)")
@@ -123,7 +139,7 @@ object ChatViewModelStore {
     private var activeSessionIdInternal: String? = null
 
     val activeSessionId: String?
-        get() = activeSessionIdInternal?.let(::resolveKey)
+        get() = activeSessionIdInternal?.let(::keyFor)
 
     @Synchronized
     fun setActiveSession(sessionId: String?) {
@@ -173,7 +189,7 @@ object ChatViewModelStore {
         }
         // 比较走草稿→正式别名表：MoveToSessionSheet 目前只列已落库会话，
         // 但按别名解析使"移入新会话"的目标将来也不会串号。
-        if (resolveKey(stash.targetId) != resolveKey(sessionId)) {
+        if (keyFor(stash.targetId) != keyFor(sessionId)) {
             Log.d(
                 TAG,
                 "consumePendingTransfer: session=$sessionId is not target=${stash.targetId}, leaving stash",
