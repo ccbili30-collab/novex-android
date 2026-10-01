@@ -6,6 +6,7 @@ import androidx.compose.foundation.layout.PaddingValues
 import androidx.compose.foundation.layout.RowScope
 import androidx.compose.foundation.layout.defaultMinSize
 import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ButtonColors
 import androidx.compose.material3.ButtonDefaults
 import androidx.compose.material3.ButtonElevation
@@ -13,192 +14,180 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Shape
-import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.unit.dp
 import novex.android.ui.Button as NovexButtonControl
 import novex.android.ui.OutlinedButton as NovexOutlinedButtonControl
 import novex.android.ui.TextButton as NovexTextButtonControl
 
-// Material3 ButtonDefaults.MinHeight = 40dp; tuned to 48dp for touch
-// ergonomics on phones. IconButton family is unaffected (icon-sized).
+// Material3 的 40dp 最小高度对手机太小：主按钮统一到 48dp；
+// 区块卡内嵌的次级动作（登录/设 token）用 32dp 的小按钮系。
 val MinisButtonHeight = 48.dp
-
-// Compact button height for actions embedded inside section cards
-// (e.g. "Sign out" inside a credentials card, "Set Bearer Token" inside
-// a token section). Visually subordinate to MinisButtonHeight (48dp)
-// which remains the size for primary screen actions ("Add Custom Model",
-// TopAppBar Save, AlertDialog confirm).
 val MinisSmallButtonHeight = 32.dp
 
-private val SmallButtonContentPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+private val SmallPadding = PaddingValues(horizontal = 14.dp, vertical = 4.dp)
+private val DefaultShape = RoundedCornerShape(8.dp)
+
+@Composable
+private fun rememberInteraction(source: MutableInteractionSource?): MutableInteractionSource =
+    source ?: remember { MutableInteractionSource() }
+
+// ── 48dp 标准按钮 ───────────────────────────────────────────────────────────
 
 @Composable
 fun MinisButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
     border: BorderStroke? = null,
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexButtonControl(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = MinisButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexButtonControl(
+    onClick = onClick,
+    modifier = modifier.heightIn(min = MinisButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)
 
 @Composable
 fun MinisOutlinedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled = enabled),
     contentPadding: PaddingValues = ButtonDefaults.ContentPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexOutlinedButtonControl(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = MinisButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexOutlinedButtonControl(
+    onClick = onClick,
+    modifier = modifier.heightIn(min = MinisButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)
 
 @Composable
 fun MinisTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.textButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = null,
     contentPadding: PaddingValues = ButtonDefaults.TextButtonContentPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexTextButtonControl(
-        onClick = onClick,
-        modifier = modifier.heightIn(min = MinisButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexTextButtonControl(
+    onClick = onClick,
+    modifier = modifier.heightIn(min = MinisButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)
 
-// defaultMinSize is also pinned at MinisSmallButtonHeight so Material3's
-// internal 40dp floor (ButtonDefaults.MinHeight) doesn't override the
-// heightIn modifier and keep the button at 40dp.
+// ── 32dp 小按钮 ─────────────────────────────────────────────────────────────
+// defaultMinSize 同步钉到 32dp，否则 Material3 内部 40dp 地板会盖过 heightIn。
+
 @Composable
 fun MinisSmallButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.buttonColors(),
     elevation: ButtonElevation? = ButtonDefaults.buttonElevation(),
     border: BorderStroke? = null,
-    contentPadding: PaddingValues = SmallButtonContentPadding,
+    contentPadding: PaddingValues = SmallPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexButtonControl(
-        onClick = onClick,
-        modifier = modifier
-            .heightIn(min = MinisSmallButtonHeight)
-            .defaultMinSize(minHeight = MinisSmallButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexButtonControl(
+    onClick = onClick,
+    modifier = modifier
+        .heightIn(min = MinisSmallButtonHeight)
+        .defaultMinSize(minHeight = MinisSmallButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)
 
 @Composable
 fun MinisSmallOutlinedButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.outlinedButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = ButtonDefaults.outlinedButtonBorder(enabled = enabled),
-    contentPadding: PaddingValues = SmallButtonContentPadding,
+    contentPadding: PaddingValues = SmallPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexOutlinedButtonControl(
-        onClick = onClick,
-        modifier = modifier
-            .heightIn(min = MinisSmallButtonHeight)
-            .defaultMinSize(minHeight = MinisSmallButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexOutlinedButtonControl(
+    onClick = onClick,
+    modifier = modifier
+        .heightIn(min = MinisSmallButtonHeight)
+        .defaultMinSize(minHeight = MinisSmallButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)
 
 @Composable
 fun MinisSmallTextButton(
     onClick: () -> Unit,
     modifier: Modifier = Modifier,
     enabled: Boolean = true,
-    shape: Shape = RoundedCornerShape(8.dp),
+    shape: Shape = DefaultShape,
     colors: ButtonColors = ButtonDefaults.textButtonColors(),
     elevation: ButtonElevation? = null,
     border: BorderStroke? = null,
-    contentPadding: PaddingValues = SmallButtonContentPadding,
+    contentPadding: PaddingValues = SmallPadding,
     interactionSource: MutableInteractionSource? = null,
     content: @Composable RowScope.() -> Unit,
-) {
-    NovexTextButtonControl(
-        onClick = onClick,
-        modifier = modifier
-            .heightIn(min = MinisSmallButtonHeight)
-            .defaultMinSize(minHeight = MinisSmallButtonHeight),
-        enabled = enabled,
-        shape = shape,
-        colors = colors,
-        elevation = elevation,
-        border = border,
-        contentPadding = contentPadding,
-        interactionSource = interactionSource ?: remember { MutableInteractionSource() },
-        content = content,
-    )
-}
+) = NovexTextButtonControl(
+    onClick = onClick,
+    modifier = modifier
+        .heightIn(min = MinisSmallButtonHeight)
+        .defaultMinSize(minHeight = MinisSmallButtonHeight),
+    enabled = enabled,
+    shape = shape,
+    colors = colors,
+    elevation = elevation,
+    border = border,
+    contentPadding = contentPadding,
+    interactionSource = rememberInteraction(interactionSource),
+    content = content,
+)

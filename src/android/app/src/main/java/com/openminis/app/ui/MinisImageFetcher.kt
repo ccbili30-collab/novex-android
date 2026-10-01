@@ -3,134 +3,91 @@ package com.openminis.app.ui
 import android.net.Uri
 import coil.ImageLoader
 import coil.decode.DataSource
+import coil.decode.ImageSource
 import coil.fetch.FetchResult
 import coil.fetch.Fetcher
 import coil.fetch.SourceResult
 import coil.key.Keyer
 import coil.request.Options
+import novex.android.ContentPaths
 import okio.buffer
 import okio.source
 import java.io.File
-import novex.android.ContentPaths
+import java.io.FileNotFoundException
+import java.net.URLDecoder
 
 /**
- * Coil Fetcher that resolves `minis://` URIs to local files.
+ * Coil 装载器：把 `minis://` URI 解析到沙箱宿主文件。
  *
- * Usage: Register with ImageLoader.Builder().components {
- *     add(MinisImageFetcher.Factory())
- * }
+ * `minis://attachments/foo.jpg` → `/var/minis/attachments/foo.jpg` → 宿主路径。
  *
- * minis://attachments/foo.jpg → /var/minis/attachments/foo.jpg → host path
+ * 注册两个工厂：String 版是兜底（Coil 的 StringMapper 通常先把字符串转成
+ * Uri），Uri 版是 Markdown 图片实际命中的路径。两个 Keyer 把文件 mtime
+ * 编入缓存键，原地覆盖写入（如同名附件重新生成）后能顶掉旧位图。
  */
-class MinisImageFetcher(
+class MinisImageFetcher private constructor(
     private val uri: String,
     private val options: Options,
 ) : Fetcher {
 
     override suspend fun fetch(): FetchResult {
-        // Strip minis:// prefix, drop any ?query, and percent-decode so
-        // Chinese/emoji/space filenames resolve to the actual on-disk file.
-        val stripped = uri.removePrefix("minis://").substringBefore('?')
-        val decoded = java.net.URLDecoder.decode(stripped, "UTF-8")
-        val linuxPath = "/var/minis/$decoded"
-        val hostFile = ContentPaths.resolveHostPath(linuxPath)
-            ?: throw IllegalArgumentException("Cannot resolve path: $linuxPath")
-
+        val hostFile = resolveMinisFile(uri)
+            ?: throw IllegalArgumentException("Cannot resolve path: $uri")
         if (!hostFile.exists()) {
-            throw java.io.FileNotFoundException("File not found: ${hostFile.absolutePath}")
+            throw FileNotFoundException("File not found: ${hostFile.absolutePath}")
         }
-
         return SourceResult(
-            source = coil.decode.ImageSource(
-                source = hostFile.source().buffer(),
-                context = options.context,
-            ),
-            mimeType = guessMimeType(hostFile),
+            source = ImageSource(source = hostFile.source().buffer(), context = options.context),
+            mimeType = mimeTypeFor(hostFile),
             dataSource = DataSource.DISK,
         )
     }
 
-    private fun guessMimeType(file: File): String? = when (file.extension.lowercase()) {
-        "jpg", "jpeg" -> "image/jpeg"
-        "png" -> "image/png"
-        "gif" -> "image/gif"
-        "webp" -> "image/webp"
-        "bmp" -> "image/bmp"
-        "svg" -> "image/svg+xml"
-        else -> null
-    }
-
-    /**
-     * String factory — matches when Coil still sees the raw model string before
-     * its default mappers run. Rare in practice since Coil's StringMapper
-     * converts model strings to Uri; kept as a safety net.
-     */
     class Factory : Fetcher.Factory<String> {
-        override fun create(data: String, options: Options, imageLoader: ImageLoader): Fetcher? {
-            if (!data.startsWith("minis://")) return null
-            return MinisImageFetcher(data, options)
-        }
+        override fun create(data: String, options: Options, imageLoader: ImageLoader): Fetcher? =
+            data.takeIf { it.startsWith(MINIS_PREFIX) }?.let { MinisImageFetcher(it, options) }
     }
 
-    /**
-     * Uri factory — the path the Markdown renderer hits. Coil's default
-     * StringMapper converts an `AsyncImage(model = "minis://…")` String into
-     * an android.net.Uri before fetcher resolution, so the String factory
-     * above is never consulted for markdown images. Match on scheme here.
-     */
     class UriFactory : Fetcher.Factory<Uri> {
-        override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? {
-            if (data.scheme != "minis") return null
-            return MinisImageFetcher(data.toString(), options)
-        }
+        override fun create(data: Uri, options: Options, imageLoader: ImageLoader): Fetcher? =
+            data.takeIf { it.scheme == MINIS_SCHEME }?.let { MinisImageFetcher(it.toString(), options) }
     }
 
-    /**
-     * T-image-cache-mtime-35133: Bust Coil's memory + disk cache when a
-     * `minis://` file is overwritten in-place (e.g. Grok regenerating an
-     * image to the same `attachments/cat.jpg`). Without this, Coil keys
-     * off the URI alone and keeps serving the previous bitmap; only the
-     * ToolDetailSheet — which reads the File directly — saw the new bytes.
-     *
-     * The key composes `<minis-uri>?mt=<lastModified>`. The fetcher above
-     * already strips `?query` before resolving, so adding the suffix here
-     * does not interfere with on-disk lookup. Returning `null` falls back
-     * to Coil's default keying, which is correct for non-minis data.
-     *
-     * Memory cache key is set by [Keyer]; disk cache key derives from the
-     * same returned string in Coil 2.
-     */
     class MtimeKeyer : Keyer<Uri> {
-        override fun key(data: Uri, options: Options): String? {
-            if (data.scheme != "minis") return null
-            return composeMtimeKey(data.toString())
-        }
+        override fun key(data: Uri, options: Options): String? =
+            if (data.scheme == MINIS_SCHEME) mtimeKey(data.toString()) else null
     }
 
     class StringMtimeKeyer : Keyer<String> {
-        override fun key(data: String, options: Options): String? {
-            if (!data.startsWith("minis://")) return null
-            return composeMtimeKey(data)
-        }
+        override fun key(data: String, options: Options): String? =
+            if (data.startsWith(MINIS_PREFIX)) mtimeKey(data) else null
     }
 
     companion object {
-        private fun composeMtimeKey(uri: String): String {
-            // Resolve once to fetch mtime. Cheap (single stat on host fs);
-            // Coil only calls Keyer when computing/looking up cache keys,
-            // not on every recomposition.
-            val stripped = uri.removePrefix("minis://").substringBefore('?')
-            val decoded = try {
-                java.net.URLDecoder.decode(stripped, "UTF-8")
-            } catch (_: Throwable) {
-                stripped
-            }
-            val linuxPath = "/var/minis/$decoded"
-            val mtime = try {
-                ContentPaths.resolveHostPath(linuxPath)?.lastModified() ?: 0L
-            } catch (_: Throwable) {
-                0L
-            }
+        private const val MINIS_SCHEME = "minis"
+        private const val MINIS_PREFIX = "minis://"
+        private const val SANDBOX_ROOT = "/var/minis/"
+
+        /** `minis://` URI → 宿主文件；decode 掉 query 和百分号编码，解析失败返回 null。 */
+        private fun resolveMinisFile(uri: String): File? {
+            val stripped = uri.removePrefix(MINIS_PREFIX).substringBefore('?')
+            val decoded = runCatching { URLDecoder.decode(stripped, "UTF-8") }.getOrDefault(stripped)
+            return ContentPaths.resolveHostPath("$SANDBOX_ROOT$decoded")
+        }
+
+        private fun mimeTypeFor(file: File): String? = when (file.extension.lowercase()) {
+            "jpg", "jpeg" -> "image/jpeg"
+            "png" -> "image/png"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            "svg" -> "image/svg+xml"
+            else -> null
+        }
+
+        /** 缓存键带 mtime：同名文件原地重写后 Coil 不会继续吐旧位图。 */
+        private fun mtimeKey(uri: String): String {
+            val mtime = runCatching { resolveMinisFile(uri)?.lastModified() ?: 0L }.getOrDefault(0L)
             return "$uri?mt=$mtime"
         }
     }
