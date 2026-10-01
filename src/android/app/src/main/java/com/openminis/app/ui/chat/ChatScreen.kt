@@ -419,20 +419,8 @@ fun ChatScreen(
     val immersiveProfile by viewModel.immersiveProfile.collectAsState()
     val attachments by viewModel.attachments.collectAsState()
     val availableGroups by viewModel.availableGroups.collectAsState()
-    val selectedGroupId by viewModel.selectedGroupId.collectAsState()
-    val showMemorySheet by viewModel.showMemorySheet.collectAsState()
-    val memoryToolRecords by viewModel.memoryToolRecords.collectAsState()
     val selectedGroupName by viewModel.selectedGroupName.collectAsState()
     val providerName by viewModel.providerName.collectAsState()
-    val pendingNovexLearningPreflight by viewModel.pendingNovexLearningPreflight.collectAsState()
-    val novexLearningTask by viewModel.novexLearningTask.collectAsState()
-    val novexLearningError by viewModel.novexLearningError.collectAsState()
-    val novexLearningResponsePreview by viewModel.novexLearningResponsePreview.collectAsState()
-    val novexLearningDetails by viewModel.novexLearningDetails.collectAsState()
-    val novexConversationExport by viewModel.novexConversationExport.collectAsState()
-    val novexCheckpoints by viewModel.novexCheckpoints.collectAsState()
-    val novexLearningReadCoverage by viewModel.novexLearningReadCoverage.collectAsState()
-    val novexLearningCollections by viewModel.novexLearningCollections.collectAsState()
     val snackbarHostState = remember { SnackbarHostState() }
     val panelExpansionState = remember(viewModel) { PanelExpansionState() }
 
@@ -661,7 +649,6 @@ fun ChatScreen(
                     })
             }, onDismissRequest = { showHistoryNavigation = false })
     }
-    var showSkillsSheet by remember { mutableStateOf(false) }
     // [T-mcp-integration-android] MCPs-in-Session sheet visibility.
     // [P3.3 裁军] showMcpsSheet（会话内 MCP 开关 Sheet）随 MCP 集成面退役。
     var requestSideConversation by remember { mutableStateOf(false) }
@@ -1639,309 +1626,43 @@ fun ChatScreen(
             ChatColors.background.copy(alpha = 0.80f)
         } else ChatColors.background,
         contentWindowInsets = WindowInsets(0),
+        // [feat/ui-rikkahub] 非对称三段式顶栏 → ChatScreenTopBar.kt（ChatTopBar）。
         topBar = {
-            // 沉浸淡化（2026-09-15）：顶栏原地淡出淡入，不滑动；内容区顶部
-            // 内边距恒定（见下方 padding），版式零跳动。侧边对话页不淡化。
-            AnimatedVisibility(
-                visible = !effectiveChromeCollapsed,
-                enter = fadeIn(tween(220)),
-                exit = fadeOut(tween(220)),
-            ) {
-            // [feat/ui-rikkahub] 非对称三段式顶栏：标题列拿到返回键与动作簇之间
-            // 的全部剩余宽度并在其中居中——NovexTopBarSurface 的 2×宽侧对称预留
-            // 在模型 pill 进 actions 后会把标题挤成零宽，整列渲染但不可见。
-            Box(
-                modifier = Modifier
-                    .fillMaxWidth()
-                    .background(ChatColors.background)
-                    .windowInsetsPadding(WindowInsets.statusBars)
-                    .height(chatTopBarExpandedHeightDp(LocalDensity.current.fontScale).dp),
-            ) {
-            CompositionLocalProvider(androidx.compose.material3.LocalContentColor provides ChatColors.primaryText) {
-            androidx.compose.ui.layout.Layout(
-                modifier = Modifier.fillMaxSize(),
-                content = {
-                    // content[0]：标题 + 模型/状态徽标列，包裹内容宽度，
-                    // 放置时以屏幕中线为轴实现绝对居中（见 measurePolicy）。
-                    Box(
-                        contentAlignment = Alignment.Center,
-                    ) {
-                        val noFontPad = androidx.compose.ui.text.TextStyle(
-                            platformStyle = androidx.compose.ui.text.PlatformTextStyle(includeFontPadding = false),
-                        )
-                        // Fallback pulse animation (iOS: 3× red pulse on model switch)
-                        val fallbackTrigger by viewModel.fallbackTrigger.collectAsState()
-                        val fallbackPulseAlpha = remember { androidx.compose.animation.core.Animatable(0f) }
-                        LaunchedEffect(fallbackTrigger) {
-                            if (fallbackTrigger == 0) return@LaunchedEffect
-                            repeat(3) {
-                                fallbackPulseAlpha.animateTo(1f, animationSpec = androidx.compose.animation.core.tween(350))
-                                fallbackPulseAlpha.animateTo(0f, animationSpec = androidx.compose.animation.core.tween(350))
-                            }
-                        }
-                        Column(
-                            horizontalAlignment = Alignment.CenterHorizontally,
-                            modifier = Modifier
-                                .clip(RoundedCornerShape(10.dp))
-                                .background(Color.Red.copy(alpha = 0.35f * fallbackPulseAlpha.value))
-                                // [T-android-topbar-shrink] vertical 4dp→2dp.
-                                // Combined with the expandedHeight drop below,
-                                // closes the dead-space gap between the model
-                                // name row and the TopAppBar bottom edge that
-                                // T-topbar-model-row-clip's 76dp overshoot left
-                                // behind. Horizontal 32dp keeps the fallback
-                                // pulse highlight comfortably padded around
-                                // the longest title.
-                                .padding(horizontal = 8.dp, vertical = 2.dp),
-                        ) {
-                            // Nav title: current session title when one
-                            // exists and the toggle is on, else fall back to
-                            // the Soul name (matches the input placeholder
-                            // "Message <SoulName>"), then to app_name
-                            // ("Minis") as the terminal fallback.
-                            // Tap opens the same SessionEditSheet used from
-                            // the session list — drafts return null from
-                            // loadSessionEntity so the sheet stays closed.
-                            // SoulStore.cachedMetadata is the same source the
-                            // input placeholder uses (see ~line 3581), so
-                            // soul renames in Soul Settings reflect here live.
-                            val topBarSoul by com.openminis.app.agent.SoulStore
-                                .cachedMetadata.collectAsState()
-                            val displayTitle = when {
-                                immersiveProfile.usesRolePresentation &&
-                                    immersiveProfile.effectiveAssistantName?.isNotBlank() == true ->
-                                    immersiveProfile.effectiveAssistantName!!
-                                showChatTitlePill
-                                    && sessionTitle.isNotBlank()
-                                    && sessionTitle != "New Chat" -> sessionTitle
-                                topBarSoul.name.isNotBlank() -> topBarSoul.name
-                                else -> stringResource(R.string.app_name)
-                            }
-                            Text(
-                                text = displayTitle,
-                                fontSize = 16.sp,
-                                lineHeight = 19.sp,
-                                fontWeight = FontWeight.SemiBold,
-                                color = ChatColors.primaryText,
-                                maxLines = 1,
-                                overflow = TextOverflow.Ellipsis,
-                                style = noFontPad,
-                                modifier = Modifier
-                                    .clip(RoundedCornerShape(6.dp))
-                                    .clickable {
-                                        coroutineScope.launch {
-                                            editingSession = viewModel.loadSessionEntity()
-                                        }
-                                    }
-                                    .padding(horizontal = 4.dp, vertical = 2.dp),
-                            )
-                            // [A2a-rev] 副标题归还给模型：居中显示模型分组
-                            // pill（点按出模型选择），健康点保留绿/橙语义色；
-                            // ⚡/思考等级徽标排在其后。挂卡不占副标题。
-                            val thinkingLevelBadgeState by viewModel.thinkingLevel.collectAsState()
-                            val fastBadgeEligible by viewModel.showFastModeToggle.collectAsState()
-                            val fastBadgeOn by viewModel.fastModeEnabled.collectAsState()
-                            val hasFastBadge = fastBadgeEligible && fastBadgeOn
-                            // Same visibility rule as the old subtitle badge:
-                            // shown while a level is enabled, or Off-but-
-                            // discoverable when the model supports reasoning.
-                            val hasThinkingBadge = viewModel.availableThinkingLevels.isNotEmpty() &&
-                                (
-                                    thinkingLevelBadgeState.isEnabled ||
-                                        viewModel.currentModelSupportsReasoning
-                                )
-                            Row(
-                                verticalAlignment = Alignment.CenterVertically,
-                                horizontalArrangement = Arrangement.spacedBy(5.dp),
-                                modifier = Modifier
-                                    .padding(top = 3.dp)
-                                    .horizontalScroll(rememberScrollState()),
-                            ) {
-                                Row(
-                                    verticalAlignment = Alignment.CenterVertically,
-                                    horizontalArrangement = Arrangement.spacedBy(4.dp),
-                                    modifier = Modifier
-                                        .clip(RoundedCornerShape(50))
-                                        // [A2c-chrome] 去灰底——模型 pill 只留
-                                        // 点+名+折角三元素，不再是灰色矩形控件。
-                                        .clickable { showModelPicker = true }
-                                        .padding(horizontal = 9.dp, vertical = 5.dp),
-                                ) {
-                                    Box(
-                                        modifier = Modifier
-                                            .size(5.dp)
-                                            .background(
-                                                if (modelName.isNotEmpty()) Color(0xFF34C759) else Color(0xFFFF9500),
-                                                CircleShape,
-                                            ),
-                                    )
-                                    val groupNameDisplay = selectedGroupName.ifEmpty {
-                                        val defaultGroupId = providerRepository.defaultPrimaryGroupId
-                                        availableGroups.firstOrNull { it.id == defaultGroupId }?.name
-                                            ?: stringResource(R.string.model_picker_default_badge)
-                                    }
-                                    Text(
-                                        text = groupNameDisplay,
-                                        fontSize = 11.sp,
-                                        fontWeight = FontWeight.Medium,
-                                        color = ChatColors.secondaryText,
-                                        maxLines = 1,
-                                        overflow = TextOverflow.Ellipsis,
-                                        modifier = Modifier.widthIn(max = 96.dp),
-                                    )
-                                    Icon(
-                                        novex.android.ui.NovexIcons.KeyboardArrowDown,
-                                        contentDescription = null,
-                                        tint = ChatColors.tertiaryText,
-                                        modifier = Modifier.size(13.dp),
-                                    )
-                                }
-                                if (hasFastBadge) {
-                                        Box(
-                                            contentAlignment = Alignment.Center,
-                                            modifier = Modifier
-                                                .size(13.dp)
-                                                .background(Color(0xFFFF9500), CircleShape),
-                                        ) {
-                                            Icon(
-                                                novex.android.ui.NovexIcons.Bolt,
-                                                contentDescription = null,
-                                                tint = Color.White,
-                                                modifier = Modifier.size(10.dp),
-                                            )
-                                        }
-                                    }
-                                    if (hasThinkingBadge) {
-                                        ThinkingLevelBadge(
-                                            level = thinkingLevelBadgeState,
-                                            onClick = { showThinkingLevelSheet = true },
-                                        )
-                                    }
-                                }
-                            }
-                        }
-                    // content[1]：返回键
-                    Box {
-                        IconButton(onClick = returnFromConversation) {
-                            Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = "Back")
-                        }
-                    }
-                    // content[2]：动作簇（模型 pill / DeepSeek 时钟 / ⋯；侧边页为导出+删除）
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                    if (sideParentId != null) {
-                        // 侧边页顶栏：删除（决策 16）+ 导出（2026-09-16 用户反馈侧边
-                        // 无法导出诊断包——图片问题取证时就卡在这）。导出复用主线
-                        // 弹窗与全局 wire-capture，无需绕回主线。
-                        IconButton(onClick = { viewModel.prepareNovexConversationExport() }) {
-                            Icon(
-                                painter = androidx.compose.ui.res.painterResource(R.drawable.ic_phosphor_arrow_up),
-                                contentDescription = "导出侧边对话包",
-                            )
-                        }
-                        IconButton(onClick = { showSideDeleteDialog = true }) {
-                            Icon(
-                                novex.android.ui.NovexIcons.Delete,
-                                contentDescription = "删除侧边对话",
-                                tint = androidx.compose.ui.graphics.Color(0xFFFF5A5F),
-                            )
-                        }
-                    } else {
-                    // [A2a-rev] 模型 pill 已回到副标题（标题正下方居中）；
-                    // actions 只剩语义化时钟与 ⋯。
-                    NovexDeepSeekClock()
-                    // iOS: "..." circle button → dropdown menu
-                    Box {
-                        IconButton(onClick = {
-                            // [T-menu-revive] 2026-09-16 用户批④：淡化状态下打开
-                            // 菜单自动唤回界面，菜单不再悬在隐形顶栏上。
-                            if (chromeCollapsed) {
-                                chromeRevivedAtMs = System.currentTimeMillis()
-                                chromeCollapsed = false
-                            }
-                            showChatMenu = true
-                        }) {
-                            Icon(
-                                imageVector = novex.android.ui.NovexIcons.MoreHoriz,
-                                contentDescription = "更多操作",
-                            )
-                        }
-                        val chatActions = buildList {
-                            add(NovexMenuAction("对话历史", R.drawable.ic_phosphor_search) {
-                                showHistoryNavigation = true
-                            })
-                            add(
-                                NovexMenuAction("对话设置", R.drawable.ic_phosphor_sliders_horizontal) {
-                                    onSettings()
-                                },
-                            )
-                            add(NovexMenuAction("侧边对话", R.drawable.ic_phosphor_arrow_left) {
-                                requestSidePanel = true
-                            })
-                            add(NovexMenuAction("资料与存档", R.drawable.ic_phosphor_note_pencil,
-                                onClick = { showConversationRecords = true }))
-                            // 导出对话包对全部通道开放（用户决策 2026-09-15）：
-                            // 正式版用户反馈问题时也能提供诊断导出，不再只有预览版可导。
-                            add(
-                                NovexMenuAction("导出对话包", R.drawable.ic_phosphor_arrow_up,
-                                    onClick = viewModel::prepareNovexConversationExport))
-                            if (immersiveProfile.usesRolePresentation) {
-                                add(
-                                    NovexMenuAction("更换对话背景", R.drawable.ic_phosphor_image) {
-                                        immersiveBackgroundPickerLauncher.launch(
-                                            androidx.activity.result.PickVisualMediaRequest(
-                                                ActivityResultContracts.PickVisualMedia.ImageOnly,
-                                            ),
-                                        )
-                                    },
-                                )
-                                add(
-                                    NovexMenuAction("恢复角色默认背景", R.drawable.ic_phosphor_arrow_clockwise) {
-                                        viewModel.setImmersiveBackground(null)
-                                    },
-                                )
-                            }
-                            add(
-                                NovexMenuAction(
-                                    "删除对话",
-                                    R.drawable.ic_phosphor_trash,
-                                    destructive = true,
-                                ) { showClearChatDialog = true },
-                            )
-                        }
-                        NovexActionMenu(
-                            expanded = showChatMenu,
-                            onDismissRequest = { showChatMenu = false },
-                            actions = chatActions,
-                        )
-                    }
-                    }
+            ChatTopBar(
+                viewModel = viewModel,
+                effectiveChromeCollapsed = effectiveChromeCollapsed,
+                immersiveProfile = immersiveProfile,
+                showChatTitlePill = showChatTitlePill,
+                sessionTitle = sessionTitle,
+                onTitleClick = {
+                    coroutineScope.launch {
+                        editingSession = viewModel.loadSessionEntity()
                     }
                 },
-            ) { measurables, constraints ->
-                // 标题可用宽 = 屏宽 − 返回键 − 动作簇（非对称，不再 2×宽侧预留）；
-                // 标题在剩余区间内居中，既不压交互区也不会被宽动作簇挤没。
-                val loose = constraints.copy(minWidth = 0, minHeight = 0)
-                val leading = measurables[1].measure(loose)
-                val trailing = measurables[2].measure(
-                    loose.copy(maxWidth = (constraints.maxWidth - leading.width).coerceAtLeast(0)),
-                )
-                val heading = measurables[0].measure(
-                    loose.copy(maxWidth = (constraints.maxWidth - leading.width - trailing.width).coerceAtLeast(0)),
-                )
-                layout(constraints.maxWidth, constraints.maxHeight) {
-                    leading.placeRelative(0, (constraints.maxHeight - leading.height) / 2)
-                    trailing.placeRelative(constraints.maxWidth - trailing.width, (constraints.maxHeight - trailing.height) / 2)
-                    // [A2a-rev] 标题绝对居中：以屏幕中线为轴（用户指定的原
-                    // 逻辑），仅测量上限用剩余区间宽防止溢出压到两侧按钮。
-                    heading.placeRelative(
-                        ((constraints.maxWidth - heading.width) / 2).coerceAtLeast(0),
-                        (constraints.maxHeight - heading.height) / 2,
-                    )
-                }
-            }
-            }
-            }
-            }
+                selectedGroupName = selectedGroupName,
+                availableGroups = availableGroups,
+                providerRepository = providerRepository,
+                modelName = modelName,
+                onOpenModelPicker = { showModelPicker = true },
+                onOpenThinkingSheet = { showThinkingLevelSheet = true },
+                returnFromConversation = returnFromConversation,
+                sideParentId = sideParentId,
+                onOpenSideDelete = { showSideDeleteDialog = true },
+                chromeCollapsed = chromeCollapsed,
+                onReviveChrome = {
+                    chromeRevivedAtMs = System.currentTimeMillis()
+                    chromeCollapsed = false
+                },
+                showChatMenu = showChatMenu,
+                onChatMenuShown = { showChatMenu = true },
+                onChatMenuDismissed = { showChatMenu = false },
+                onShowHistory = { showHistoryNavigation = true },
+                onSettings = onSettings,
+                onRequestSidePanel = { requestSidePanel = true },
+                onShowRecords = { showConversationRecords = true },
+                onShowClearDialog = { showClearChatDialog = true },
+                immersiveBackgroundPickerLauncher = immersiveBackgroundPickerLauncher,
+            )
         },
         snackbarHost = { SnackbarHost(snackbarHostState) },
     ) { padding ->
@@ -4478,232 +4199,23 @@ fun ChatScreen(
         )
         }
 
-    // [P3.3 裁军] 内置浏览器底部 Sheet（BrowserSheet/BrowserTabPool）随
-    // browser/ + ui/browser/ 整包退役删除。
-
-    // Memory bottom sheet
-    if (showMemorySheet && memoryRepository != null) {
-        SessionMemorySheet(
-            memoryRepository = memoryRepository,
-            toolRecords = memoryToolRecords,
-            onDismiss = { viewModel.dismissMemorySheet() },
-            onRevokeRecord = { record -> viewModel.revokeMemoryRecord(record) },
-            onSaveRecord = { record, newContent -> viewModel.replaceMemoryRecord(record, newContent) },
-        )
-    }
-
-    // Session Skills bottom sheet
-    if (showSkillsSheet && skillRepository != null) {
-        SessionSkillsSheet(
-            skillRepository = skillRepository,
-            sessionId = sessionId,
-            onDismiss = { showSkillsSheet = false },
-        )
-    }
-
-    // [P3.3 裁军] SessionMcpsSheet 渲染块随 MCP 集成面退役删除。
-
-    // [T-android-thinking-badge-navbar] Thinking-level sheet opened by tapping
-    // the navbar thinking badge. Mirrors iOS ThinkingLevelSheetView: an Off row
-    // plus every level the current model supports, each selectable.
-    if (showThinkingLevelSheet) {
-        val currentThinkingLevel by viewModel.thinkingLevel.collectAsState()
-        ThinkingLevelSheet(
-            currentLevel = currentThinkingLevel,
-            availableLevels = viewModel.availableThinkingLevels,
-            onSelect = { level ->
-                viewModel.setThinkingLevel(level)
-                showThinkingLevelSheet = false
-            },
-            onDismiss = { showThinkingLevelSheet = false },
-        )
-    }
-
-    // Model Picker bottom sheet
-    val modelSetupRequired by viewModel.modelSetupRequired.collectAsState()
-    if (modelSetupRequired) {
-        novex.android.ui.NovexContentDialog(
-            title = "连接模型后再发送",
-            onDismiss = viewModel::dismissModelSetup,
-            confirmButton = {
-                novex.android.ui.TextButton(onClick = {
-                    viewModel.dismissModelSetup()
-                    onSettings()
-                }) { Text("连接模型") }
-            },
-            dismissButton = {
-                novex.android.ui.TextButton(onClick = viewModel::dismissModelSetup) { Text("继续编辑") }
-            },
-        ) { Text("先在设置中连接一个可用模型。当前文字和附件会留在输入框中，不会自动发送。") }
-    }
-    if (showModelPicker) {
-        val config by providerRepository.config.collectAsState()
-        val activeEntryId by viewModel.activeEntryId.collectAsState()
-        ChatModelSelectionSheet(
-            // 生图专用分组不进文字聊天选择器：这类分组（生图来源组、迁移组
-            // "已迁移生图"）只含图像输出模型、在分组管理页被刻意隐藏删不到，
-            // 泄漏进聊天选择器就是"模型分组删完了还有"的残留观感。
-            groups = availableGroups.filterNot { it.id in config.imageGenerationGroupIds },
-            selectedGroupId = selectedGroupId,
-            activeEntryId = activeEntryId,
-            config = config,
-            providerRepository = providerRepository,
-            onSelectGroup = viewModel::selectGroup,
-            onSelectGroupEntry = viewModel::selectGroupEntry,
-            onSelectEntry = viewModel::selectEntry,
-            onDismiss = { showModelPicker = false },
-            onEditGroups = onModelGroupsClick,
-        )
-    }
-
-    // [P3.3 裁军] OffloadPermissionDialog 随 offload/ 退役删除。
-
-    pendingNovexLearningPreflight?.let { preflight ->
-        val scope = NovexLearningControlPolicy.preflightMessage(preflight)
-        NovexDecisionDialog(
-            title = "开始整理资料？",
-            message = scope,
-            onDismiss = viewModel::dismissNovexLearningPreflight,
-            actions = listOf(
-                NovexDecisionAction(
-                    label = "确认并开始整理",
-                    icon = R.drawable.ic_phosphor_brain,
-                    tone = NovexDecisionTone.PRIMARY,
-                    onClick = { viewModel.confirmNovexLearning(preflight.id) },
-                ),
-                NovexDecisionAction(
-                    label = "稍后再说",
-                    icon = R.drawable.ic_phosphor_arrow_left,
-                    onClick = viewModel::dismissNovexLearningPreflight,
-                ),
-            ),
-        )
-    }
-
-    novexLearningResponsePreview?.let { message ->
-        NovexNoticeDialog(title = "最近一次模型返回", message = message,
-            onDismiss = viewModel::closeNovexLearningResponsePreview)
-    }
-    novexConversationExport?.let { novex.android.ui.NovexConversationExportDialog(it,
-        viewModel::closeNovexConversationExport, viewModel::prepareNovexConversationExport) }
-    novexCheckpoints?.let { NovexCheckpointDetails(it, viewModel::closeNovexCheckpoints) }
-    if (novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) novexLearningError?.let { message ->
-        NovexDecisionDialog(
-            title = "资料整理已停止",
-            message = "$message\n已完成的通读进度和笔记仍然保留。",
-            onDismiss = viewModel::clearNovexLearningError,
-            actions = listOf(
-                NovexDecisionAction("资料与整理计划", R.drawable.ic_phosphor_brain,
-                    onClick = viewModel::showNovexLearningDetails),
-                NovexDecisionAction("返回任务", R.drawable.ic_phosphor_arrow_left,
-                    onClick = viewModel::clearNovexLearningError),
-            ),
-        )
-    }
-
-    if (novexLearningResponsePreview == null && pendingNovexLearningPreflight == null) {
-        novexLearningCollections?.let { states ->
-            if (states.isEmpty()) NovexNoticeDialog("资料整理", "本分支尚无已导入资料集。添加文档后可在这里查看整理记录。",
-                viewModel::closeNovexLearningDetails)
-            else novex.android.ui.NovexSearchableSelectionSheet("资料整理进度", states.map { state ->
-                novex.android.ui.NovexSelectionAction(state.collection.title,
-                    description = "已整理 ${state.reviewLedger.reviewedBlocks} / ${state.reviewLedger.totalReadableBlocks} 个可读块") {
-                    viewModel.selectNovexLearningCollection(state.collection.ref)
-                }
-            }, "搜索资料集", onDismissRequest = viewModel::closeNovexLearningDetails)
-        }
-        novexLearningDetails?.let { state ->
-            NovexLearningDetailsDialog(state, novexLearningReadCoverage, viewModel::closeNovexLearningDetails,
-                viewModel::previewLatestNovexLearningResponse, viewModel::requestNovexLearningContinuation,
-                onFiles = { viewModel.prepareNovexLearningFiles { savedSessionId ->
-                    viewModel.closeNovexLearningDetails(); onBrowseChatFiles(savedSessionId)
-                } })
-        }
-    }
-    if (novexLearningError == null && novexLearningResponsePreview == null && novexLearningDetails == null && novexLearningCollections == null && pendingNovexLearningPreflight == null) {
-        novexLearningTask?.let { task ->
-            val message = NovexLearningControlPolicy.progressMessage(task)
-            val controls = NovexLearningControlPolicy.allowedControls(task.status)
-            NovexDecisionDialog(
-                title = "资料学习",
-                message = message,
-                onDismiss = {
-                    if (NovexLearningControl.PAUSE in controls) viewModel.pauseNovexLearning()
-                },
-                actions = buildList {
-                    add(NovexDecisionAction("资料与整理计划", R.drawable.ic_phosphor_brain,
-                        onClick = viewModel::showNovexLearningDetails))
-                    if (NovexLearningControl.PAUSE in controls) add(
-                        NovexDecisionAction(
-                            label = "暂停整理",
-                            icon = R.drawable.ic_phosphor_arrow_left,
-                            onClick = viewModel::pauseNovexLearning,
-                        ),
-                    )
-                    if (NovexLearningControl.RESUME in controls) add(
-                        NovexDecisionAction(
-                            label = "继续整理",
-                            icon = R.drawable.ic_phosphor_brain,
-                            tone = NovexDecisionTone.PRIMARY,
-                            onClick = viewModel::resumeNovexLearning,
-                        ),
-                    )
-                    if (NovexLearningControl.EXTEND_BUDGET in controls) add(
-                        NovexDecisionAction(
-                            label = "增加预算并继续",
-                            icon = R.drawable.ic_phosphor_brain,
-                            tone = NovexDecisionTone.PRIMARY,
-                            onClick = viewModel::requestNovexLearningBudgetExtension,
-                        ),
-                    )
-                    if (NovexLearningControl.CANCEL in controls) add(
-                        NovexDecisionAction(
-                            label = "取消整理",
-                            icon = R.drawable.ic_phosphor_trash,
-                            tone = NovexDecisionTone.DESTRUCTIVE,
-                            onClick = viewModel::cancelNovexLearning,
-                        ),
-                    )
-                    if (NovexLearningControl.DISMISS in controls) add(
-                        NovexDecisionAction(
-                            label = "知道了",
-                            icon = R.drawable.ic_phosphor_check,
-                            tone = NovexDecisionTone.PRIMARY,
-                            onClick = viewModel::dismissNovexLearningTaskNotice,
-                        ),
-                    )
-                },
-            )
-        }
-    }
-
-    // [P3.3 裁军] UrlPreviewSheet（内预览）与 WebPreview 沉浸式 HTML 预览
-    // （WebPreviewBottomSheet/WebPreviewFullscreenScreen/WebViewHolder）随
-    // 内置浏览器全家退役删除；链接点击已在 urlClickHandler 收口外跳。
-
-    // T279: sandbox file preview is now routed through the NavHost
-    // FILE_PREVIEW destination via onPreviewAttachment (see line ~1103),
-    // matching how user-bubble attachments and "Browse Chat Files" already work.
-    // The old in-place Dialog wrapper here was the source of the gray
-    // status/nav bars — a Compose Dialog creates its own Window that
-    // doesn't inherit MainActivity's enableEdgeToEdge, so the platform
-    // default scrim painted over the bars regardless of what
-    // FilePreviewScreen itself did.
-
-    // Fullscreen image gallery — tapped image link from chat markdown or
-    // composer chip. Pager-backed so multi-image messages support iOS-
-    // style swipe between images. Single-image case is a 1-item list.
-    previewImageGallery?.let { (items, startIdx) ->
-        com.openminis.app.ui.components.ImageGalleryViewer(
-            items = items,
-            startIndex = startIdx,
-            onDismiss = { previewImageGallery = null },
-        )
-    }
-
-    // [P3.3 裁军] 视频全屏内嵌播放器（MinisFullscreenVideoPlayer）与
-    // WebApp「添加到主屏」Sheet（AddToHomeSheet）随对应体系退役删除；
-    // 视频链接改经 openMediaFileExternally 外跳系统播放器。
+    // 尾部对话框/Sheet 宿主（ChatScreenOverlays.kt）：思维级别、模型
+    // 选择、资料学习全家、记忆面板、导出/检查点、图库等。
+    ChatScreenOverlays(
+        viewModel = viewModel,
+        providerRepository = providerRepository,
+        memoryRepository = memoryRepository,
+        availableGroups = availableGroups,
+        onSettings = onSettings,
+        onBrowseChatFiles = onBrowseChatFiles,
+        onModelGroupsClick = onModelGroupsClick,
+        showThinkingLevelSheet = showThinkingLevelSheet,
+        onThinkingDismissed = { showThinkingLevelSheet = false },
+        showModelPicker = showModelPicker,
+        onModelPickerDismissed = { showModelPicker = false },
+        previewGallery = previewImageGallery,
+        onGalleryDismissed = { previewImageGallery = null },
+    )
     } // CompositionLocalProvider
 }
 
