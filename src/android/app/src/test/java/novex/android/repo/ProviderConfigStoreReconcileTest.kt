@@ -19,6 +19,7 @@ import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
 import java.io.File
+import kotlinx.coroutines.runBlocking
 import kotlinx.serialization.json.Json
 
 /**
@@ -42,6 +43,18 @@ class ProviderConfigStoreReconcileTest {
     }
 
     private fun app(): Application = RuntimeEnvironment.getApplication()
+
+    /**
+     * 构造即等初始异步装载落地（awaitLoaded 是 store 的启动契约）。不等的话，
+     * 迟到的装载协程可能带着陈旧快照在测试摆盘之后才 persist，把手工布置的
+     * 镜像态覆写回去——CI 实跑即在 sync-hash 用例踩中（哈希被回写对齐、
+     * mirror-only 丢失）。产品侧消费方走变更器纪律，无此形态。
+     */
+    private fun newStore(): ProviderConfigStore {
+        val store = ProviderConfigStore(app())
+        runBlocking { store.awaitLoaded() }
+        return store
+    }
 
     private fun prefs() = app().getSharedPreferences("provider_config", Context.MODE_PRIVATE)
 
@@ -103,7 +116,7 @@ class ProviderConfigStoreReconcileTest {
         breakProviderTables() // DB 读失败（表被抽走）
         prefs().edit().remove("config").commit() // 镜像也不存在
 
-        val store = ProviderConfigStore(app())
+        val store = newStore()
         store.ensureLoaded()
 
         // 拒绝捏造空配置：装载保持未完成态，内存态仍是空占位（非「已装载的空库」）。
@@ -114,14 +127,14 @@ class ProviderConfigStoreReconcileTest {
         // 恢复可读后，下一次访问重试成功（两库皆空 → 合法空配置）。
         resetDatabaseSingleton()
         wipeProviderDbFiles()
-        val healed = ProviderConfigStore(app())
+        val healed = newStore()
         healed.ensureLoaded()
         assertTrue(healed.loaded.value)
     }
 
     @Test
     fun corruptedMirrorKeepsDbRowsAsAuthority() {
-        val store = ProviderConfigStore(app())
+        val store = newStore()
         store.save(
             ProviderConfig(
                 instances = mutableListOf(instance("db-authority")),
@@ -132,7 +145,7 @@ class ProviderConfigStoreReconcileTest {
         // 镜像写坏（半写/损坏）：同步哈希必然对不上且解码必败。
         prefs().edit().putString("config", "{\"instances\": [broken").commit()
 
-        val reopened = ProviderConfigStore(app())
+        val reopened = newStore()
         reopened.ensureLoaded()
         assertTrue(reopened.loaded.value)
         // DB 行仍是权威——绝不让下一个变更器把空/坏镜像写满全库。
@@ -142,7 +155,7 @@ class ProviderConfigStoreReconcileTest {
 
     @Test
     fun syncHashMismatchReimportsMirrorAndRewritesDb() {
-        val store = ProviderConfigStore(app())
+        val store = newStore()
         store.save(
             ProviderConfig(
                 instances = mutableListOf(instance("hash-base")),
@@ -160,14 +173,14 @@ class ProviderConfigStoreReconcileTest {
         )
         prefs().edit().putString("config", mirrorOf(mirrorOnly)).commit()
 
-        val reopened = ProviderConfigStore(app())
+        val reopened = newStore()
         reopened.ensureLoaded()
         assertTrue(reopened.loaded.value)
         assertTrue(reopened.config.value.instances.any { it.id == "mirror-only" })
 
         // 重导入必须落回 DB：抹掉镜像后第三开，仅靠 DB 也读得到 mirror-only。
         prefs().edit().remove("config").commit()
-        val third = ProviderConfigStore(app())
+        val third = newStore()
         third.ensureLoaded()
         assertTrue(third.config.value.instances.any { it.id == "mirror-only" })
     }
@@ -181,7 +194,7 @@ class ProviderConfigStoreReconcileTest {
         )
         prefs().edit().putString("config", mirrorOf(mirrorOnly)).commit()
 
-        val store = ProviderConfigStore(app())
+        val store = newStore()
         store.ensureLoaded()
 
         // 镜像救命：即使「镜像→DB 回写」也失败（库仍打不开），返回解析值，
@@ -202,7 +215,7 @@ class ProviderConfigStoreReconcileTest {
             .putString(ProviderConfigStore.KEY_LAST_USED_ENTRY, "legacy-uuid")
             .commit()
 
-        val store = ProviderConfigStore(app())
+        val store = newStore()
         store.ensureLoaded()
 
         assertEquals(
