@@ -1,5 +1,12 @@
 package com.openminis.app.ui.chat
 
+// 移动会话选择面板：列出当前会话之外的全部会话供挑选；还可一键
+// 「新建会话再移动」。会话流经 ChatViewModelStore.pendingTransfer 暂存
+// （输入 + 附件），跳转后由目标会话回收。
+// 类别图标与相对时间直接吃 ui/noven/NovenSessionRow 的共享表——这文件
+// 以前带着一份复制粘贴的本地副本，删了。
+
+import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.layout.Arrangement
@@ -16,7 +23,6 @@ import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material3.ExperimentalMaterial3Api
 import androidx.compose.material3.Icon
 import androidx.compose.material3.MaterialTheme
-import novex.android.ui.ModalBottomSheet
 import androidx.compose.material3.Text
 import androidx.compose.material3.rememberModalBottomSheetState
 import androidx.compose.runtime.Composable
@@ -28,7 +34,6 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.res.stringResource
@@ -36,29 +41,16 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.text.style.TextOverflow
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
-import android.content.Context
 import com.openminis.app.R
 import novex.android.data.chat.SessionRow
 import com.openminis.app.data.repository.ChatRepository
+import com.openminis.app.ui.noven.categoryStyle
+import com.openminis.app.ui.noven.relativeDate
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.util.Calendar
-import java.util.Date
-import java.util.concurrent.TimeUnit
 
-/**
- * Bottom sheet listing all chat sessions except the current one. Tapping
- * a row hands the chosen session id back to the caller. Mirrors iOS
- * MoveToSessionSheet (Views/Chat/AIChatView.swift:3413) — same flow
- * (current input + attachments stash via ChatViewModelStore.pendingTransfer
- * → navigate → target session drains the cache).
- *
- * T167: rows now show a category icon + relative timestamp matching
- * SessionListScreen's main list, and the LazyColumn is wrapped in a
- * 16dp rounded surface card so the picker reads as a discrete control
- * inside the sheet rather than naked list items.
- */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
 fun MoveToSessionSheet(
@@ -68,7 +60,6 @@ fun MoveToSessionSheet(
     onSelect: (String) -> Unit,
     onImportCard: ((Boolean)->Unit)? = null,
 ) {
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
     val scope = rememberCoroutineScope()
     var sessions by remember { mutableStateOf<List<SessionRow>>(emptyList()) }
     var currentSession by remember { mutableStateOf<SessionRow?>(null) }
@@ -82,70 +73,36 @@ fun MoveToSessionSheet(
         sessions = loaded.second
     }
 
-    ModalBottomSheet(onDismissRequest = onDismiss, sheetState = sheetState) {
+    novex.android.ui.ModalBottomSheet(
+        onDismissRequest = onDismiss,
+        sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true),
+    ) {
         Column(modifier = Modifier.fillMaxWidth().padding(bottom = 16.dp)) {
-            onImportCard?.let {import->
-                novex.android.ui.TextButton(onClick={import(true)}){Text("导入为世界")}
-                novex.android.ui.TextButton(onClick={import(false)}){Text("导入为角色")}
+            onImportCard?.let { import ->
+                novex.android.ui.TextButton(onClick = { import(true) }) { Text("导入为世界") }
+                novex.android.ui.TextButton(onClick = { import(false) }) { Text("导入为角色") }
             }
             Text(
                 stringResource(R.string.move_to_sheet_title),
                 style = MaterialTheme.typography.titleMedium,
                 modifier = Modifier.padding(horizontal = 16.dp, vertical = 8.dp),
             )
-            Row(
-                modifier = Modifier
-                    .padding(horizontal = 16.dp)
-                    .fillMaxWidth()
-                    .background(
-                        color = MaterialTheme.colorScheme.surface,
-                        shape = RoundedCornerShape(16.dp),
-                    )
-                    .clickable(enabled = currentSession != null) {
-                        val source = currentSession ?: return@clickable
-                        scope.launch {
-                            val target = withContext(Dispatchers.IO) {
-                                chatRepository.createSession(
-                                    modelId = source.modelId,
-                                    title = null,
-                                    memoryEnabled = false,
-                                )
-                            }
-                            onSelect(target.id)
+            NewSessionTargetRow(
+                enabled = currentSession != null,
+                onPick = {
+                    val source = currentSession ?: return@NewSessionTargetRow
+                    scope.launch {
+                        val target = withContext(Dispatchers.IO) {
+                            chatRepository.createSession(
+                                modelId = source.modelId,
+                                title = null,
+                                memoryEnabled = false,
+                            )
                         }
+                        onSelect(target.id)
                     }
-                    .padding(horizontal = 16.dp, vertical = 14.dp),
-                verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = Arrangement.spacedBy(12.dp),
-            ) {
-                Box(
-                    modifier = Modifier
-                        .size(40.dp)
-                        .background(
-                            MaterialTheme.colorScheme.primary.copy(alpha = 0.12f),
-                            CircleShape,
-                        ),
-                    contentAlignment = Alignment.Center,
-                ) {
-                    Icon(
-                        novex.android.ui.NovexIcons.Forum,
-                        contentDescription = null,
-                        tint = MaterialTheme.colorScheme.primary,
-                    )
-                }
-                Column {
-                    Text(
-                        stringResource(R.string.move_to_new_play_session),
-                        fontSize = 15.sp,
-                        fontWeight = FontWeight.SemiBold,
-                    )
-                    Text(
-                        stringResource(R.string.move_to_new_play_session_hint),
-                        fontSize = 12.sp,
-                        color = MaterialTheme.colorScheme.onSurfaceVariant,
-                    )
-                }
-            }
+                },
+            )
             if (sessions.isEmpty()) {
                 Text(
                     stringResource(R.string.move_to_sheet_empty),
@@ -164,128 +121,10 @@ fun MoveToSessionSheet(
                         ),
                 ) {
                     items(sessions, key = { it.id }) { session ->
-                        MoveToPickerRow(
-                            session = session,
-                            onClick = { onSelect(session.id) },
-                        )
+                        MoveToPickerRow(session = session, onClick = { onSelect(session.id) })
                     }
                 }
             }
         }
     }
-}
-
-/**
- * Single row in the Move-to picker. Visual parity with SessionRow in
- * SessionListScreen.kt (44dp tinted-circle category icon + title +
- * relative timestamp), trimmed of the active-session spinning ring and
- * the second "last message" line so the row stays compact inside a
- * bottom sheet.
- */
-@Composable
-private fun MoveToPickerRow(
-    session: SessionRow,
-    onClick: () -> Unit,
-) {
-    val context = LocalContext.current
-    val style = remember(session.category) { categoryStyle(session.category) }
-    val timeText = remember(session.updatedAt, context) { relativeDate(context, session.updatedAt) }
-    val untitled = stringResource(R.string.move_to_sheet_untitled)
-    Row(
-        modifier = Modifier
-            .fillMaxWidth()
-            .clickable(onClick = onClick)
-            .padding(horizontal = 16.dp, vertical = 12.dp),
-        verticalAlignment = Alignment.CenterVertically,
-        horizontalArrangement = Arrangement.spacedBy(12.dp),
-    ) {
-        Box(
-            modifier = Modifier
-                .size(40.dp)
-                .background(color = style.color.copy(alpha = 0.18f), shape = CircleShape),
-            contentAlignment = Alignment.Center,
-        ) {
-            Icon(
-                imageVector = style.icon,
-                contentDescription = null,
-                tint = style.color,
-                modifier = Modifier.size(20.dp),
-            )
-        }
-        Column(
-            modifier = Modifier.weight(1f),
-            verticalArrangement = Arrangement.spacedBy(2.dp),
-        ) {
-            Text(
-                text = session.title ?: untitled,
-                fontSize = 15.sp,
-                fontWeight = FontWeight.SemiBold,
-                color = MaterialTheme.colorScheme.onSurface,
-                maxLines = 1,
-                overflow = TextOverflow.Ellipsis,
-            )
-            Text(
-                text = timeText,
-                fontSize = 12.sp,
-                color = MaterialTheme.colorScheme.outline,
-                maxLines = 1,
-            )
-        }
-    }
-}
-
-// ─── Local copies of SessionListScreen helpers ──────────────────────────────
-//
-// `categoryStyle` and `relativeDate` are file-private inside
-// SessionListScreen.kt (and small enough that extracting a shared module
-// would be more disruption than it's worth here). Mirror the same colour
-// + icon table so the picker visually matches the main list.
-
-private data class CategoryStyle(val icon: ImageVector, val color: Color)
-
-private fun categoryStyle(category: String?): CategoryStyle {
-    return when (category?.lowercase()) {
-        "code"         -> CategoryStyle(novex.android.ui.NovexIcons.Code, Color(0xFFF09A37))
-        "writing"      -> CategoryStyle(novex.android.ui.NovexIcons.Description, Color(0xFF3478F6))
-        "research"     -> CategoryStyle(novex.android.ui.NovexIcons.Language, Color(0xFF30B0C7))
-        "analysis"     -> CategoryStyle(novex.android.ui.NovexIcons.BarChart, Color(0xFF5856D6))
-        "creative"     -> CategoryStyle(novex.android.ui.NovexIcons.Brush, Color(0xFFFF2D55))
-        "chat"         -> CategoryStyle(novex.android.ui.NovexIcons.Forum, Color(0xFF34C759))
-        "math"         -> CategoryStyle(novex.android.ui.NovexIcons.Calculate, Color(0xFF9B59B6))
-        "translation"  -> CategoryStyle(novex.android.ui.NovexIcons.Translate, Color(0xFF00BCD4))
-        "health"       -> CategoryStyle(novex.android.ui.NovexIcons.Favorite, Color(0xFFFF3B30))
-        "finance"      -> CategoryStyle(novex.android.ui.NovexIcons.Payments, Color(0xFF00C7BE))
-        "travel"       -> CategoryStyle(novex.android.ui.NovexIcons.Map, Color(0xFFF09A37))
-        "education"    -> CategoryStyle(novex.android.ui.NovexIcons.Book, Color(0xFF3478F6))
-        "design"       -> CategoryStyle(novex.android.ui.NovexIcons.Palette, Color(0xFFFF2D55))
-        "productivity" -> CategoryStyle(novex.android.ui.NovexIcons.CalendarMonth, Color(0xFFFFCC00))
-        "support"      -> CategoryStyle(novex.android.ui.NovexIcons.Settings, Color(0xFF8B6914))
-        "other"        -> CategoryStyle(novex.android.ui.NovexIcons.GridView, Color(0xFF8E8E93))
-        else           -> CategoryStyle(novex.android.ui.NovexIcons.Forum, Color(0xFF8E8E93))
-    }
-}
-
-private fun relativeDate(context: Context, timestamp: Long): String {
-    val now = System.currentTimeMillis()
-    val diff = now - timestamp
-    val seconds = TimeUnit.MILLISECONDS.toSeconds(diff)
-    val minutes = TimeUnit.MILLISECONDS.toMinutes(diff)
-    val hours = TimeUnit.MILLISECONDS.toHours(diff)
-    if (seconds < 60) return context.getString(R.string.time_just_now)
-    if (minutes < 60) return context.getString(R.string.time_minutes_ago, minutes.toInt())
-    if (hours < 24) return context.getString(R.string.time_hours_ago, hours.toInt())
-    val dateCal = Calendar.getInstance().apply { time = Date(timestamp) }
-    val yesterdayCal = Calendar.getInstance().apply { add(Calendar.DAY_OF_YEAR, -1) }
-    if (dateCal.get(Calendar.YEAR) == yesterdayCal.get(Calendar.YEAR) &&
-        dateCal.get(Calendar.DAY_OF_YEAR) == yesterdayCal.get(Calendar.DAY_OF_YEAR)
-    ) return context.getString(R.string.time_yesterday)
-    val days = TimeUnit.MILLISECONDS.toDays(diff)
-    if (days < 7) {
-        // T172: device-locale weekday name via java.text.DateFormatSymbols.
-        val dayNames = java.text.DateFormatSymbols(java.util.Locale.getDefault()).weekdays
-        return dayNames[dateCal.get(Calendar.DAY_OF_WEEK) - 1]
-    }
-    val month = dateCal.get(Calendar.MONTH) + 1
-    val day = dateCal.get(Calendar.DAY_OF_MONTH)
-    return "$month/$day"
 }
