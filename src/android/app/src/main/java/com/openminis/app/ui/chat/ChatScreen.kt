@@ -3839,7 +3839,6 @@ fun ChatScreen(
                                 val edit = interpretComposerTextEdit(inputFieldValue, tfv,
                                     System.currentTimeMillis() - lastSendTimeMs, sendOnEnter, showMentionMenu)
                                 if (edit == ComposerTextEdit.Ignore) return@ChatComposerTextField
-                                captureSelectionReplacement(context, inputFieldValue, tfv)
                                 if (edit == ComposerTextEdit.Send) {
                                     performEnterSend()
                                     return@ChatComposerTextField

@@ -10,13 +10,8 @@ import java.io.File
 import novex.android.ContentPaths
 
 /**
- * Decides what should happen when a link inside chat markdown is tapped.
- *
- * Routing order:
- *  1. Recognized minis:// deep-link action  → DeepLink (delegated to MainActivity via Intent.ACTION_VIEW)
- *  2. minis://<sandbox path>, file://, or absolute /var/minis|/root path → SandboxFile
- *  3. Non-http(s) external schemes (intent://, mailto:, tel:, geo:, …)   → ExternalApp
- *  4. Anything else (http(s), about, file)                                → Web
+ * 聊天 markdown 里点链接的去向：可识别的 minis:// 深链 → 沙盒文件 →
+ * 非 http(s) scheme 外跳系统应用 → 其余按网页（外跳系统浏览器）。
  */
 sealed class ChatLinkAction {
     data class DeepLink(val action: DeepLinkAction) : ChatLinkAction()
@@ -28,87 +23,78 @@ sealed class ChatLinkAction {
 object ChatLinkResolver {
 
     fun resolve(rawUrl: String, sessionId: String? = null, context: Context? = null): ChatLinkAction {
-        val trimmed = rawUrl.trim()
-        if (trimmed.isEmpty()) return ChatLinkAction.Web(rawUrl)
+        val url = rawUrl.trim()
+        if (url.isEmpty()) return ChatLinkAction.Web(rawUrl)
+        val scheme = runCatching { url.toUri() }.getOrNull()?.scheme?.lowercase()
 
-        val uri = runCatching { trimmed.toUri() }.getOrNull()
-        val scheme = uri?.scheme?.lowercase()
+        return asDeepLink(url, scheme)
+            ?: asSandboxItem(url, scheme, sessionId, context)
+            ?: asExternalApp(url, scheme)
+            ?: ChatLinkAction.Web(url)
+    }
 
-        // 1. minis:// deep links — only branch out when the URL maps to a known action,
-        //    otherwise fall through to sandbox-path handling.
-        if (scheme == "minis") {
-            val action = DeepLinkHandler.parse(uri)
-            if (action !is DeepLinkAction.Unknown) {
-                return ChatLinkAction.DeepLink(action)
-            }
-        }
-
-        // 2. Sandbox file resolution — prefer a session-scoped resolver when
-        //    the caller knows which chat this link belongs to. The global
-        //    `ContentPaths.bindMounts` is last-writer-wins, so on a device
-        //    with multiple sessions the resolver otherwise points at
-        //    whichever session booted its shell most recently.
-        val hostFile = resolveSandboxFile(trimmed, scheme, sessionId, context)
-        if (hostFile != null && hostFile.exists() && !hostFile.isDirectory) {
-            FileItem.from(hostFile)?.let { return ChatLinkAction.SandboxFile(it) }
-        }
-
-        // [P3.3 裁军] 原 BrowserExternalSchemeHandler.shouldHandleExternally
-        // 的外跳 scheme 判定（intent/market/tel/mailto/geo/…）随内置浏览器
-        // 退役改为本地白名单：非 http(s) 的 scheme 一律走 ExternalApp 分支
-        // 由调用方 ACTION_VIEW 外跳，http(s) 保持 Web 分支（同样外跳系统
-        // 浏览器）。
-        val lowerScheme = scheme?.lowercase()
-        if (lowerScheme != null && lowerScheme != "http" && lowerScheme != "https") {
-            return ChatLinkAction.ExternalApp(trimmed)
-        }
-
-        return ChatLinkAction.Web(trimmed)
+    /** minis:// 且能解析出动作 → 深链；解析不出动作留给沙盒路径兜底。 */
+    private fun asDeepLink(url: String, scheme: String?): ChatLinkAction? {
+        if (scheme != "minis") return null
+        return DeepLinkHandler.parse(url.toUri())
+            .takeIf { it !is DeepLinkAction.Unknown }
+            ?.let(ChatLinkAction::DeepLink)
     }
 
     /**
-     * Map a chat link to a host File when it points into the sandbox, else null.
-     * Accepts:
-     *   minis://attachments/foo.png        → /var/minis/attachments/foo.png
-     *   minis:///var/minis/workspace/x.csv → /var/minis/workspace/x.csv (absolute)
-     *   file:///path/to/file               → /path/to/file
-     *   /var/minis/workspace/x.csv         → resolved via bind mount
-     *   /root/whatever                     → resolved relative to rootfs
+     * 链接指向沙盒内文件 → FileItem：
+     *   minis://attachments/x.png    → /var/minis/attachments/x.png
+     *   minis:///var/minis/ws/x.csv  → 绝对路径
+     *   file:///data/x               → /data/x
+     *   /var/minis/...、/root/...    → 经 bind mount / rootfs 解析
+     *
+     * 会话级解析优先：全局 bindMounts 后写覆盖，多会话设备上不带
+     * sessionId 会指到最近一次起 shell 的会话。
      */
-    private fun resolveSandboxFile(
-        raw: String,
+    private fun asSandboxItem(
+        url: String,
         scheme: String?,
         sessionId: String?,
         context: Context?,
-    ): File? {
-        fun lookup(linuxPath: String): File? =
-            if (sessionId != null && context != null) {
-                ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
-            } else {
-                ContentPaths.resolveHostPath(linuxPath)
-            }
-        return when (scheme) {
+    ): ChatLinkAction? {
+        val linuxPath = when (scheme) {
             "minis" -> {
-                // Keep '#' — attachment filenames legitimately contain it.
-                // `minis://` URLs don't use fragments, so stripping at '#'
-                // would truncate filenames like `foo #China.mp4`.
-                val stripped = raw.removePrefix("minis://").substringBefore('?')
-                val decoded = runCatching { java.net.URLDecoder.decode(stripped, "UTF-8") }.getOrDefault(stripped)
-                val linuxPath = if (decoded.startsWith("/")) decoded else "/var/minis/$decoded"
-                lookup(linuxPath)
+                // 保留 '#'：附件名本身可能含井号，minis:// 不用 fragment。
+                url.removePrefix("minis://").substringBefore('?')
+                    .percentDecoded()
+                    .let { if (it.startsWith("/")) it else "/var/minis/$it" }
             }
-            "file" -> {
-                val path = raw.removePrefix("file://").substringBefore('?')
-                if (path.isEmpty()) null else File(java.net.URLDecoder.decode(path, "UTF-8"))
-            }
-            null -> {
-                if (raw.startsWith("/")) lookup(raw) else null
-            }
+            "file" -> url.removePrefix("file://").substringBefore('?')
+                .takeIf(String::isNotEmpty)?.percentDecoded()
+            null -> url.takeIf { it.startsWith("/") }
             else -> null
+        } ?: return null
+
+        // file:// 给出的本来就是宿主路径；其余两种是沙盒 linux 路径，
+        // 会话级解析优先（全局 bindMounts 后写覆盖，多会话设备上不带
+        // sessionId 会指到最近一次起 shell 的会话）。
+        val file = when {
+            scheme == "file" -> File(linuxPath)
+            sessionId != null && context != null ->
+                ContentPaths.resolveSessionHostPath(sessionId, linuxPath, context)
+            else -> ContentPaths.resolveHostPath(linuxPath)
         }
+        return file
+            ?.takeIf { it.exists() && it.isFile }
+            ?.let(FileItem::from)
+            ?.let(ChatLinkAction::SandboxFile)
     }
 
-    /** Fire a system intent so MainActivity's BROWSABLE filter picks the deep link up. */
+    private fun String.percentDecoded(): String =
+        runCatching { java.net.URLDecoder.decode(this, "UTF-8") }.getOrDefault(this)
+
+    /** 非 http(s) scheme（intent/market/tel/mailto/geo…）外跳系统应用。 */
+    private fun asExternalApp(url: String, scheme: String?): ChatLinkAction? =
+        if (scheme != null && scheme != "http" && scheme != "https") {
+            ChatLinkAction.ExternalApp(url)
+        } else null
+
+    /** 发系统 Intent，让 MainActivity 的 BROWSABLE 过滤器接住深链。 */
     fun dispatchDeepLink(context: Context, originalUrl: String) {
         val intent = Intent(Intent.ACTION_VIEW, originalUrl.toUri()).apply {
             setPackage(context.packageName)

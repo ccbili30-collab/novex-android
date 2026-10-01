@@ -10,64 +10,61 @@ import androidx.compose.ui.text.buildAnnotatedString
 import androidx.compose.ui.text.withStyle
 
 /**
- * Build an [AnnotatedString] that highlights every case-insensitive
- * occurrence of [query] inside [text] with the theme's tertiaryContainer
- * background. Blank query returns the plain string with no spans.
- *
- * Used by the home session-list search results to point the user at the
- * exact span that matched their query, in both the session title and the
- * extracted message snippet.
+ * 搜索命中高亮：把 [text] 里所有不区分大小写的 [query] 命中段刷上主题
+ * 高亮色。空查询原样返回。供会话列表搜索结果的标题与消息摘要使用。
  */
 @Composable
 fun highlightedAnnotatedString(text: String, query: String): AnnotatedString {
-    val highlightBg = MaterialTheme.colorScheme.tertiaryContainer
-    val highlightFg = MaterialTheme.colorScheme.onTertiaryContainer
-    return remember(text, query, highlightBg, highlightFg) {
-        buildHighlightedAnnotatedString(text, query, highlightBg, highlightFg)
+    val bg = MaterialTheme.colorScheme.tertiaryContainer
+    val fg = MaterialTheme.colorScheme.onTertiaryContainer
+    return remember(text, query, bg, fg) {
+        buildHighlightedAnnotatedString(text, query, bg, fg)
     }
 }
 
-/** Pure builder kept outside composition so matching behavior is testable. */
+/** 纯函数实现，脱离组合环境以便单测覆盖命中区间。 */
 internal fun buildHighlightedAnnotatedString(
     text: String,
     query: String,
     highlightBg: Color,
     highlightFg: Color,
 ): AnnotatedString {
-    if (query.isBlank() || text.isEmpty()) return AnnotatedString(text)
-    val lower = text.lowercase()
-    val q = query.lowercase()
+    if (text.isEmpty() || query.isBlank()) return AnnotatedString(text)
+    val needle = query.lowercase()
+    val haystack = text.lowercase()
+    val hits = mutableListOf<Int>()
+    var scan = haystack.indexOf(needle)
+    while (scan >= 0) {
+        hits += scan
+        scan = haystack.indexOf(needle, scan + needle.length)
+    }
     return buildAnnotatedString {
-        var idx = 0
-        while (idx < text.length) {
-            val match = lower.indexOf(q, idx)
-            if (match < 0) {
-                append(text.substring(idx))
-                break
-            }
-            if (match > idx) append(text.substring(idx, match))
+        var cursor = 0
+        for (hit in hits) {
+            append(text.substring(cursor, hit))
+            val end = hit + needle.length
             withStyle(SpanStyle(background = highlightBg, color = highlightFg)) {
-                append(text.substring(match, match + q.length))
+                append(text.substring(hit, end))
             }
-            idx = match + q.length
+            cursor = end
         }
+        append(text.substring(cursor))
     }
 }
 
 /**
- * Locate the first case-insensitive occurrence of [query] in [text] and
- * return a ~[radius]-char window centred on the hit. Newlines collapse to
- * spaces; ellipses prefix/suffix when truncated. Returns null if no hit.
+ * 在 [text] 里找第一个不区分大小写的命中，返回以命中为中心、约
+ * [radius] 字符宽的摘要片段；换行压成空格，截断处补省略号。无命中返 null。
  */
 fun snippetAround(text: String, query: String, radius: Int = 50): String? {
-    if (query.isBlank() || text.isEmpty()) return null
-    val lower = text.lowercase()
-    val pos = lower.indexOf(query.lowercase())
+    if (text.isEmpty() || query.isBlank()) return null
+    val pos = text.lowercase().indexOf(query.lowercase())
     if (pos < 0) return null
-    val start = (pos - radius).coerceAtLeast(0)
-    val end = (pos + query.length + radius).coerceAtMost(text.length)
-    val core = text.substring(start, end).replace('\n', ' ').replace('\r', ' ')
-    val prefix = if (start > 0) "…" else ""
-    val suffix = if (end < text.length) "…" else ""
-    return prefix + core + suffix
+    val start = maxOf(0, pos - radius)
+    val end = minOf(text.length, pos + query.length + radius)
+    return buildString {
+        if (start > 0) append('…')
+        append(text.substring(start, end).replace('\n', ' ').replace('\r', ' '))
+        if (end < text.length) append('…')
+    }
 }

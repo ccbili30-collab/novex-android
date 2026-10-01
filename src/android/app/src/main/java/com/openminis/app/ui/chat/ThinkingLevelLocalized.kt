@@ -4,24 +4,19 @@ import android.content.Context
 import com.openminis.app.R
 import novex.android.data.model.ThinkingLevel
 
+private val thinkingLevelLabels = mapOf(
+    ThinkingLevel.OFF to R.string.thinking_level_off,
+    ThinkingLevel.LOW to R.string.thinking_level_low,
+    ThinkingLevel.MEDIUM to R.string.thinking_level_medium,
+    ThinkingLevel.HIGH to R.string.thinking_level_high,
+    ThinkingLevel.XHIGH to R.string.thinking_level_xhigh,
+    ThinkingLevel.MAX to R.string.thinking_level_max,
+    ThinkingLevel.ULTRA to R.string.thinking_level_ultra,
+)
+
 /**
- * Localized display name for [ThinkingLevel]. The data-layer
- * [ThinkingLevel.displayName] returns hard-coded English (it predates the
- * UI i18n pass and is also consumed by debug surfaces) — this extension
- * provides the user-facing translation for the slash panel + Thinking
- * level chips, threading through Context to reach strings.xml.
+ * 思考档位的用户可见名称（斜杠面板、档位胶囊用）。数据层
+ * [ThinkingLevel.displayName] 是英文常量，这里走 strings.xml 本地化。
  */
 fun ThinkingLevel.localizedName(context: Context): String =
-    context.getString(
-        when (this) {
-            ThinkingLevel.OFF -> R.string.thinking_level_off
-            ThinkingLevel.LOW -> R.string.thinking_level_low
-            ThinkingLevel.MEDIUM -> R.string.thinking_level_medium
-            ThinkingLevel.HIGH -> R.string.thinking_level_high
-            // [T-android-thinking-level-arch] XHIGH now has its own label; "Max"
-            // moved to the new MAX case, plus ULTRA.
-            ThinkingLevel.XHIGH -> R.string.thinking_level_xhigh
-            ThinkingLevel.MAX -> R.string.thinking_level_max
-            ThinkingLevel.ULTRA -> R.string.thinking_level_ultra
-        },
-    )
+    context.getString(checkNotNull(thinkingLevelLabels[this]))
