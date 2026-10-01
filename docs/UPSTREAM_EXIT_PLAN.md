@@ -883,6 +883,58 @@ ui.theme（46.0%）已落半血，维持随邻近战役顺带即可。
 - **repo/authkit/迁移链测试补全**（审计 D7/D8/D16）：下次触碰对应包时先补（五家 OAuth PKCE/回调、46 步迁移链 MigrationTestHelper、sharekit/vault 窄测）。
 - **runtime 三族拆包**（审计 D4）、**JSON 双栈收敛**（D9）、**GlobalScope/runBlocking**（D11）：见审计还债时点列。
 
+### P3.7 · 终盘血统清剿（未动桶清零 + 改动桶 ≥80% 清零） — 黄档 — [x]（2026-10-01，分支 tasks/exit-p37）
+
+换协议（P5）前的最后一刀。范围：**未动桶全部 37 件/6,863 行**（100% 上游）
++ **改动桶 ≥80% 全部 20 件/3,008 行**，就地真重写（结构/分解/控制流/注释
+重做，冻结面逐字）。
+
+**事实纠偏**：UI 清洗线（feat/ui-rikkahub，PR#81）汇报的「UI 收口」实际
+只覆盖了改动桶的 UI 件——**未动桶里的 15 个 UI 件**（MinisTextKitSelection
+1181 行、MarkdownParser 775、KatexWebViewPool 344、KaTeXView 320、
+MarkdownClipboard 265、StreamingFade 234、ProviderImportZip 158、
+IosBounceOverscrollEffect 140、DisplayBitmapLimits、MessageBoundsRegistry、
+SafeNavigate、AlwaysStretchOverscroll、InputAttachment、TitlePromptLocale、
+UrlLinkifier）不在她的战线清单里，本轮补上。她的战役已收、UI 件解禁。
+
+执行口径：
+- **两件不许挪路径**（只就地真重写）：crash/CrashFileReporter（ACRA SPI
+  件——FQN 登记在 META-INF/services）、crash/NativeCrashHandler（JNI 件
+  ——cpp 侧按 `Java_com_openminis_app_crash_NativeCrashHandler_nativeInstall`
+  绑定）。
+- **LLMProvider 是 P4 骨架的接口缝**：就地重写文件内容、接口签名面（成员
+  名/类型/默认值）冻结不动，搬包留给 P4。
+- **5 个 50-90 行小 prefs 合并**为自有单件 `data/GlobalSwitchStore.kt`
+  （AutoCompactPrefs/FastModePrefs/EnhancedCachePrefs/EnvVarPrivacyStore/
+  MemoryGlobalPrefs；对象名与 prefs 名/键集冻结，消费方零改动）。
+- 顺手清除上游导入损坏：MarkdownClipboard 源内两个裸 NUL 字节（行内码
+  占位符实为 `"\0CODE\0"`）改显式构造，行为逐字节等价。
+- 行为钉补齐：MarkdownParserToleranceTest（16 例：围栏/表格竖线链接/
+  数学抽取含代码掩码与引用标记剥离/两位数有序表上限/媒体路由）、
+  KaTeXInjectionProtocolTest（8 例：renderMath 调用串、转义、桥名、缓存键
+  + assets HTML 双向钉）、ImageBudgetTest（9 例：消息级掉尾/请求级最新
+  优先/单图钳制计费/占位文案逐字）、FileMentionIndexTest（9 例：三层扫
+  描路径拼装/作用域/评分/缓存与会话判）。
+
+度量（next c0ca1117 → 本刀树，审计口径 mixed_similarity）：
+- **未动桶 37 件 → 0 件 0 行**（33 件就地重写入改动桶、4 件随合并删除，
+  实删 5 件含 MemoryGlobalPrefs）；
+- **改动桶 ≥80%：20 件 → 1 件**——仅剩 service/ToolOutcome（100%/22 行，
+  P3.5b 已记档：枚举常量名与次序即跨层 FQN 事实面，文件内容即常量表），
+  **除 P4 骨架件外无一件 ≥80%**（P4 五件套本身在 40-63% 半血档）；
+- 改动桶三档：≥80% 1f/22 → 半血 89f/21,007 → 基本自有 75f/21,562；
+- 血统三分类：上游未动 37f/6,863 → **0f/0**；上游改动 133f/36,228 →
+  165f/42,591；Novex 新增 529f/98,686 → 530f/98,791。
+
+半血档 40-78% 残余的冻结面记档（每件的剩余匹配行主要是下列逐字内容，
+非逻辑直译）：模型面英文提示/占位/警告文案（VisionGroupResolver 描述与
+框架文、UserAgentOverride 的 UA 串、TitlePromptLocale 双语指令、
+MemoryRepository 注入片段、File 三工具的模型面定义与错误串）、协议行
+（KaTeX 注入调用、WebView settings 序列、OkHttp 头装配）、接口/构造签名
+（LLMProvider、InputAttachment、ToolExecutionResult）、Compose 标准链
+（Overscroll/AndroidView 样板）。逻辑主体的行形已重排（二轮），抽样复核
+未发现可再压而不动冻结面的行。
+
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
 MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
@@ -945,4 +997,5 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-30 | 本 PR（P3.5a） | 战线重划（UI 移交 feat/ui-rikkahub，本线专打非 UI 底层）；data/repository 三件真重写：实现层拆入新包 novex.android.repo 12 件（技能 4 + 会话 3 + 供应商 5），公共 API 门面钉旧路径（ui 嵌套类型/全限定引用不可经 typealias 或继承桥透传，调用方零改动、与 UI 战线零冲突）；冻结面逐字保留（skills.db DDL 与升级、目录与虚拟挂载布局、SKILL.md 格式与解析容忍度、提示协议文本、导出 zip/TTL、GitHub 重试纪律、prefs 名与键集、导出导入 JSON 键集与模态位域、DAO 面零改动、API 签名含参数名）；既有测试零断言改动全过 + 新增 repository 层 16 例 + 全量单测 1,369 条通过 | 旧路径三件相似度 95%→25.7%、69%→18.9%、70%→10.8%（全部 <40% 达标）；新包 12 件对上游原件 <16%；血统：上游未动 60f/11,827 不变，上游改动 118f/74,890→118f/71,618（-3,272 行），Novex 新增 402f/56,627→413f/59,146；改动桶三档 85f/39,732、25f/29,330、8f/2,556（<40% 档 +3 件即本轮三件）；P3.5 小节落款含给 UI 战线的移交清单 |
 | 2026-09-30 | 本 PR（P3.5b） | service 三件+crash+小件真重写：主刀 AgentForegroundService（96.4%→7.4，Manifest 壳+委托）/ToolOverlayController（99.7%→整体迁移删件）/SessionActivityTracker（99.4%→3.3，占据状态中枢 syncService 单点边沿裁决）/CrashFrequencyDetector（未动桶→4.4，风暴检测与分享流程拆 BurstGuard+ShareFlow）；小件血统甄别全为上游：BackgroundTaskNotifier（99.1→11.5）/AppLogger+LogcatTailer（未动桶→7.5/迁移删件）/DynamicIslandSupport（→32.3）/SessionBadgeStore（→15.9）/SessionConcurrencyManager（47.9→14.0）；新包 novex.android.runtime 9 件 + crashguard 2 件 + logkit 2 件（对上游原件 12 件 <40%，TaskDoneNotifier 43.4 为冻结面记档；旧路径 ToolOutcome 枚举钉原位 100% 记档）；未动三件：CrashFileReporter（ACRA SPI）、NativeCrashHandler（JNI 符号绑类名）、ProcessExitEvidence（Novex 自有）；冻结面逐字保留（渠道 id/通知 id/Manifest 组件/广播 action/prefs 名键/悬浮窗类型与 FLAG 与几何/崩溃窗语义/zip 与收件箱/logcat 命令行/日志文件名与行格式/深链）；既有测试零改动 + 新增 5 件 33 例 | 血统：上游未动 59f/11,664 → 53f/9,960，上游改动 119f/71,325 → 123f/68,947，Novex 新增 421f/61,681 → 434f/65,011；改动桶三档 84f/36,610 → 81f/33,962（≥80%）、27f/32,160 → 26f/32,066、8f/2,555 → 16f/2,919（<40% 档 +8 件即本轮重写件） |
 | 2026-09-30 | 本 PR（P3.5c） | auth 十件+SoulStore+ModelsDevApi+横切残件（deeplink/network/i18n/power/util/share）真重写：实现拆入 novex.android.authkit 12 件（OAuthWire/PkceMaterial/CredentialVault/LoopbackReceiver/LoopbackRedirectRelay/VendorLoginFlow+Claude/Codex/Gemini/Xai/Kimi/OpenRouter 六流/RefreshGate 刷新单飞抽公共）+ soul 2 件 + models 并入 ModelsDevCatalog + navlink/netwatch/localekit/powerguard/vault/sharekit 17 件；旧路径 typealias 门面 + 钉形嵌套类型正典留位（DeepLinkAction/ChatAction/Vendor/SoulBodyLimitCheck/PendingShare.Item.Kind/Outcome——typealias 转发不了嵌套类）+ 两 Manifest 壳；冻结面逐字（六家端点/client_id/scope/PKCE 形态/端口/prefs 名键/刷新时序含 403 保令牌与先比对再删除/models.dev TTL 与缓存文件/深链 URI 表/分享 wire 与 300s 窗/OEM 组件清单/自愈阶梯/SOUL.md 全套）；SystemPromptBuilder 零引用裁撤；既有测试零改动 + 新增 4 件 27 例（OAuth 过期与刷新/Soul 回路/models.dev 缓存与富化/深链解析）；全量 1,444 条 0 失败；新增 scripts/p35c_similarity_check.py 自查脚本（新实现↔基线配对；净眼复核补收漏配对后 OpenRouterKeyFlow 实测 50.4%——三通道确认上游即零调用死码，删除随葬；其余全 <40%、最差 39.4） | 血统：上游未动 53f/9,960 → 38f/7,143，上游改动 123f/68,947 → 136f/66,615，Novex 新增 434f/65,011 → 463f/69,307；改动桶三档 81f/33,962 → 74f/31,197（≥80%）、26f/32,066 → 24f/31,818、16f/2,919 → 38f/3,600（<40% 档 +22 件即本轮重写件）；死码 OpenRouter 流（含旧名别名）零调用确认后删除随葬（净眼复核处置） |
+| 2026-10-01 | 本 PR（P3.7 终盘清剿） | 未动桶 37 件/6,863 行清零（33 件就地真重写 + 5 小 prefs 合并为 data/GlobalSwitchStore——对象名与键冻结消费方零改动；CrashFileReporter 经 SPI、NativeCrashHandler 经 JNI 符号钉路径只重写内容；UI 收口纠偏：PR#81 漏掉的未动桶 15 个 UI 件本轮补上）+ 改动桶 ≥80% 20 件重写（LLMProvider 接口缝就地重写签名面冻结、File 三工具/ToolOutcome 消费面冻结；ToolOutcome 记档）+ MarkdownClipboard 上游裸 NUL 字节损坏清除（行为逐字节等价）+ 行为钉 4 件 42 例（MarkdownParser 容忍度/KaTeX 注入协议双向/ImageBudget 预算/FileMentionIndex 索引）+ 二轮行形重排 | 血统：上游未动 37f/6,863 → **0f/0**，上游改动 133f/36,228 → 165f/42,591，Novex 新增 529→530f；改动桶三档 ≥80% 20f/3,008 → **1f/22（仅 ToolOutcome 记档件）**、半血 45f/12,818 → 89f/21,007、基本自有 68f/20,402 → 75f/21,562；全仓除 ToolOutcome 外无 ≥80% 件，P4 骨架五件套均在半血档待 P4 |
 | 2026-09-30 | 本 PR（质量审计修复轮） | 审计报告 `docs/ARCHITECTURE_QUALITY_AUDIT.md` 入档；D1 包根归位：novex.android 根散件 20 件 → 19 件卡片族进 `ui.cards`、ContentPaths 进 `data`、LegacyUiBridge 桥件留根保旧名（`com.openminis.app.ui` 红线区 14 件 + MinisApp 不动，拆除条件入 P3.6 批次 E）；D2 对账失败分支直接测试 7 例（ProviderConfigStoreReconcileTest 5 例：拒空配置/坏镜像 DB 权威/哈希错位镜像重导入落库/DAO 失败镜像救命/legacy lastUsed 改写 + RoundTrip 疑缩守护 1 例 + WAL 残留清理加固）；P3.6 门面拆除排期表（审计 §2 五类 32 件逐件：消费者数+可拆条件，编排门面立只减不增规矩，大手术记档不本刀做）；ARCHITECTURE.md 修订（model-transport 依赖方向修正、provider/openai 失真剔除、novex.android 终态版图与四条规矩）；顺手清 D5 两漏网：transport/models AppLogger→logkit.RunLog 9 处直引、transport ClaudeOAuthManager→authkit.ClaudeLoginFlow 穿透改接 1 处 | 包根 20 件 → 1 件（桥）；novex.android.ui.cards 19 件（→ui 72 import 边随文件整体迁移）；data 30→31；血统三分类不变（机械搬家 + 新增测试与文档，零旧路径文件增删）；ClaudeOAuthManager 门面消费者 4→3 |

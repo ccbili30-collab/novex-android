@@ -3,20 +3,19 @@ package com.openminis.app.diagnostics
 import java.util.concurrent.atomic.AtomicReference
 
 /**
- * [T-android-content-perf-diag] Summary-level content-shape diagnostics for the
- * markdown render perf path. Given a message body, computes a cheap structural
- * fingerprint (length, lines, paragraphs, table / code-block / math markers)
- * that pinpoints *which content structure* is driving a render hang — without
- * ever logging the body itself (no perf overhead, no privacy leak).
+ * [T-android-content-perf-diag] 大内容渲染性能的结构指纹（血统清剿 P3.7 就地
+ * 真重写；Summary 字段与 asLogFields 输出、正则表均为冻结面）。
  *
- * Used by:
- *  - ChatScreen cold-open summary — one line per large message.
- *  - LargeContentGuard — at streaming degrade + stream-end markdown swap.
- *  - HangDetector — attaches the currently-rendering message's fingerprint to
- *    each JankDiag stall sample (via [currentRender]) so a Matcher/Pattern
- *    stack maps straight to "this message, this structure" from the log alone.
+ * 给一段消息正文算一个廉价的结构摘要（长度/行数/段落/表格/代码块/数学标记），
+ * 用来把渲染卡顿定位到「哪一种内容结构」，而绝不落正文本身——零隐私泄漏、
+ * 零性能负担。消费方：
+ *  - ChatScreen 冷开摘要（每条大消息一行）；
+ *  - LargeContentGuard（流式降级与收尾 markdown 换装两个时点）；
+ *  - HangDetector（经 [currentRenderLogFields] 把正在渲染的消息指纹挂到每条
+ *    JankDiag 卡顿采样上，Matcher/Pattern 栈一查日志就能对上「这条消息、这
+ *    个结构」）。
  */
-/** Below this length a message never drives a render hang, so skip the summary. */
+/** 短于此长度的消息不可能驱动渲染卡顿，跳过摘要。 */
 const val CONTENT_DIAG_MIN_CHARS = 5_000
 
 object ContentDiag {
@@ -33,7 +32,7 @@ object ContentDiag {
         val hasCodeBlock: Boolean get() = codeBlockCount > 0
         val hasMath: Boolean get() = mathCount > 0
 
-        /** Compact, greppable key=value fragment (no session/idx prefix). */
+        /** 紧凑可 grep 的 key=value 片段（不带 session/idx 前缀，格式冻结）。 */
         fun asLogFields(): String =
             "chars=$chars lines=$lines paragraphs=$paragraphs " +
                 "hasTable=$hasTable tableCount=$tableCount " +
@@ -41,68 +40,63 @@ object ContentDiag {
                 "hasMath=$hasMath mathCount=$mathCount"
     }
 
-    // Fenced code block opener/closer (``` or ~~~), start-of-line.
-    private val FENCE = Regex("""(?m)^\s{0,3}(```|~~~)""")
-    // A markdown table separator row: | --- | :---: | --- | (the load-bearing
-    // line that turns pipe rows into a real table).
-    private val TABLE_SEP = Regex("""(?m)^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$""")
-    // Display math: $$…$$ or \[…\]. Counted as blocks (pairs → count via markers/2).
-    private val DISPLAY_MATH_DOLLAR = Regex("""\$\$""")
-    private val DISPLAY_MATH_BRACKET = Regex("""\\\[""")
-    // Inline math: \(…\) or single-$…$ (rough — single-$ is only counted when it
-    // is NOT part of a $$ run, to avoid double-counting display math).
+    // -- 结构标记正则（表意口径冻结） --------------------------------------
+    // 围栏代码块开/闭行（``` 或 ~~~），行首。
+    private val FENCE_MARKER = Regex("""(?m)^\s{0,3}(```|~~~)""")
+    // 表格分隔行：| --- | :---: | --- |（把竖线行升格为真表格的承重行）。
+    private val TABLE_SEPARATOR = Regex("""(?m)^\s*\|?\s*:?-{2,}:?\s*(\|\s*:?-{2,}:?\s*)+\|?\s*$""")
+    // 展示数学：$$…$$ 或 \[…\]（按块计，$$ 计对数）。
+    private val DISPLAY_MATH_DOLLARS = Regex("""\$\$""")
+    private val DISPLAY_MATH_SQUARE = Regex("""\\\[""")
+    // 行内数学：\(…\)（单 $…$ 不计入——与 $$ 的重叠无法廉价区分，宁缺勿重）。
     private val INLINE_MATH_PAREN = Regex("""\\\(""")
 
     /**
-     * Compute the structural summary. O(n) over the text with a handful of
-     * regex scans — cheap enough to call on the cold-open path, but callers
-     * should still gate on a size threshold to avoid summarizing tiny bodies.
+     * 计算结构摘要：对文本做常数次 O(n) 正则扫描。冷开路径可直接调用，但
+     * 调用方仍应先按尺寸阈值（[CONTENT_DIAG_MIN_CHARS]）把小正文筛掉。
      */
     fun summarize(text: String): Summary {
         if (text.isEmpty()) return Summary(0, 0, 0, 0, 0, 0)
-        val lines = text.count { it == '\n' } + 1
-        // Paragraphs: runs separated by one-or-more blank lines.
-        val paragraphs = text.split(Regex("\\n\\s*\\n"))
-            .count { it.isNotBlank() }
-            .coerceAtLeast(1)
-        // Fenced code blocks = fence markers / 2 (round up an unclosed trailing fence).
-        val fenceMarkers = FENCE.findAll(text).count()
-        val codeBlockCount = (fenceMarkers + 1) / 2
-        val tableCount = TABLE_SEP.findAll(text).count()
-        val displayDollar = DISPLAY_MATH_DOLLAR.findAll(text).count() / 2
-        val displayBracket = DISPLAY_MATH_BRACKET.findAll(text).count()
-        val inlineParen = INLINE_MATH_PAREN.findAll(text).count()
-        val mathCount = displayDollar + displayBracket + inlineParen
+        val mathMarks = countMathBlocks(text)
         return Summary(
             chars = text.length,
-            lines = lines,
-            paragraphs = paragraphs,
-            tableCount = tableCount,
-            codeBlockCount = codeBlockCount,
-            mathCount = mathCount,
+            lines = text.count { it == '\n' } + 1,
+            // 段落：一或多个空行分隔的非空段。
+            paragraphs = text.split(Regex("\\n\\s*\\n")).count { it.isNotBlank() }.coerceAtLeast(1),
+            tableCount = TABLE_SEPARATOR.findAll(text).count(),
+            // 围栏标记数配对折半，未闭合的尾围栏向上取整。
+            codeBlockCount = (FENCE_MARKER.findAll(text).count() + 1) / 2,
+            mathCount = mathMarks,
         )
     }
 
-    // ─── Current-render fingerprint for HangDetector correlation ───────────────
+    private fun countMathBlocks(text: String): Int {
+        val displayByDollar = DISPLAY_MATH_DOLLARS.findAll(text).count() / 2
+        val displayByBracket = DISPLAY_MATH_SQUARE.findAll(text).count()
+        val inlineByParen = INLINE_MATH_PAREN.findAll(text).count()
+        return displayByDollar + displayByBracket + inlineByParen
+    }
+
+    // ─── 供 HangDetector 对时的「当前渲染」指纹 ──────────────────────────
 
     data class RenderMarker(val sessionId: String, val messageId: String, val summary: Summary)
 
-    private val current = AtomicReference<RenderMarker?>(null)
+    private val rendering = AtomicReference<RenderMarker?>(null)
 
-    /** Called by the render path when it begins rendering a large message body. */
+    /** 渲染路径开始渲染大消息体时登记。 */
     fun setCurrentRender(sessionId: String, messageId: String, summary: Summary) {
-        current.set(RenderMarker(sessionId, messageId, summary))
+        rendering.set(RenderMarker(sessionId, messageId, summary))
     }
 
-    /** Cleared when the large render completes / the block leaves composition. */
+    /** 大块渲染完成 / 离开组合时清除（只清自己那条，防误删后继登记）。 */
     fun clearCurrentRender(messageId: String) {
-        val cur = current.get()
-        if (cur != null && cur.messageId == messageId) current.set(null)
+        val marker = rendering.get() ?: return
+        if (marker.messageId == messageId) rendering.set(null)
     }
 
-    /** For HangDetector: a greppable fragment for the message on-screen, or "". */
+    /** HangDetector 用：屏上消息的可 grep 片段，无登记则空串。 */
     fun currentRenderLogFields(): String {
-        val cur = current.get() ?: return ""
-        return " renderSession=${cur.sessionId} renderMsg=${cur.messageId} ${cur.summary.asLogFields()}"
+        val marker = rendering.get() ?: return ""
+        return " renderSession=${marker.sessionId} renderMsg=${marker.messageId} ${marker.summary.asLogFields()}"
     }
 }

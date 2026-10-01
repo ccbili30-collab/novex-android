@@ -10,29 +10,24 @@ import androidx.compose.ui.text.style.TextDecoration
 import androidx.compose.ui.text.withLink
 
 /**
- * Convert a plain-text string into an [AnnotatedString] where any http(s) URL
- * is wrapped in a [LinkAnnotation.Url] span — clicking it routes through
- * [onClick] (so the chat screen's in-app web-preview handler can intercept,
- * matching iOS MinisOpenURLBroker behaviour).
+ * 纯文本 → 带链接 [AnnotatedString]（血统清剿 P3.7 就地真重写；WEB_URL
+ * + scheme 过滤口径与默认色为行为冻结面）：http(s) URL 包进
+ * [LinkAnnotation.Url]，点击经 [onClick] 路由（聊天屏的应用内网页预览处
+ * 理器可截胡，对齐 iOS MinisOpenURLBroker 行为）。
  *
- * Used by tool-result renderers (`shell_execute` output, generic text-mode
- * tool outputs, etc.) where the upstream content is not Markdown so the
- * existing `MarkdownText` link path doesn't apply. Mirrors iOS
- * `TerminalCanvasView.addURLLinks` — http/https only, no other schemes.
+ * 工具结果渲染器用（`shell_execute` 输出、通用文本态工具输出等）——上游
+ * 内容不是 Markdown，`MarkdownText` 的链接路径够不着。对齐 iOS
+ * `TerminalCanvasView.addURLLinks`：仅 http/https，无其他 scheme。
  *
- * Detection uses [android.util.Patterns.WEB_URL] which is the
- * platform-blessed regex (mirrors what TextView's Linkify uses), but
- * filtered to entries that actually start with a scheme so we don't
- * surface bare hostnames as clickable. We don't reconstruct soft-wrapped
- * URLs the way iOS does for the terminal canvas — Compose `Text` lays
- * out logical strings, not grid cells, so URLs aren't broken across grid
- * rows the way they are in a fixed-cell terminal view.
+ * 检测用 [android.util.Patterns.WEB_URL]（平台钦定正则，TextView 的
+ * Linkify 同源），但只保留真的带 scheme 开头的条目——裸主机名不给可点。
+ * iOS 终端画布那种软换行 URL 重组这里不做——Compose `Text` 排逻辑串、不
+ * 排网格单元，URL 不会像定宽终端那样被拆到两行。
  *
- * @param text     the plain text to linkify
- * @param onClick  called with the matched URL string when the user taps a
- *                 link; typically delegates to the chat's `urlClickHandler`
- *                 (in-app `UrlPreviewSheet`).
- * @param linkColor accent color for the link span (default iOS systemBlue).
+ * @param text     要链接化的纯文本
+ * @param onClick  用户点中链接时以命中的 URL 串回调；典型实现转交聊天的
+ *                 `urlClickHandler`（应用内 `UrlPreviewSheet`）。
+ * @param linkColor 链接 span 的强调色（默认 iOS systemBlue）。
  */
 fun linkifyUrls(
     text: String,
@@ -40,23 +35,21 @@ fun linkifyUrls(
     linkColor: Color = Color(0xFF0A84FF),
 ): AnnotatedString {
     if (text.isEmpty()) return AnnotatedString(text)
-    val matcher = android.util.Patterns.WEB_URL.matcher(text)
+    val hits = android.util.Patterns.WEB_URL.matcher(text)
 
     return buildAnnotatedString {
-        var cursor = 0
-        while (matcher.find()) {
-            val start = matcher.start()
-            val end = matcher.end()
+        var copiedUpTo = 0
+        while (hits.find()) {
+            val start = hits.start()
+            val end = hits.end()
             val candidate = text.substring(start, end)
-            // Patterns.WEB_URL matches bare hostnames too (e.g. "example.com");
-            // skip those to keep the heuristic close to iOS — only schemes
-            // we know in-app preview can render get the underline.
-            val lower = candidate.lowercase()
-            if (!lower.startsWith("http://") && !lower.startsWith("https://")) {
-                continue
-            }
-            // Append non-link gap before this match.
-            if (start > cursor) append(text, cursor, start)
+            // WEB_URL 也匹配裸主机名（"example.com"）——跳过，贴紧 iOS
+            // 口径：只有应用内预览确定渲染得了的 scheme 才给下划线。
+            val scheme = candidate.lowercase()
+            if (!scheme.startsWith("http://") && !scheme.startsWith("https://")) continue
+
+            // 命中之前的非链接空隙先补上。
+            if (start > copiedUpTo) append(text, copiedUpTo, start)
             withLink(
                 LinkAnnotation.Url(
                     url = candidate,
@@ -71,8 +64,8 @@ fun linkifyUrls(
             ) {
                 append(candidate)
             }
-            cursor = end
+            copiedUpTo = end
         }
-        if (cursor < text.length) append(text, cursor, text.length)
+        if (copiedUpTo < text.length) append(text, copiedUpTo, text.length)
     }
 }

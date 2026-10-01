@@ -1,12 +1,19 @@
 package com.openminis.app.tools
 
 import android.content.Context
+import java.io.File
+import novex.android.data.ContentPaths
 import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
-import java.io.File
-import novex.android.data.ContentPaths
 
+/**
+ * file_read 工具（血统清剿 P3.7 就地真重写；工具定义文案、错误串与截断
+ * 头格式为模型面契约冻结面）。
+ *
+ * 读 Linux 文件系统的文件：比 shell_execute 快——没有 shell 开销；返回
+ * 内容带元数据；拒绝二进制。
+ */
 object FileReadTool {
     const val NAME = "file_read"
 
@@ -25,139 +32,149 @@ object FileReadTool {
         propertyOrdering = listOf("tool_title", "path", "offset", "lines", "direction", "max_length"),
     )
 
+    /** 一次读取请求的全部参数（已钳界）。 */
+    private class ReadRequest(
+        val path: String,
+        val title: String,
+        val offset: Int,
+        val maxChars: Int,
+        val direction: String,
+        val lineCap: Int?,
+    )
+
+    /**
+     * T-FILEREAD-CAP：返回内容长度的硬顶。没有它之前，agent 要
+     * `max_length=1_000_000` 我们就照办——一张 400 KB 的 base64 图被整段
+     * 塞进 tool_result，渲染成单条用户气泡，Compose 的 StaticLayout /
+     * LineBreaker 锁死几十秒（见会话 e84882d7-2087-47f8-9300-ff2c897fe0b4
+     * 的 HangDetector 报告：820 KB partsJson、43 秒卡在
+     * nComputeLineBreaks）。无论请求多少都钳在 80 KB；下面的截断尾巴会把
+     * 全文件大小告诉 agent，需要时用 offset/lines 翻页。iOS 在
+     * AIChatViewModel.executeFileRead 镜了同一顶。
+     */
+    private const val HARD_CHAR_CAP = 80_000
+
     fun execute(argsJson: String, sessionId: String, context: Context): ToolExecutionResult {
+        val parsed = try {
+            parseRequest(JSONObject(argsJson))
+        } catch (e: Exception) {
+            return ToolExecutionResult("Error reading file: ${e.message}", false)
+        }
         return try {
-            val args = JSONObject(argsJson)
-            val path = args.optString("path", "")
-            val toolTitle = args.optString("tool_title", NAME)
-            val offset = args.optInt("offset", 1).coerceAtLeast(1)
-            // T-FILEREAD-CAP: hard upper bound on returned content length.
-            // Pre-cap, the agent could ask for `max_length=1_000_000` and we
-            // would happily inline a 400 KB base64 image into a tool_result —
-            // which then renders as a single user-message bubble and locks
-            // up Compose's StaticLayout / LineBreaker for tens of seconds
-            // (see HangDetector report for session
-            // e84882d7-2087-47f8-9300-ff2c897fe0b4: 820 KB partsJson, 43 s
-            // hang in nComputeLineBreaks). Cap at 80 KB regardless of
-            // requested value; the truncation tail below tells the agent the
-            // full file size so it can paginate with offset/lines if needed.
-            // iOS mirrors this cap in AIChatViewModel.executeFileRead.
-            val MAX_LENGTH_HARD_CAP = 80_000
-            val maxLength = args.optInt("max_length", 15000).coerceAtMost(MAX_LENGTH_HARD_CAP)
-            val direction = args.optString("direction", "head")
-
-            if (path.isBlank()) {
-                return ToolExecutionResult("Error: 'path' is required", false, toolTitle = toolTitle)
-            }
-
-            // T123: per-session resolver — see FileWriteTool for rationale.
-            val file = ContentPaths.resolveSessionHostPath(sessionId, path, context)
-                ?: return ToolExecutionResult("Error: Cannot resolve path: $path", false, toolTitle = toolTitle)
-
-            if (!file.exists()) {
-                return ToolExecutionResult("Error: File not found: $path", false, toolTitle = toolTitle)
-            }
-
-            if (file.isDirectory) {
-                return ToolExecutionResult("Error: Path is a directory: $path", false, toolTitle = toolTitle)
-            }
-
-            val size = file.length()
-
-            // Binary detection: check first 8192 bytes for null bytes
-            val isBinary = file.inputStream().use { input ->
-                val buf = ByteArray(minOf(8192, size.toInt()))
-                val read = input.read(buf)
-                if (read > 0) buf.take(read).any { it == 0.toByte() } else false
-            }
-
-            if (isBinary) {
-                return ToolExecutionResult(
-                    "[$path | $size bytes | binary file — cannot display contents]",
-                    true, toolTitle = toolTitle
-                )
-            }
-
-            val allLines = file.readLines()
-            val totalLines = allLines.size
-
-            val requestedLines = if (args.has("lines")) args.optInt("lines") else null
-
-            val selectedLines = if (direction == "tail") {
-                val count = requestedLines ?: totalLines
-                val start = (totalLines - count).coerceAtLeast(0)
-                allLines.subList(start, totalLines)
-            } else {
-                val start = (offset - 1).coerceIn(0, totalLines)
-                val end = if (requestedLines != null) {
-                    (start + requestedLines).coerceAtMost(totalLines)
-                } else {
-                    totalLines
-                }
-                allLines.subList(start, end)
-            }
-
-            val showStart = if (direction == "tail") {
-                (totalLines - selectedLines.size) + 1
-            } else {
-                offset
-            }
-            val showEnd = showStart + selectedLines.size - 1
-
-            var content = selectedLines.joinToString("\n")
-
-            // [T-fileread-truncation-header] The header used to report the line
-            // range chosen BEFORE truncation, and said nothing about having
-            // truncated at all — only the body gained a trailing
-            // "... (truncated)". So a cut-off read still announced
-            // "showing 1-1324 of 1324", which the agent took as the whole file
-            // and never paged on.
-            //
-            // Recompute the range that actually survived and hand back the
-            // offset to resume from. Confined to the truncating branch; a read
-            // that fits is byte-identical to before.
-            var effectiveStart = showStart
-            var effectiveEnd = showEnd
-            var nextOffset: Int? = null
-            var wasTruncated = false
-            if (content.length > maxLength) {
-                wasTruncated = true
-                if (direction == "tail") {
-                    // tail asks for the END of the file; take() returned the
-                    // start of the tail window instead — the opposite.
-                    content = content.takeLast(maxLength)
-                    // Drop a leading partial line so the first line is whole.
-                    val firstNewline = content.indexOf('\n')
-                    if (firstNewline in 0 until content.length - 1) {
-                        content = content.substring(firstNewline + 1)
-                    }
-                    effectiveStart = effectiveEnd - content.count { it == '\n' }
-                    // No next_offset for tail: paging forward from the end of
-                    // the file is meaningless.
-                } else {
-                    content = content.take(maxLength)
-                    // Back off to the last complete line, so the next page does
-                    // not re-read or split a line.
-                    val lastNewline = content.lastIndexOf('\n')
-                    if (lastNewline > 0) content = content.substring(0, lastNewline)
-                    effectiveEnd = showStart + content.count { it == '\n' }
-                    if (effectiveEnd < totalLines) nextOffset = effectiveEnd + 1
-                }
-            }
-
-            var header = "[$path | $size bytes | $totalLines lines | " +
-                "showing $effectiveStart-$effectiveEnd of $totalLines"
-            if (wasTruncated) {
-                header += " | truncated at $maxLength chars"
-                // Named to match the tool's own `offset` parameter so the model
-                // can copy it straight into the next call.
-                header += if (nextOffset != null) ", next_offset=$nextOffset"
-                          else ", retry with a smaller lines value"
-            }
-            header += "]"
-            ToolExecutionResult("$header\n$content", true, toolTitle = toolTitle)
+            executeParsed(parsed, sessionId, context)
         } catch (e: Exception) {
             ToolExecutionResult("Error reading file: ${e.message}", false)
         }
     }
+
+    private fun parseRequest(args: JSONObject): ReadRequest {
+        val requestedCap = args.optInt("max_length", 15000).coerceAtMost(HARD_CHAR_CAP)
+        return ReadRequest(
+            path = args.optString("path", ""),
+            title = args.optString("tool_title", NAME),
+            offset = args.optInt("offset", 1).coerceAtLeast(1),
+            maxChars = requestedCap,
+            direction = args.optString("direction", "head"),
+            lineCap = if (args.has("lines")) args.optInt("lines") else null,
+        )
+    }
+
+    private fun executeParsed(req: ReadRequest, sessionId: String, context: Context): ToolExecutionResult {
+        val fail: (String) -> ToolExecutionResult = { ToolExecutionResult(it, false, toolTitle = req.title) }
+        if (req.path.isBlank()) return fail("Error: 'path' is required")
+
+        // T123：按会话解析——理由见 FileWriteTool。
+        val file = ContentPaths.resolveSessionHostPath(sessionId, req.path, context)
+            ?: return fail("Error: Cannot resolve path: ${req.path}")
+        if (!file.exists()) return fail("Error: File not found: ${req.path}")
+        if (file.isDirectory) return fail("Error: Path is a directory: ${req.path}")
+
+        val size = file.length()
+        if (looksBinary(file, size)) {
+            return ToolExecutionResult(
+                "[${req.path} | $size bytes | binary file — cannot display contents]",
+                true, toolTitle = req.title,
+            )
+        }
+
+        val allLines = file.readLines()
+        val totalLines = allLines.size
+
+        // 先选行窗口，再做字符截断。
+        val window = selectLineWindow(allLines, req)
+        var content = window.text.joinToString("\n")
+
+        var shownStart = window.startLine
+        var shownEnd = window.startLine + window.text.size - 1
+
+        // [T-fileread-truncation-header] 头部曾报「截断前」选中的行区间、
+        // 且只字不提截断——只有正文多出一行 "... (truncated)"。被掐断的
+        // 读取仍宣布 "showing 1-1324 of 1324"，agent 当作全文件、从不翻
+        // 页。改为重算幸存区间并交回续读 offset；只动截断分支，装得下的
+        // 读取与从前逐字节一致。
+        var nextOffset: Int? = null
+        var truncated = false
+        if (content.length > req.maxChars) {
+            truncated = true
+            if (req.direction == "tail") {
+                // tail 要的是文件**末尾**；take() 拿到的是尾窗开头——正相反。
+                content = content.takeLast(req.maxChars)
+                // 丢掉开头的半行，保证第一行完整。
+                content.indexOf('\n').let { first ->
+                    if (first in 0 until content.length - 1) content = content.substring(first + 1)
+                }
+                shownStart = shownEnd - content.count { it == '\n' }
+                // tail 不给 next_offset：从文件末尾向前翻页没有意义。
+            } else {
+                content = content.take(req.maxChars)
+                // 回退到最后一个完整行，下一页不重读、不劈行。
+                content.lastIndexOf('\n').let { last ->
+                    if (last > 0) content = content.substring(0, last)
+                }
+                shownEnd = shownStart + content.count { it == '\n' }
+                if (shownEnd < totalLines) nextOffset = shownEnd + 1
+            }
+        }
+
+        val header = buildString {
+            append("[${req.path} | $size bytes | $totalLines lines | ")
+            append("showing $shownStart-$shownEnd of $totalLines")
+            if (truncated) {
+                append(" | truncated at ${req.maxChars} chars")
+                // 与工具自己的 `offset` 参数同名——模型照抄进下一次调用即可。
+                append(
+                    when (val resume = nextOffset) {
+                        null -> ", retry with a smaller lines value"
+                        else -> ", next_offset=$resume"
+                    },
+                )
+            }
+            append("]")
+        }
+        return ToolExecutionResult("$header\n$content", true, toolTitle = req.title)
+    }
+
+    private class LineWindow(val text: List<String>, val startLine: Int)
+
+    /** 按方向选行窗口：head 从 offset 起、tail 取末 N 行。 */
+    private fun selectLineWindow(all: List<String>, req: ReadRequest): LineWindow {
+        val total = all.size
+        return if (req.direction == "tail") {
+            val count = req.lineCap ?: total
+            val from = (total - count).coerceAtLeast(0)
+            LineWindow(all.subList(from, total), from + 1)
+        } else {
+            val from = (req.offset - 1).coerceIn(0, total)
+            val to = if (req.lineCap != null) (from + req.lineCap).coerceAtMost(total) else total
+            LineWindow(all.subList(from, to), req.offset)
+        }
+    }
+
+    /** 二进制探测：头 8192 字节里找 null 字节。 */
+    private fun looksBinary(file: File, size: Long): Boolean =
+        file.inputStream().use { input ->
+            val probe = ByteArray(minOf(8192, size.toInt()))
+            val got = input.read(probe)
+            got > 0 && probe.take(got).any { it == 0.toByte() }
+        }
 }

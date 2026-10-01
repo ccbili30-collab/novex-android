@@ -18,8 +18,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.material3.MaterialTheme
 import androidx.compose.material3.Text
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.DisposableEffect
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,31 +33,32 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import androidx.compose.ui.viewinterop.AndroidView
 import com.openminis.app.logging.AppLogger
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.withContext
 
 private const val TAG = "KaTeXView"
 
 /**
- * [GH#206] Hard ceiling on a captured formula bitmap, in PHYSICAL pixels.
- * Mirrors the constants in KatexWebViewPool — bitmap pixels are NATIVE heap on
- * Android 8+, and these sites previously had no upper bound at all, so one wide
- * display formula could cost several MB. Oversized formulas are scaled DOWN
- * (never clipped), trading sharpness for memory.
+ * [GH#206] 公式位图捕获的硬顶，**物理像素**口径。与 KatexWebViewPool 的
+ * 常量对齐——Android 8+ 位图像素在 NATIVE 堆，而这些位置此前完全没有上
+ * 限：一条宽体展示式能吃掉几 MB。超限公式按比例缩**小**（绝不裁剪），
+ * 用清晰度换内存。
  */
 private const val MAX_BITMAP_EDGE_PX = 2048
 private const val MAX_BITMAP_PIXELS = 4_000_000
 
 /**
- * Renders a LaTeX string using KaTeX in an offscreen WebView, capturing the result as a bitmap.
- * Uses an LRU cache to avoid re-rendering identical expressions.
+ * 用离屏 WebView 里的 KaTeX 渲染 LaTeX 串并捕获成位图；LRU 缓存避免重
+ * 复渲染同一表达式（血统清剿 P3.7 就地真重写；注入协议——页面加载完成
+ * 后求值 `renderMath('<escaped>', displayMode, fontSize, isDark)`，JS 侧
+ * 经 `AndroidBridge.onRendered(width, height, error)` 回桥——与缓存键格
+ * 式、位图钳制常量为契约冻结面）。
  */
 object KaTeXRendererCache {
-    /** [width]/[height] are the bitmap's physical-pixel dimensions
-     *  (CSS px * device density) so the image stays sharp on hi-DPI screens.
-     *  [cssWidth]/[cssHeight] are KaTeX's reported size in CSS pixels — used
-     *  as the dp size for `Image` so the formula displays at the same visual
-     *  scale as surrounding text instead of the raw bitmap-pixel size. (T206) */
+    /**
+     * [width]/[height] 是位图的物理像素尺寸（CSS px × 设备密度），保高清
+     * 屏上的清晰度；[cssWidth]/[cssHeight] 是 KaTeX 上报的 CSS 像素尺寸，
+     * 作 `Image` 的 dp 尺寸——公式以与周围文本相同的视觉比例显示，而不是
+     * 位图像素的原始比例（T206）。
+     */
     data class CacheEntry(
         val bitmap: Bitmap,
         val width: Int,
@@ -69,19 +68,16 @@ object KaTeXRendererCache {
     )
 
     /**
-     * [GH#206] Byte budget, mirroring KatexWebViewPool.
+     * [GH#206] 字节预算，对齐 KatexWebViewPool。
      *
-     * This was `LruCache(200)` — capacity in ENTRIES with no `sizeOf`, holding
-     * ARGB_8888 bitmaps whose pixels live in the NATIVE heap on Android 8+.
-     * 200 large formulas could therefore pin hundreds of MB that nothing ever
-     * released: this is a process-lifetime `object`, and Java GC does not
-     * reclaim native bitmap pixels while the cache still references them.
+     * 这里曾是 `LruCache(200)`——容量按**条目数**计、无 `sizeOf`，存的是
+     * ARGB_8888 位图（Android 8+ 像素在 NATIVE 堆）。200 条大公式能钉住
+     * 数百 MB 且无人释放：这是进程生命周期的 `object`，缓存还引用着它们
+     * 时 Java GC 不会回收 native 位图像素。
      *
-     * NOTE: entries are NOT recycled on eviction. The bitmap is handed to
-     * Compose (`asImageBitmap()`) and an on-screen formula may outlive its
-     * cache entry; recycling it would crash the composition. Dropping the
-     * reference lets GC reclaim it once nothing draws it. See the matching
-     * note in KatexWebViewPool.
+     * 注意：逐出**不** recycle。位图已交给 Compose（`asImageBitmap()`），
+     * 屏上的公式可能活得比缓存条目久；recycle 会让组合崩溃。丢掉引用，
+     * 等没人再画它时 GC 自然收走。KatexWebViewPool 有同款注记。
      */
     private val cacheBudgetBytes: Int = run {
         val maxHeap = Runtime.getRuntime().maxMemory()
@@ -93,7 +89,7 @@ object KaTeXRendererCache {
             value.bitmap.allocationByteCount.coerceAtLeast(1)
     }
 
-    /** [GH#206] Drop every cached formula. Safe at any time — see the note above. */
+    /** [GH#206] 清空全部公式缓存。任何时刻安全——见上注。 */
     fun evictAll() {
         val before = cache.size()
         cache.evictAll()
@@ -108,7 +104,7 @@ object KaTeXRendererCache {
 }
 
 /**
- * Composable that renders a display-mode LaTeX math block.
+ * 展示模式 LaTeX 数学块的可组合渲染。
  */
 @Composable
 fun MathBlockView(
@@ -126,8 +122,8 @@ fun MathBlockView(
 }
 
 /**
- * Core KaTeX rendering composable. Uses a hidden WebView to render LaTeX, then captures
- * the result as a Bitmap displayed via Image composable. Falls back to monospace text on error.
+ * KaTeX 核心渲染组合件：隐藏 WebView 渲 LaTeX → 捕获成 Bitmap → Image 呈
+ * 现；出错回落等宽文本。
  */
 @SuppressLint("SetJavaScriptEnabled")
 @Composable
@@ -138,55 +134,51 @@ fun KaTeXRenderView(
 ) {
     val context = LocalContext.current
     val density = LocalDensity.current
-    val isDark = isSystemInDarkTheme()
+    val darkTheme = isSystemInDarkTheme()
     val fontSize = 16f
-    val cacheKey = remember(latex, displayMode) {
+    val key = remember(latex, displayMode) {
         KaTeXRendererCache.cacheKey(latex, displayMode)
     }
 
-    // Check cache first
-    val cached = remember(cacheKey) { KaTeXRendererCache.cache.get(cacheKey) }
-
-    if (cached != null) {
-        // T206: bitmap is rendered at density × CSS px for sharpness, but
-        // we display at CSS-pixel dp so the formula visually matches the
-        // surrounding 16sp text (otherwise Image maps physical pixels 1:1
-        // and the formula renders ~density× too large).
+    // 命中缓存直接出图。
+    val hit = remember(key) { KaTeXRendererCache.cache.get(key) }
+    if (hit != null) {
+        // T206：位图按密度 × CSS px 渲染保清晰，但按 CSS 像素 dp 显示——
+        // 公式与周围 16sp 文本视觉同阶（否则 Image 把物理像素 1:1 映射，
+        // 公式放大 ~密度 倍）。
         Image(
-            bitmap = cached.bitmap.asImageBitmap(),
+            bitmap = hit.bitmap.asImageBitmap(),
             contentDescription = "Math: $latex",
-            modifier = modifier.size(cached.cssWidth.dp, cached.cssHeight.dp),
+            modifier = modifier.size(hit.cssWidth.dp, hit.cssHeight.dp),
         )
         return
     }
 
-    // State for the rendered bitmap
-    var renderedBitmap by remember(cacheKey) { mutableStateOf<Bitmap?>(null) }
-    // T206: keep CSS size alongside the bitmap so the post-render Image
-    // can size itself the same way the cache-hit path does.
-    var renderedCssWidth by remember(cacheKey) { mutableStateOf(0) }
-    var renderedCssHeight by remember(cacheKey) { mutableStateOf(0) }
-    var renderError by remember(cacheKey) { mutableStateOf<String?>(null) }
+    // 渲染产物状态（随 key 重置）。
+    var capturedBitmap by remember(key) { mutableStateOf<Bitmap?>(null) }
+    // T206：位图旁边记 CSS 尺寸——渲染完成后的 Image 与缓存命中路径同
+    // 法自定尺寸。
+    var capturedCssWidth by remember(key) { mutableStateOf(0) }
+    var capturedCssHeight by remember(key) { mutableStateOf(0) }
+    var failureReason by remember(key) { mutableStateOf<String?>(null) }
 
-    if (renderedBitmap != null) {
-        Image(
-            bitmap = renderedBitmap!!.asImageBitmap(),
+    when {
+        capturedBitmap != null -> Image(
+            bitmap = capturedBitmap!!.asImageBitmap(),
             contentDescription = "Math: $latex",
-            modifier = modifier.size(renderedCssWidth.dp, renderedCssHeight.dp),
+            modifier = modifier.size(capturedCssWidth.dp, capturedCssHeight.dp),
         )
-    } else if (renderError != null) {
-        // Fallback: show raw LaTeX in monospace
-        Text(
+        failureReason != null -> Text(
+            // 回落：等宽字体显示原始 LaTeX。
             text = latex,
             style = TextStyle(fontFamily = FontFamily.Monospace, fontSize = 14.sp),
             color = MaterialTheme.colorScheme.onSurface,
             modifier = modifier,
         )
-    } else {
-        // Placeholder while rendering
-        Box(
-            modifier = modifier
-                .then(
+        else -> {
+            // 渲染期间占位。
+            Box(
+                modifier = modifier.then(
                     if (displayMode) Modifier
                         .fillMaxWidth()
                         .height(44.dp)
@@ -194,127 +186,134 @@ fun KaTeXRenderView(
                         .widthIn(min = 20.dp)
                         .height(20.dp)
                 ),
-        )
+            )
 
-        // Render with offscreen WebView
-        AndroidView(
-            factory = { ctx ->
-                WebView(ctx).apply {
-                    layoutParams = ViewGroup.LayoutParams(1, 1)
-                    settings.javaScriptEnabled = true
-                    settings.allowFileAccess = true
-                    // T208 Layer A: keep WebView text-zoom at 100% regardless
-                    // of the user's accessibility font-size setting. Without
-                    // this, the bitmap KaTeX renders is multiplied by the
-                    // system font scale, but our bridge reports the
-                    // pre-scale CSS dimensions — Image then displays the
-                    // (over-rendered) bitmap inside an undersized box and
-                    // ContentScale.Fit makes the formula appear physically
-                    // larger than the surrounding 16sp text.
-                    settings.textZoom = 100
-                    setBackgroundColor(android.graphics.Color.TRANSPARENT)
+            // 离屏 WebView 渲染。
+            AndroidView(
+                factory = { ctx ->
+                    WebView(ctx).apply wiring@{
+                        layoutParams = ViewGroup.LayoutParams(1, 1)
+                        settings.javaScriptEnabled = true
+                        settings.allowFileAccess = true
+                        // T208 A 层：WebView 文字缩放恒锁 100%，不理会用
+                        // 户的无障碍字体设置。否则 KaTeX 渲出的位图被系统
+                        // 字体倍率放大，而桥上报的是缩放前 CSS 尺寸——
+                        // Image 把（超渲的）位图塞进偏小的框，
+                        // ContentScale.Fit 让公式看起来比周围 16sp 文本物
+                        // 理上更大。
+                        settings.textZoom = 100
+                        setBackgroundColor(android.graphics.Color.TRANSPARENT)
 
-                    addJavascriptInterface(object {
-                        @JavascriptInterface
-                        fun onRendered(width: Int, height: Int, error: String) {
-                            if (error.isNotEmpty()) {
-                                AppLogger.warning(TAG, "KaTeX render failed: $error · latex=${latex.take(80)}")
-                                renderError = error
-                                return
+                        addJavascriptInterface(object {
+                            /** [GH#206] 钳制因子：边长顶与像素总量顶取更紧者。 */
+                            private fun captureScale(bitmapW: Int, bitmapH: Int): Float {
+                                val edgeScale = minOf(
+                                    1f,
+                                    MAX_BITMAP_EDGE_PX.toFloat() / bitmapW,
+                                    MAX_BITMAP_EDGE_PX.toFloat() / bitmapH,
+                                )
+                                val totalPx = bitmapW.toLong() * bitmapH
+                                val pixelScale =
+                                    if (totalPx > MAX_BITMAP_PIXELS) {
+                                        kotlin.math.sqrt(MAX_BITMAP_PIXELS.toDouble() / totalPx).toFloat()
+                                    } else 1f
+                                return minOf(edgeScale, pixelScale)
                             }
-                            if (width <= 0 || height <= 0) {
-                                AppLogger.warning(TAG, "KaTeX render produced zero dimensions · latex=${latex.take(80)}")
-                                renderError = "zero dimensions"
-                                return
-                            }
-                            // Scale for device density
-                            val scale = ctx.resources.displayMetrics.density
-                            val bitmapW = (width * scale).toInt()
-                            val bitmapH = (height * scale).toInt()
 
-                            // Resize WebView to content size, then capture
-                            post {
-                                layoutParams = ViewGroup.LayoutParams(bitmapW, bitmapH)
-                                requestLayout()
-                                postDelayed({
-                                    // [GH#206] Clamp the captured bitmap. bitmapW/H
-                                    // were previously unbounded, so a wide display
-                                    // formula allocated multi-MB of NATIVE heap.
-                                    // The WebView keeps its full layout size (above)
-                                    // so the formula still lays out correctly; only
-                                    // the captured bitmap is scaled DOWN, never
-                                    // clipped, trading sharpness for memory.
-                                    val edgeScale = minOf(
-                                        1f,
-                                        MAX_BITMAP_EDGE_PX.toFloat() / bitmapW,
-                                        MAX_BITMAP_EDGE_PX.toFloat() / bitmapH,
+                            /** 按钳制因子截屏并写缓存/组合态。 */
+                            private fun captureNow(
+                                cssW: Int,
+                                cssH: Int,
+                                bitmapW: Int,
+                                bitmapH: Int,
+                            ) {
+                                // [GH#206] 钳制捕获位图。bitmapW/H 此前无
+                                // 界——宽体展示式一条就分配数 MB NATIVE 堆。
+                                // WebView 保持完整布局尺寸（外层已设）所以
+                                // 公式布局不变；只有捕获位图按比例缩小、绝
+                                // 不裁剪，用清晰度换内存。
+                                val factor = captureScale(bitmapW, bitmapH)
+                                val capW = (bitmapW * factor).toInt().coerceAtLeast(1)
+                                val capH = (bitmapH * factor).toInt().coerceAtLeast(1)
+                                if (factor < 1f) {
+                                    AppLogger.info(
+                                        TAG,
+                                        "bitmap clamped ${bitmapW}x$bitmapH -> ${capW}x$capH " +
+                                            "(scale=$factor)",
                                     )
-                                    val pixelScale =
-                                        if (bitmapW.toLong() * bitmapH > MAX_BITMAP_PIXELS) {
-                                            kotlin.math.sqrt(
-                                                MAX_BITMAP_PIXELS.toDouble() /
-                                                    (bitmapW.toDouble() * bitmapH),
-                                            ).toFloat()
-                                        } else {
-                                            1f
-                                        }
-                                    val capScale = minOf(edgeScale, pixelScale)
-                                    val capW = (bitmapW * capScale).toInt().coerceAtLeast(1)
-                                    val capH = (bitmapH * capScale).toInt().coerceAtLeast(1)
-                                    if (capScale < 1f) {
-                                        AppLogger.info(
-                                            TAG,
-                                            "bitmap clamped ${bitmapW}x$bitmapH -> ${capW}x$capH " +
-                                                "(scale=$capScale)",
-                                        )
-                                    }
-                                    val bitmap = Bitmap.createBitmap(capW, capH, Bitmap.Config.ARGB_8888)
-                                    val canvas = android.graphics.Canvas(bitmap)
-                                    if (capScale < 1f) canvas.scale(capScale, capScale)
-                                    draw(canvas)
-                                    KaTeXRendererCache.cache.put(
-                                        cacheKey,
-                                        KaTeXRendererCache.CacheEntry(
-                                            // Record the ACTUAL bitmap size, not the
-                                            // pre-clamp request — `width`/`height`
-                                            // document the bitmap's physical pixels.
-                                            // Display sizing uses cssWidth/cssHeight,
-                                            // which are unchanged, so a clamped
-                                            // formula still lays out identically.
-                                            bitmap = bitmap,
-                                            width = capW,
-                                            height = capH,
-                                            cssWidth = width,
-                                            cssHeight = height,
-                                        )
+                                }
+                                val shot = Bitmap.createBitmap(capW, capH, Bitmap.Config.ARGB_8888)
+                                val canvas = android.graphics.Canvas(shot)
+                                if (factor < 1f) canvas.scale(factor, factor)
+                                draw(canvas)
+                                KaTeXRendererCache.cache.put(
+                                    key,
+                                    KaTeXRendererCache.CacheEntry(
+                                        // 记**实际**位图尺寸而非钳前请求
+                                        // ——`width`/`height` 描述位图物理像
+                                        // 素。显示尺寸用 cssWidth/cssHeight
+                                        // （未变），被钳的公式布局完全一致。
+                                        bitmap = shot,
+                                        width = capW,
+                                        height = capH,
+                                        cssWidth = cssW,
+                                        cssHeight = cssH,
+                                    ),
+                                )
+                                capturedCssWidth = cssW
+                                capturedCssHeight = cssH
+                                capturedBitmap = shot
+                            }
+
+                            @JavascriptInterface
+                            fun onRendered(width: Int, height: Int, error: String) {
+                                if (error.isNotEmpty()) {
+                                    AppLogger.warning(TAG, "KaTeX render failed: $error · latex=${latex.take(80)}")
+                                    failureReason = error
+                                    return
+                                }
+                                if (width <= 0 || height <= 0) {
+                                    AppLogger.warning(TAG, "KaTeX render produced zero dimensions · latex=${latex.take(80)}")
+                                    failureReason = "zero dimensions"
+                                    return
+                                }
+                                // 乘设备密度。
+                                val densityScale = ctx.resources.displayMetrics.density
+                                val bitmapW = (width * densityScale).toInt()
+                                val bitmapH = (height * densityScale).toInt()
+
+                                // 先把 WebView 调到内容尺寸再捕获。
+                                post {
+                                    layoutParams = ViewGroup.LayoutParams(bitmapW, bitmapH)
+                                    requestLayout()
+                                    postDelayed(
+                                        { captureNow(width, height, bitmapW, bitmapH) },
+                                        100,
                                     )
-                                    renderedCssWidth = width
-                                    renderedCssHeight = height
-                                    renderedBitmap = bitmap
-                                }, 100)
+                                }
+                            }
+                        }, "AndroidBridge")
+
+                        webViewClient = object : WebViewClient() {
+                            override fun onPageFinished(view: WebView?, url: String?) {
+                                super.onPageFinished(view, url)
+                                val escaped = latex
+                                    .replace("\\", "\\\\")
+                                    .replace("'", "\\'")
+                                    .replace("\n", "\\n")
+                                    .replace("\r", "")
+                                evaluateJavascript(
+                                    "renderMath('$escaped', $displayMode, $fontSize, $darkTheme)",
+                                    null,
+                                )
                             }
                         }
-                    }, "AndroidBridge")
 
-                    webViewClient = object : WebViewClient() {
-                        override fun onPageFinished(view: WebView?, url: String?) {
-                            super.onPageFinished(view, url)
-                            val escapedLatex = latex
-                                .replace("\\", "\\\\")
-                                .replace("'", "\\'")
-                                .replace("\n", "\\n")
-                                .replace("\r", "")
-                            evaluateJavascript(
-                                "renderMath('$escapedLatex', $displayMode, $fontSize, $isDark)",
-                                null
-                            )
-                        }
+                        loadUrl("file:///android_asset/katex/katex-render.html")
                     }
-
-                    loadUrl("file:///android_asset/katex/katex-render.html")
-                }
-            },
-            modifier = Modifier.height(0.dp), // Hidden
-        )
+                },
+                modifier = Modifier.height(0.dp), // 隐藏
+            )
+        }
     }
 }

@@ -3,19 +3,20 @@ package com.openminis.app.data.repository
 import android.content.Context
 import android.content.SharedPreferences
 import android.util.Log
+import java.io.File
+import java.util.UUID
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import org.json.JSONArray
 import org.json.JSONObject
-import java.io.File
-import java.util.UUID
 
 /**
- * Manages environment variables with encrypted value storage.
- * Metadata (key names, IDs) stored in JSON file.
- * Values stored in EncryptedSharedPreferences (AES256-GCM).
- * Mirrors iOS EnvVarStore.
+ * 环境变量仓库：值加密、元数据明文 JSON（血统清剿 P3.7 就地真重写；
+ * env-vars.json 字段集、加密 prefs 名、键名正则为持久化契约冻结面）。
+ *
+ * 分工：键名/ID/备注等元数据落 `filesDir/env-vars.json`；值本体落
+ * EncryptedSharedPreferences（AES256-GCM）。对齐 iOS EnvVarStore。
  */
 class EnvVarRepository(private val context: Context) {
 
@@ -30,19 +31,20 @@ class EnvVarRepository(private val context: Context) {
         val id: String = UUID.randomUUID().toString(),
         val key: String,
         /**
-         * Optional human-readable description of what this variable is for.
-         * Empty when omitted. Stored in the JSON metadata file (not secret),
-         * mirrors iOS EnvVarEntry.note.
+         * 该变量用途的可读描述，缺省空串。存明文 JSON 元数据（非机密），
+         * 对齐 iOS EnvVarEntry.note。
          */
         val note: String = "",
         val createdAt: Long = System.currentTimeMillis(),
     )
 
     private val _entries = MutableStateFlow<List<EnvVarEntry>>(emptyList())
+
+    /** 条目元数据的可观察快照（不含值）。 */
     val entries: StateFlow<List<EnvVarEntry>> = _entries.asStateFlow()
 
-    private val encryptedPrefs: SharedPreferences by lazy {
-        // T-android-keystore-aead-fail: self-healing wrapper.
+    private val vault: SharedPreferences by lazy {
+        // T-android-keystore-aead-fail：带自愈的封装。
         com.openminis.app.util.EncryptedPrefsFactory.safeCreate(context, ENCRYPTED_PREFS_NAME)
     }
 
@@ -53,99 +55,83 @@ class EnvVarRepository(private val context: Context) {
         loadMetadata()
     }
 
-    // -- Validation --
+    // -- 校验 --
 
     fun isValidKey(key: String): Boolean = KEY_REGEX.matches(key)
 
-    // Keep printable ASCII (0x20-0x7E) and tab (0x09); iOS paste can inject
-    // invisible control scalars (e.g. \u009B) that break shell env injection.
+    /**
+     * 值白名单：可打印 ASCII（0x20-0x7E）+ 制表符（0x09）。iOS 粘贴会带进
+     * 不可见控制标量（如 \u009B），会弄坏 shell 环境注入。
+     */
     private fun sanitizeValue(value: String): String =
-        value.filter { ch ->
-            val c = ch.code
-            (c in 0x20..0x7E) || c == 0x09
-        }
+        value.filter { ch -> ch.code == 0x09 || ch.code in 0x20..0x7E }
 
     fun isDuplicateKey(key: String, excludeId: String? = null): Boolean =
-        _entries.value.any { it.key.equals(key, ignoreCase = true) && it.id != excludeId }
+        _entries.value.any { it.id != excludeId && it.key.equals(key, ignoreCase = true) }
 
-    // -- CRUD --
+    // -- 增删改 --
 
     fun add(key: String, value: String, note: String = ""): Boolean {
-        val normalizedKey = key.trim().uppercase()
-        if (!isValidKey(normalizedKey)) return false
-        if (isDuplicateKey(normalizedKey)) return false
+        val name = key.trim().uppercase()
+        if (!isValidKey(name) || isDuplicateKey(name)) return false
 
-        val entry = EnvVarEntry(key = normalizedKey, note = note.trim())
-        _entries.value = _entries.value + entry
-        encryptedPrefs.edit().putString(normalizedKey, sanitizeValue(value)).apply()
-        saveMetadata()
-        Log.i(TAG, "Added env var: $normalizedKey")
+        _entries.value = _entries.value + EnvVarEntry(key = name, note = note.trim())
+        vault.edit().putString(name, sanitizeValue(value)).apply()
+        persistMetadata()
+        Log.i(TAG, "Added env var: $name")
         return true
     }
 
     fun update(id: String, newKey: String, newValue: String, newNote: String = ""): Boolean {
-        val normalizedKey = newKey.trim().uppercase()
-        if (!isValidKey(normalizedKey)) return false
+        val name = newKey.trim().uppercase()
+        if (!isValidKey(name)) return false
 
-        val current = _entries.value.find { it.id == id } ?: return false
+        val existing = _entries.value.find { it.id == id } ?: return false
+        if (isDuplicateKey(name, excludeId = id)) return false
 
-        // Check for duplicate (excluding self)
-        if (isDuplicateKey(normalizedKey, excludeId = id)) return false
-
-        // Delete old Keychain entry if key changed
-        if (current.key != normalizedKey) {
-            encryptedPrefs.edit().remove(current.key).apply()
+        // 键名变了：旧键位先从加密仓里清掉。
+        if (existing.key != name) {
+            vault.edit().remove(existing.key).apply()
         }
-
-        // Update metadata
         _entries.value = _entries.value.map {
-            if (it.id == id) it.copy(key = normalizedKey, note = newNote.trim()) else it
+            if (it.id == id) it.copy(key = name, note = newNote.trim()) else it
         }
-
-        // Save new value
-        encryptedPrefs.edit().putString(normalizedKey, sanitizeValue(newValue)).apply()
-        saveMetadata()
-        Log.i(TAG, "Updated env var: ${current.key} → $normalizedKey")
+        vault.edit().putString(name, sanitizeValue(newValue)).apply()
+        persistMetadata()
+        Log.i(TAG, "Updated env var: ${existing.key} → $name")
         return true
     }
 
     fun delete(id: String) {
-        val entry = _entries.value.find { it.id == id } ?: return
-        encryptedPrefs.edit().remove(entry.key).apply()
+        val victim = _entries.value.find { it.id == id } ?: return
+        vault.edit().remove(victim.key).apply()
         _entries.value = _entries.value.filter { it.id != id }
-        saveMetadata()
-        Log.i(TAG, "Deleted env var: ${entry.key}")
+        persistMetadata()
+        Log.i(TAG, "Deleted env var: ${victim.key}")
     }
 
-    fun getValue(key: String): String? = encryptedPrefs.getString(key, null)
+    fun getValue(key: String): String? = vault.getString(key, null)
 
     /**
-     * Returns all env vars as a Map<String, String> for sandbox injection.
-     * Reads directly from storage to be thread-safe.
+     * 供沙箱注入用的全量 Map。直读存储而非内存态，线程安全。
      */
-    fun allAsDict(): Map<String, String> {
-        val result = mutableMapOf<String, String>()
-        for (entry in _entries.value) {
-            val value = encryptedPrefs.getString(entry.key, null)
-            if (value != null) {
-                result[entry.key] = value
-            }
-        }
-        return result
-    }
+    fun allAsDict(): Map<String, String> =
+        _entries.value.mapNotNull { entry ->
+            vault.getString(entry.key, null)?.let { entry.key to it }
+        }.toMap()
 
-    // -- Metadata Persistence --
+    // -- 元数据持久化 --
 
-    private fun saveMetadata() {
+    private fun persistMetadata() {
         try {
             val array = JSONArray()
             for (entry in _entries.value) {
-                val obj = JSONObject()
-                obj.put("id", entry.id)
-                obj.put("key", entry.key)
-                if (entry.note.isNotEmpty()) obj.put("note", entry.note)
-                obj.put("createdAt", entry.createdAt)
-                array.put(obj)
+                val row = JSONObject()
+                    .put("id", entry.id)
+                    .put("key", entry.key)
+                    .put("createdAt", entry.createdAt)
+                if (entry.note.isNotEmpty()) row.put("note", entry.note)
+                array.put(row)
             }
             metadataFile.writeText(array.toString())
         } catch (e: Exception) {
@@ -156,18 +142,17 @@ class EnvVarRepository(private val context: Context) {
     private fun loadMetadata() {
         try {
             if (!metadataFile.exists()) return
-            val array = JSONArray(metadataFile.readText())
-            val entries = mutableListOf<EnvVarEntry>()
-            for (i in 0 until array.length()) {
-                val obj = array.getJSONObject(i)
-                entries.add(EnvVarEntry(
-                    id = obj.optString("id", UUID.randomUUID().toString()),
-                    key = obj.optString("key", ""),
-                    note = obj.optString("note", ""),
-                    createdAt = obj.optLong("createdAt", 0),
-                ))
+            val rows = JSONArray(metadataFile.readText())
+            val restored = (0 until rows.length()).map { i ->
+                val row = rows.getJSONObject(i)
+                EnvVarEntry(
+                    id = row.optString("id", UUID.randomUUID().toString()),
+                    key = row.optString("key", ""),
+                    note = row.optString("note", ""),
+                    createdAt = row.optLong("createdAt", 0),
+                )
             }
-            _entries.value = entries
+            _entries.value = restored
         } catch (e: Exception) {
             Log.e(TAG, "Failed to load metadata: ${e.message}")
         }

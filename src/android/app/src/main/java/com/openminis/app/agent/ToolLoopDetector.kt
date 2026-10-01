@@ -1,15 +1,16 @@
 package com.openminis.app.agent
 
 import com.openminis.app.logging.AppLogger
+import java.security.MessageDigest
 import org.json.JSONArray
 import org.json.JSONObject
-import java.security.MessageDigest
 
 /**
- * Per-session tool-call sliding window record. Filled in two passes:
- *  - `check()` doesn't write here; it only reads existing history.
- *  - `record()` appends a new entry, back-filling `resultHash`/`unknownToolName`
- *    from the just-finished tool execution.
+ * 单条工具调用的滑动窗记录，两段式填充（血统清剿 P3.7 就地真重写；四策略
+ * 优先级、消息文案、warningKey 形态、阈值语义、正则表均为行为契约冻结面，
+ * ToolLoopDetectorTest 全量钉死）：
+ *  - `check()` 只读不写——执行前看历史；
+ *  - `record()` 追加一条，并从刚结束的执行里回填 `resultHash`/`unknownToolName`。
  */
 data class ToolCallRecord(
     val toolName: String,
@@ -33,10 +34,8 @@ data class LoopCheckResult(
 }
 
 /**
- * Threshold contract:
- *   warningThreshold < criticalThreshold < globalCircuitBreakerThreshold
- * The constructor enforces this at construction time so callers cannot
- * silently ship a misconfigured detector.
+ * 阈值契约：warningThreshold < criticalThreshold < globalCircuitBreakerThreshold。
+ * 构造期强制——配错的探测器不能被悄悄带上线。
  */
 data class ToolLoopConfig(
     val historySize: Int = 30,
@@ -60,111 +59,114 @@ data class ToolLoopConfig(
 }
 
 /**
- * Detects four classes of agent tool-call loops and emits warnings or hard
- * blocks. See fix_tool_loop_detection.md for the full behavioral spec.
+ * agent 工具调用循环检测器：识别四类循环，发警告或硬熔断（完整行为规格见
+ * fix_tool_loop_detection.md）。
  *
- * Strategy priority (highest first):
- *   1. unknown_tool_repeat       — consecutive hallucinated-tool errors.
- *   2. global_circuit_breaker    — same args + same result, ≥30 across any tool.
- *   3. known_poll_no_progress    — poll-style tool with frozen results.
- *   4. generic_repeat            — same args ≥10, regardless of result.
+ * 策略优先级（高→低）：
+ *   1. unknown_tool_repeat       —— 连续幻觉工具错误。
+ *   2. global_circuit_breaker    —— 同参数+同结果，任意工具累计 ≥30。
+ *   3. known_poll_no_progress    —— 轮询型工具结果冻结。
+ *   4. generic_repeat            —— 同参数 ≥10 次，无论结果。
  *
- * One detector instance per Session. Not thread-safe; serialize calls
- * through the agent loop's existing single-threaded dispatch.
+ * 每会话一个实例。非线程安全——经 agent 循环既有的单线程分发串行调用。
  */
 class ToolLoopDetector(private val config: ToolLoopConfig = ToolLoopConfig()) {
 
-    private val history = ArrayDeque<ToolCallRecord>()
-    // warningKey -> last bucket index already emitted, used to throttle warnings
-    // so the LLM doesn't get the same warning attached on every single tool call.
-    private val warningBuckets = HashMap<String, Int>()
+    private val window = ArrayDeque<ToolCallRecord>()
 
-    /** Drop all in-flight state. Call on session reset / new chat. */
+    /** warningKey → 已发过的桶序号：节流用，同一警告不逐次挂在每个工具结果上。 */
+    private val emittedBucketByKey = HashMap<String, Int>()
+
+    /** 会话重置 / 新开聊天时清掉全部在途状态。 */
     fun reset() {
-        history.clear()
-        warningBuckets.clear()
+        window.clear()
+        emittedBucketByKey.clear()
     }
 
-    /** Test-only window inspection. */
-    internal fun historySnapshot(): List<ToolCallRecord> = history.toList()
+    /** 仅测试用的窗口检视。 */
+    internal fun historySnapshot(): List<ToolCallRecord> = window.toList()
 
-    // ─── before-execution hook ────────────────────────────────────────────────
+    // ─── 执行前钩子 ─────────────────────────────────────────────────────────
 
     /**
-     * Inspect the about-to-run tool against the sliding window. Caller MUST
-     * skip tool execution and surface `result.message` as a tool-error result
-     * when `result.level == CRITICAL`.
+     * 拿即将执行的工具对滑动窗问路。`result.level == CRITICAL` 时调用方必须
+     * 跳过执行并把 `result.message` 作为工具错误结果呈现。
      */
     fun check(toolName: String, params: Map<String, Any?>): LoopCheckResult {
-        val argsHash = argsHashFor(toolName, params)
+        val args = fingerprintArgs(toolName, params)
+        val pollStyle = pollsByDesign(toolName, params)
 
-        // 1. unknown_tool_repeat — most specific signal, runs first.
-        val unknownStreak = countUnknownStreakFromTail(toolName)
-        if (unknownStreak >= config.unknownToolThreshold) {
-            val msg = "[LOOP BLOCKED] CRITICAL: attempted unavailable tool '$toolName' " +
-                "$unknownStreak times. Stop retrying that missing tool and answer without it."
-            AppLogger.warning("ToolLoopDetector",
-                "CRITICAL unknown_tool_repeat tool=$toolName streak=$unknownStreak")
-            return LoopCheckResult(Level.CRITICAL, msg)
-        }
-
-        val noProgressStreak = getNoProgressStreak(toolName, argsHash)
-
-        // 2. global_circuit_breaker — universal backstop, before poll-specific
-        //    rule so a runaway non-poll loop can't slip past on lower thresholds.
-        if (noProgressStreak >= config.globalCircuitBreakerThreshold) {
-            val msg = "[LOOP BLOCKED] CRITICAL: $toolName has repeated identical " +
-                "no-progress outcomes $noProgressStreak times. Session execution " +
-                "blocked by global circuit breaker."
-            AppLogger.warning("ToolLoopDetector",
-                "CRITICAL global_circuit_breaker tool=$toolName streak=$noProgressStreak")
-            return LoopCheckResult(Level.CRITICAL, msg)
-        }
-
-        // 3. known_poll_no_progress — poll tools have a tighter critical bar
-        //    because polling without progress is the canonical waste case.
-        if (isPollTool(toolName, params)) {
-            if (noProgressStreak >= config.criticalThreshold) {
-                val msg = "[LOOP BLOCKED] CRITICAL: Called $toolName $noProgressStreak " +
-                    "times with identical no-progress results. Session execution blocked."
+        // 1. unknown_tool_repeat：最特异的信号最先跑。
+        unknownToolStreak(toolName).let { streak ->
+            if (streak >= config.unknownToolThreshold) {
+                val msg = "[LOOP BLOCKED] CRITICAL: attempted unavailable tool '$toolName' " +
+                    "$streak times. Stop retrying that missing tool and answer without it."
                 AppLogger.warning("ToolLoopDetector",
-                    "CRITICAL known_poll_no_progress tool=$toolName streak=$noProgressStreak")
+                    "CRITICAL unknown_tool_repeat tool=$toolName streak=$streak")
                 return LoopCheckResult(Level.CRITICAL, msg)
             }
-            if (noProgressStreak >= config.warningThreshold) {
-                val msg = "[LOOP WARNING] You have called $toolName $noProgressStreak " +
-                    "times with no progress. Stop polling and either (1) increase wait " +
-                    "time, or (2) report the task as failed."
-                AppLogger.debug("ToolLoopDetector",
-                    "WARNING known_poll_no_progress tool=$toolName streak=$noProgressStreak")
-                return LoopCheckResult(Level.WARNING, msg, "poll:$toolName:$argsHash")
+        }
+
+        val frozenStreak = frozenResultStreak(toolName, args)
+
+        // 2. global_circuit_breaker：全局兜底先于轮询专项——失控的非轮询
+        //    循环才不会从更低的专项阈值下溜过去。
+        if (frozenStreak >= config.globalCircuitBreakerThreshold) {
+            val msg = "[LOOP BLOCKED] CRITICAL: $toolName has repeated identical " +
+                "no-progress outcomes $frozenStreak times. Session execution " +
+                "blocked by global circuit breaker."
+            AppLogger.warning("ToolLoopDetector",
+                "CRITICAL global_circuit_breaker tool=$toolName streak=$frozenStreak")
+            return LoopCheckResult(Level.CRITICAL, msg)
+        }
+
+        // 3. known_poll_no_progress：轮询工具的熔断线更紧——无进展的轮询
+        //    就是最典型的浪费。
+        if (pollStyle) {
+            if (frozenStreak >= config.criticalThreshold) {
+                val msg = "[LOOP BLOCKED] CRITICAL: Called $toolName $frozenStreak " +
+                    "times with identical no-progress results. Session execution blocked."
+                AppLogger.warning("ToolLoopDetector",
+                    "CRITICAL known_poll_no_progress tool=$toolName streak=$frozenStreak")
+                return LoopCheckResult(Level.CRITICAL, msg)
+            }
+            if (frozenStreak >= config.warningThreshold) {
+                return LoopCheckResult(
+                    Level.WARNING,
+                    pollWarningText(toolName, frozenStreak),
+                    "poll:$toolName:$args",
+                ).also {
+                    AppLogger.debug("ToolLoopDetector",
+                        "WARNING known_poll_no_progress tool=$toolName streak=$frozenStreak")
+                }
             }
         }
 
-        // 4. generic_repeat — non-poll tools only; counts non-consecutive hits
-        //    so flaky-but-progressing calls eventually fall out of the window.
-        if (!isPollTool(toolName, params)) {
-            val totalCount = history.count { it.toolName == toolName && it.argsHash == argsHash }
-            if (totalCount >= config.warningThreshold) {
-                val msg = "[LOOP WARNING] You have called $toolName $totalCount times " +
-                    "with identical arguments. If this is not making progress, stop " +
-                    "retrying and report the task as failed."
-                AppLogger.debug("ToolLoopDetector",
-                    "WARNING generic_repeat tool=$toolName count=$totalCount")
-                return LoopCheckResult(Level.WARNING, msg, "repeat:$toolName:$argsHash")
+        // 4. generic_repeat：仅非轮询工具；计非连续命中——时好时坏但总体
+        //    在前进的调用最终会滑出窗口。
+        if (!pollStyle) {
+            val repeats = countSameArgs(toolName, args)
+            if (repeats >= config.warningThreshold) {
+                return LoopCheckResult(
+                    Level.WARNING,
+                    genericWarningText(toolName, repeats),
+                    "repeat:$toolName:$args",
+                ).also {
+                    AppLogger.debug("ToolLoopDetector",
+                        "WARNING generic_repeat tool=$toolName count=$repeats")
+                }
             }
         }
 
         return LoopCheckResult.NONE
     }
 
-    // ─── after-execution hook ────────────────────────────────────────────────
+    // ─── 执行后钩子 ─────────────────────────────────────────────────────────
 
     /**
-     * Append the just-completed tool call to the window and decide whether a
-     * warning should be appended to the tool result this turn. Critical
-     * outcomes are reported by `check()` *before* the call; `record()` only
-     * ever returns NONE or WARNING.
+     * 把刚完成的调用追加进窗口，并判断本轮要不要在工具结果上附加警告。
+     * CRITICAL 只由 `check()` 在调用*前*报——`record()` 至多返回 NONE 或
+     * WARNING（规格如此）。
      */
     fun record(
         toolName: String,
@@ -173,82 +175,79 @@ class ToolLoopDetector(private val config: ToolLoopConfig = ToolLoopConfig()) {
         errorMessage: String? = null,
         toolCallId: String? = null,
     ): LoopCheckResult {
-        val argsHash = argsHashFor(toolName, params)
-        val resultHash = resultHashFor(result, errorMessage)
-        val unknownToolName = extractUnknownToolName(errorMessage)
-
-        history.addLast(ToolCallRecord(
+        val args = fingerprintArgs(toolName, params)
+        window.addLast(ToolCallRecord(
             toolName = toolName,
-            argsHash = argsHash,
-            resultHash = resultHash,
-            unknownToolName = unknownToolName,
+            argsHash = args,
+            resultHash = fingerprintOutcome(result, errorMessage),
+            unknownToolName = hallucinatedToolName(errorMessage),
             toolCallId = toolCallId,
         ))
-        while (history.size > config.historySize) history.removeFirst()
+        while (window.size > config.historySize) window.removeFirst()
 
-        // Re-evaluate poll/generic warnings on the post-record window so the
-        // warning text reflects the current count (including the call we just
-        // appended). Critical paths are check()-only by spec.
-        if (isPollTool(toolName, params)) {
-            val streak = getNoProgressStreak(toolName, argsHash)
+        // 记录后在最新窗口上重估 poll/generic 警告——警告文案要反映当前
+        // 计数（含刚追加的这次）。
+        val streak = frozenResultStreak(toolName, args)
+        if (pollsByDesign(toolName, params)) {
             if (streak in config.warningThreshold until config.criticalThreshold) {
-                val key = "poll:$toolName:$argsHash"
-                if (shouldEmitWarning(key, streak)) {
-                    val msg = "[LOOP WARNING] You have called $toolName $streak times " +
-                        "with no progress. Stop polling and either (1) increase wait " +
-                        "time, or (2) report the task as failed."
-                    return LoopCheckResult(Level.WARNING, msg, key)
+                val key = "poll:$toolName:$args"
+                if (throttleWarning(key, streak)) {
+                    return LoopCheckResult(Level.WARNING, pollWarningText(toolName, streak), key)
                 }
             }
         } else {
-            val totalCount = history.count { it.toolName == toolName && it.argsHash == argsHash }
-            if (totalCount >= config.warningThreshold) {
-                val key = "repeat:$toolName:$argsHash"
-                if (shouldEmitWarning(key, totalCount)) {
-                    val msg = "[LOOP WARNING] You have called $toolName $totalCount " +
-                        "times with identical arguments. If this is not making " +
-                        "progress, stop retrying and report the task as failed."
-                    return LoopCheckResult(Level.WARNING, msg, key)
+            val repeats = countSameArgs(toolName, args)
+            if (repeats >= config.warningThreshold) {
+                val key = "repeat:$toolName:$args"
+                if (throttleWarning(key, repeats)) {
+                    return LoopCheckResult(Level.WARNING, genericWarningText(toolName, repeats), key)
                 }
             }
         }
-
         return LoopCheckResult.NONE
     }
 
-    // ─── strategy helpers ────────────────────────────────────────────────────
+    // ─── 策略原语 ───────────────────────────────────────────────────────────
+
+    private fun pollWarningText(toolName: String, count: Int): String =
+        "[LOOP WARNING] You have called $toolName $count times " +
+            "with no progress. Stop polling and either (1) increase wait " +
+            "time, or (2) report the task as failed."
+
+    private fun genericWarningText(toolName: String, count: Int): String =
+        "[LOOP WARNING] You have called $toolName $count times " +
+            "with identical arguments. If this is not making progress, stop " +
+            "retrying and report the task as failed."
 
     /**
-     * Walk the window from newest to oldest and count how many *consecutive*
-     * tail entries are unknown-tool errors targeting the same hallucinated
-     * name. Stops at the first record without a parsed unknownToolName, or
-     * one that targets a different name.
+     * 从尾向头数连续多少条记录是冲着同一个幻觉名去的未知工具错误；遇到
+     * 第一条解析不出 unknownToolName 的、或目标换了名字的，即断。
      */
-    private fun countUnknownStreakFromTail(toolName: String): Int {
+    private fun unknownToolStreak(toolName: String): Int {
         var streak = 0
-        for (rec in history.reversed()) {
-            val unk = rec.unknownToolName ?: break
-            if (unk == toolName) streak++ else break
+        for (rec in window.reversed()) {
+            val hallucination = rec.unknownToolName ?: break
+            if (hallucination == toolName) streak++ else break
         }
         return streak
     }
 
     /**
-     * Count how many recent records share the given (toolName, argsHash) AND
-     * a single common resultHash, scanning newest → oldest. Records of *other*
-     * tools are skipped (don't reset the streak), but a result mismatch on the
-     * target tool stops counting — that's the "progress observed" signal.
+     * 新→旧数「同 (toolName, argsHash) 且共享同一 resultHash」的记录数。
+     * 别的工具的记录跳过（不断流）；目标工具的结果一变即断——那正是
+     * 「观察到进展」的信号。
      */
-    private fun getNoProgressStreak(toolName: String, argsHash: String): Int {
+    private fun frozenResultStreak(toolName: String, args: String): Int {
         var streak = 0
-        var pinnedHash: String? = null
-        for (rec in history.reversed()) {
-            if (rec.toolName != toolName || rec.argsHash != argsHash) continue
-            val rh = rec.resultHash ?: break
-            if (pinnedHash == null) {
-                pinnedHash = rh
+        var pinned: String? = null
+        for (rec in window.reversed()) {
+            if (rec.toolName != toolName || rec.argsHash != args) continue
+            val outcome = rec.resultHash ?: break
+            val frozen = pinned
+            if (frozen == null) {
+                pinned = outcome
                 streak++
-            } else if (rh == pinnedHash) {
+            } else if (outcome == frozen) {
                 streak++
             } else {
                 break
@@ -257,151 +256,72 @@ class ToolLoopDetector(private val config: ToolLoopConfig = ToolLoopConfig()) {
         return streak
     }
 
-    private fun isPollTool(toolName: String, params: Map<String, Any?>): Boolean {
+    /** 窗口内同 (toolName, argsHash) 的总条数（不要求连续）。 */
+    private fun countSameArgs(toolName: String, args: String): Int =
+        window.count { it.toolName == toolName && it.argsHash == args }
+
+    /** 轮询型工具判定：command_status 全形态 + process 的 poll/log 动作。 */
+    private fun pollsByDesign(toolName: String, params: Map<String, Any?>): Boolean {
         if (toolName == "command_status") return true
         if (toolName == "process") {
-            val action = (params["action"] as? String)?.lowercase()
-            if (action == "poll" || action == "log") return true
+            when ((params["action"] as? String)?.lowercase()) {
+                "poll", "log" -> return true
+            }
         }
         return false
     }
 
     /**
-     * Throttle warnings of the same key to once per `warningThreshold` calls,
-     * so a 30-call repeat loop emits only at counts 10, 20, 30 — not on every
-     * tool turn after threshold is crossed.
+     * 同键警告按 `warningThreshold` 次一档节流：30 连发的循环只在第
+     * 10/20/30 次各响一次，越线后的每个工具回合不再重复响。
      */
-    private fun shouldEmitWarning(warningKey: String, currentCount: Int): Boolean {
+    private fun throttleWarning(warningKey: String, currentCount: Int): Boolean {
         val bucket = currentCount / config.warningThreshold
-        val last = warningBuckets[warningKey]
-        if (last == bucket) return false
-        warningBuckets[warningKey] = bucket
+        if (emittedBucketByKey[warningKey] == bucket) return false
+        emittedBucketByKey[warningKey] = bucket
         return true
     }
 
-    // ─── hashing / parsing primitives ────────────────────────────────────────
+    // ─── 散列 / 解析原语 ────────────────────────────────────────────────────
 
-    private fun argsHashFor(toolName: String, params: Map<String, Any?>): String {
-        // Drop UI/telemetry-only fields the model freely varies — most notably
-        // `tool_title`, which models routinely counter-suffix ("Read X #1",
-        // "#2", ...). Without this filter every logically identical call hashes
-        // unique and the repeat/circuit-breaker strategies all silently fail.
-        val filtered = if (params.keys.any { it in ARGS_HASH_IGNORED_KEYS }) {
-            params.filterKeys { it !in ARGS_HASH_IGNORED_KEYS }
-        } else {
-            params
-        }
-        return sha256("$toolName:${stableJson(filtered)}")
+    /**
+     * 参数指纹。先剥掉模型随手变化的纯 UI/遥测字段——尤其是 `tool_title`，
+     * 模型惯常给它加计数后缀（"Read X #1"、"#2"……）。不过滤的话每次逻辑
+     * 等价的调用都散列出唯一值，重复/熔断策略全部静默失灵。
+     */
+    private fun fingerprintArgs(toolName: String, params: Map<String, Any?>): String {
+        val meaningful = params.filterKeys { it !in ARGS_HASH_IGNORED_KEYS }
+        return digest("$toolName:${CanonicalJson.encode(meaningful)}")
     }
 
     /**
-     * Stable JSON: keys sorted alphabetically at every nesting level so that
-     * a Map<"b" → 2, "a" → 1> hashes identically to one inserted "a" → 1, "b" → 2.
+     * 只对承载成败的部分做结果指纹。刻意把整段输出也折进去——规格要求剥
+     * 时间戳/请求 id 之类的噪声，但本层的工具结果不带这些（底层工具已自
+     * 行清理）。未来哪个工具开始漏易变字段，在这里剪，别去每个调用点剪。
      */
-    private fun stableJson(value: Any?): String = buildString { appendStable(value) }
-
-    private fun StringBuilder.appendStable(value: Any?) {
-        when (value) {
-            null -> append("null")
-            is Map<*, *> -> {
-                append('{')
-                value.entries
-                    .map { it.key?.toString().orEmpty() to it.value }
-                    .sortedBy { it.first }
-                    .forEachIndexed { i, (k, v) ->
-                        if (i > 0) append(',')
-                        append(JSONObject.quote(k)); append(':'); appendStable(v)
-                    }
-                append('}')
-            }
-            is List<*> -> {
-                append('[')
-                value.forEachIndexed { i, v ->
-                    if (i > 0) append(',')
-                    appendStable(v)
-                }
-                append(']')
-            }
-            is Array<*> -> appendStable(value.toList())
-            is String -> append(JSONObject.quote(value))
-            is Number, is Boolean -> append(value.toString())
-            is JSONObject -> appendStable(value.toMap())
-            is JSONArray -> appendStable(value.toList())
-            else -> append(JSONObject.quote(value.toString()))
-        }
-    }
-
-    private fun JSONObject.toMap(): Map<String, Any?> {
-        val out = HashMap<String, Any?>(length())
-        val keys = keys()
-        while (keys.hasNext()) {
-            val k = keys.next()
-            out[k] = unwrap(get(k))
-        }
-        return out
-    }
-
-    private fun JSONArray.toList(): List<Any?> {
-        val out = ArrayList<Any?>(length())
-        for (i in 0 until length()) out.add(unwrap(get(i)))
-        return out
-    }
-
-    private fun unwrap(v: Any?): Any? = when (v) {
-        JSONObject.NULL -> null
-        is JSONObject -> v.toMap()
-        is JSONArray -> v.toList()
-        else -> v
-    }
+    private fun fingerprintOutcome(result: String?, errorMessage: String?): String =
+        digest("err=" + (errorMessage ?: "") + "out=" + (result ?: ""))
 
     /**
-     * Hash only the success/failure-bearing parts of a tool result. We
-     * deliberately fold the entire output text in too — the spec calls for
-     * stripping noise like timestamps/requestIds, but the platform's tool
-     * results don't carry those at this layer (the underlying tools already
-     * sanitize them). If a future tool starts leaking volatile fields, prune
-     * them here rather than at every call site.
+     * 两种措辞覆盖各供应商的变体（大小写不敏感，引号与首尾空白均可容忍）：
+     *   "unknown tool: foobar"     → 组 1 = "foobar"
+     *   "tool 'foobar' not found"  → 组 1 = "foobar"
      */
-    private fun resultHashFor(result: String?, errorMessage: String?): String {
-        val payload = buildString {
-            append("err=")
-            append(errorMessage ?: "")
-            append("out=")
-            append(result ?: "")
-        }
-        return sha256(payload)
-    }
-
-    /**
-     * Two patterns cover the wording variations seen across providers:
-     *   "unknown tool: foobar"          → group 1 = "foobar"
-     *   "tool 'foobar' not found"       → group 1 = "foobar"
-     * Both case-insensitive; quoting and surrounding whitespace tolerated.
-     */
-    private fun extractUnknownToolName(errorMessage: String?): String? {
+    private fun hallucinatedToolName(errorMessage: String?): String? {
         if (errorMessage.isNullOrBlank()) return null
-        UNKNOWN_TOOL_RE_1.find(errorMessage)?.groupValues?.getOrNull(1)?.let { return it }
-        UNKNOWN_TOOL_RE_2.find(errorMessage)?.groupValues?.getOrNull(1)?.let { return it }
-        return null
+        return UNKNOWN_TOOL_RE_1.find(errorMessage)?.groupValues?.getOrNull(1)
+            ?: UNKNOWN_TOOL_RE_2.find(errorMessage)?.groupValues?.getOrNull(1)
     }
 
-    private fun sha256(s: String): String {
-        val md = MessageDigest.getInstance("SHA-256")
-        val bytes = md.digest(s.toByteArray(Charsets.UTF_8))
-        val sb = StringBuilder(bytes.size * 2)
-        for (b in bytes) {
-            val v = b.toInt() and 0xFF
-            sb.append(HEX[v ushr 4])
-            sb.append(HEX[v and 0x0F])
-        }
-        return sb.toString()
-    }
+    private fun digest(text: String): String =
+        MessageDigest.getInstance("SHA-256")
+            .digest(text.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it) }
 
     companion object {
         /**
-         * Param keys excluded from `argsHashFor`. Currently just `tool_title`
-         * (a required UI label that models commonly counter-suffix). Add new
-         * entries here if other purely-cosmetic fields ever leak into params.
+         * 不参与参数指纹的键。现在只有 `tool_title`（必需的 UI 标签，模型
+         * 常加计数后缀）。将来再有纯装饰性字段漏进参数，往这里加。
          */
         private val ARGS_HASH_IGNORED_KEYS: Set<String> = setOf("tool_title")
 
@@ -413,6 +333,67 @@ class ToolLoopDetector(private val config: ToolLoopConfig = ToolLoopConfig()) {
             """tool\s+["']?([a-zA-Z0-9_.\-]+)["']?\s+(?:not found|is not available)""",
             RegexOption.IGNORE_CASE,
         )
-        private val HEX = "0123456789abcdef".toCharArray()
+    }
+}
+
+/**
+ * 键序稳定的 JSON 编码：每层嵌套都按字母排序——`<"b"→2, "a"→1>` 与
+ * `<"a"→1, "b"→2>` 散列一致。org.json 的 JSONObject/JSONArray 先解包成
+ * Kotlin 容器再编码，避免其无序键表渗进指纹。
+ */
+private object CanonicalJson {
+
+    fun encode(value: Any?): String = StringBuilder().also { writeTo(value, it) }.toString()
+
+    private fun writeTo(value: Any?, out: StringBuilder) {
+        when (value) {
+            null -> out.append("null")
+            is Map<*, *> -> {
+                out.append('{')
+                value.entries
+                    .map { it.key?.toString().orEmpty() to it.value }
+                    .sortedBy { it.first }
+                    .forEachIndexed { i, (k, v) ->
+                        if (i > 0) out.append(',')
+                        out.append(JSONObject.quote(k)).append(':')
+                        writeTo(v, out)
+                    }
+                out.append('}')
+            }
+            is List<*> -> {
+                out.append('[')
+                value.forEachIndexed { i, v ->
+                    if (i > 0) out.append(',')
+                    writeTo(v, out)
+                }
+                out.append(']')
+            }
+            is Array<*> -> writeTo(value.toList(), out)
+            is String -> out.append(JSONObject.quote(value))
+            is Number, is Boolean -> out.append(value.toString())
+            is JSONObject -> writeTo(plainMap(value), out)
+            is JSONArray -> writeTo(plainList(value), out)
+            else -> out.append(JSONObject.quote(value.toString()))
+        }
+    }
+
+    private fun plainMap(obj: JSONObject): Map<String, Any?> {
+        val unpacked = HashMap<String, Any?>(obj.length())
+        val keyIter = obj.keys()
+        while (keyIter.hasNext()) {
+            val k = keyIter.next()
+            unpacked[k] = unwrapPlain(obj.get(k))
+        }
+        return unpacked
+    }
+
+    private fun plainList(arr: JSONArray): List<Any?> =
+        (0 until arr.length()).map { unwrapPlain(arr.get(it)) }
+
+    private fun unwrapPlain(v: Any?): Any? = when (v) {
+        JSONObject.NULL -> null
+        is JSONObject -> plainMap(v)
+        is JSONArray -> plainList(v)
+        else -> v
     }
 }

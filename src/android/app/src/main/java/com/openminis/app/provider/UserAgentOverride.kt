@@ -4,66 +4,56 @@ import com.openminis.app.BuildConfig
 import okhttp3.Request
 
 /**
- * [T-provider-custom-user-agent] Single chokepoint for the per-provider
- * User-Agent override. Each provider/models-api request builder calls this
- * right before `.build()`, so the "null/blank → fall back, non-blank →
- * replace" rule lives in exactly one place.
+ * [T-provider-custom-user-agent] 各供应商 User-Agent 覆盖的唯一咽喉点
+ * （血统清剿 P3.7 就地真重写；覆盖/回落规则与 UA 串格式冻结）。每家
+ * provider/models-api 的请求构建器在 `.build()` 前调它，「null/空白 →
+ * 回落，非空白 → 覆盖」的规则只活在这一处。
  *
- * `.header(...)` replaces any value the builder set earlier (e.g. the Codex
- * `codex_cli_rs/...` UA or the Anthropic OAuth `claude-cli/...` UA), so a
- * non-blank override wins over the provider default.
+ * `.header(...)` 会替换构建器先前设的任何值（如 Codex 的 `codex_cli_rs/…`
+ * 或 Anthropic OAuth 的 `claude-cli/…`）——非空白覆盖永远赢过供应商默认。
  *
- * **Fallback policy (T-android-default-ua):** when `customUserAgent` is
- * null/blank, we now apply [MinisUserAgent.DEFAULT] instead of leaving
- * the builder UA-less (which lets OkHttp insert its own `okhttp/4.12.0`).
- * The default carries the Minis version so request logs upstream can be
- * traced back to the app build that issued them — matching the
- * "branded UA except where a specific client identity is required"
- * intent of the feature.
+ * **回落策略（T-android-default-ua）**：`customUserAgent` 为 null/空白时
+ * 不再让构建器裸奔（否则 OkHttp 会自塞 `okhttp/4.12.0`），而是套上
+ * [MinisUserAgent.DEFAULT]——默认 UA 带 Minis 版本号，上游请求日志能溯源
+ * 到发请求的应用构建，正合「除特定客户端身份外一律品牌 UA」的特性意图。
  *
- * Callers that issue requests under a SPECIFIC client identity (Codex
- * OAuth's `codex_cli_rs/...`, Anthropic OAuth's `claude-cli/...`) MUST
- * pass `defaultUserAgent = null` so this helper leaves their previously-
- * set UA header alone. Everywhere else the default takes effect.
+ * 以**特定客户端身份**发请求的调用方（Codex OAuth 的 `codex_cli_rs/…`、
+ * Anthropic OAuth 的 `claude-cli/…`）必须传 `defaultUserAgent = null`，
+ * 让本函数不要碰它们已设好的 UA 头。其余场合默认生效。
  */
 fun Request.Builder.applyUserAgentOverride(
     customUserAgent: String?,
     defaultUserAgent: String? = MinisUserAgent.DEFAULT,
 ): Request.Builder {
-    val ua = customUserAgent?.trim()
-    when {
-        !ua.isNullOrEmpty() -> header("User-Agent", ua)
+    val override = customUserAgent?.trim()
+    return when {
+        !override.isNullOrEmpty() -> header("User-Agent", override)
+        // 保留构建器已有的 UA（OAuth 路径的 CLI 指纹就靠这条路活着）。
         defaultUserAgent != null -> header("User-Agent", defaultUserAgent)
-        // else: leave whatever UA the builder already had (preserves
-        // Codex / Claude CLI fingerprints on OAuth paths).
+        else -> this
     }
-    return this
 }
 
 /**
- * [T-android-default-ua] Branded User-Agent used by every Minis-originated
- * outbound request that doesn't have a SDK-specific UA requirement.
+ * [T-android-default-ua] 品牌 User-Agent：所有没有专属 SDK UA 要求的
+ * Minis 出站请求统一用它。
  *
- * Format mirrors iOS exactly:
+ * 格式与 iOS 完全同构：
  *   `Minis/<version> (Android <release>; <model>)`
+ * 如 `Minis/0.14-preview (Android 13; Pixel 4a)`——对应 iOS 的
+ * `Minis/1.10 (iOS 26.5; iPhone)`。
  *
- * e.g. `Minis/0.14-preview (Android 13; Pixel 4a)` — same shape as iOS's
- * `Minis/1.10 (iOS 26.5; iPhone)`.
+ * 版本取 BuildConfig（每次发版自动跟进）。系统版本取
+ * `Build.VERSION.RELEASE`（用户认得的营销版本号；不取 SDK_INT——iOS 没有
+ * 这条平行轴，保持对齐）。机型取 `Build.MODEL`——默认 OkHttp UA 本来就
+ * 广播它，做设备侧诊断有用，又不会额外去匿名化用户。
  *
- * Version comes from BuildConfig (auto-tracks every release). OS release
- * from `Build.VERSION.RELEASE` (the marketing version a user recognises;
- * the API-level SDK_INT is omitted for parity with iOS, which doesn't
- * carry a sibling axis). Model is `Build.MODEL` — already broadcast by
- * default OkHttp UAs, useful for device-specific diagnosis without
- * de-anonymising the user further.
- *
- * Built lazily — only the first request constructs the string, so the
- * `Build.*` reads (cheap but JNI-bound) don't cost startup time.
+ * 惰性构建——首个请求才拼串，`Build.*` 读取（便宜但走 JNI）不占启动时间。
  */
 object MinisUserAgent {
     val DEFAULT: String by lazy {
-        val release = android.os.Build.VERSION.RELEASE ?: "unknown"
-        val model = (android.os.Build.MODEL ?: "unknown").trim().ifEmpty { "unknown" }
-        "Minis/${BuildConfig.VERSION_NAME} (Android $release; $model)"
+        val osRelease = android.os.Build.VERSION.RELEASE ?: "unknown"
+        val device = (android.os.Build.MODEL ?: "unknown").trim().ifEmpty { "unknown" }
+        "Minis/${BuildConfig.VERSION_NAME} (Android $osRelease; $device)"
     }
 }

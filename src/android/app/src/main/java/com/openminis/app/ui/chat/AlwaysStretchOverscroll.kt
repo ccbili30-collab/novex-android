@@ -2,7 +2,6 @@ package com.openminis.app.ui.chat
 
 import androidx.compose.foundation.OverscrollEffect
 import androidx.compose.foundation.gestures.Orientation
-import androidx.compose.foundation.gestures.rememberScrollableState
 import androidx.compose.foundation.gestures.scrollable
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
@@ -10,16 +9,18 @@ import androidx.compose.foundation.overscroll
 import androidx.compose.foundation.rememberOverscrollEffect
 import androidx.compose.runtime.Composable
 import androidx.compose.ui.Modifier
+import androidx.compose.foundation.gestures.rememberScrollableState
 
 /**
- * LazyColumn stops running its drag handler once canScrollForward/Backward
- * are both false, so the platform stretch overscroll never fires when the
- * list content fits the viewport. Wrap the list in this box to restore it:
- * the outer scrollable always accepts gestures, consumes 0, and pipes the
- * delta into a shared stretch effect. The inner LazyColumn, given the same
- * effect, forwards its own overflow too.
+ * 「内容不满屏也有拉伸回弹」的盒子（血统清剿 P3.7 就地真重写；组合结构
+ * 为行为冻结面）。
  *
- * Usage:
+ * LazyColumn 在 canScrollForward/Backward 双双为 false 后就不再跑拖拽处
+ * 理器，列表内容塞得进视口时平台 stretch overscroll 永远不触发。用本盒
+ * 包住列表把它找回来：外层 scrollable 永远接手势、消耗 0、把增量灌进共
+ * 享的拉伸效果；内层 LazyColumn 拿同一个效果，自己的溢出也一并转发。
+ *
+ * 用法：
  *   AlwaysStretchOverscrollBox { effect ->
  *     LazyColumn(overscrollEffect = effect, ...) { ... }
  *   }
@@ -29,21 +30,21 @@ fun AlwaysStretchOverscrollBox(
     modifier: Modifier = Modifier,
     content: @Composable (OverscrollEffect?) -> Unit,
 ) {
-    val effect = rememberOverscrollEffect()
-    val noopState = rememberScrollableState { 0f }
-    val boxModifier = if (effect != null) {
+    val stretchEffect = rememberOverscrollEffect()
+    val absorbEverythingState = rememberScrollableState { 0f }
+    val shell = if (stretchEffect != null) {
         modifier
             .fillMaxSize()
             .scrollable(
-                state = noopState,
+                state = absorbEverythingState,
                 orientation = Orientation.Vertical,
-                overscrollEffect = effect,
+                overscrollEffect = stretchEffect,
             )
-            .overscroll(effect)
+            .overscroll(stretchEffect)
     } else {
         modifier.fillMaxSize()
     }
-    Box(modifier = boxModifier) {
-        content(effect)
+    Box(modifier = shell) {
+        content(stretchEffect)
     }
 }

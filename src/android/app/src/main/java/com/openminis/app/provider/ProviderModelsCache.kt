@@ -1,24 +1,23 @@
 package com.openminis.app.provider
 
 import android.content.Context
-import novex.android.data.model.LLMModel
+import java.io.File
+import java.security.MessageDigest
 import kotlinx.serialization.Serializable
 import kotlinx.serialization.decodeFromString
 import kotlinx.serialization.encodeToString
 import kotlinx.serialization.json.Json
-import java.io.File
-import java.security.MessageDigest
+import novex.android.data.model.LLMModel
 
 /**
- * Per-provider disk cache for `/v1/models`-style responses, keyed by a
- * SHA-256 hash of the credential so raw API keys / OAuth tokens never land
- * in cache file names. Mirrors iOS `ModelsCache` (7-day TTL, cacheDir-scoped)
- * but namespaces each provider under its own subdirectory so rotating one
- * credential can't poison another family's cache.
+ * `/v1/models` 形态响应的按供应商磁盘缓存（血统清剿 P3.7 就地真重写；
+ * 缓存路径 `models-cache/<namespace>/<sha256>.json`、Entry JSON 字段与
+ * TTL 为契约冻结面）。键取凭据的 SHA-256——裸 API key / OAuth 令牌绝不落
+ * 缓存文件名。对齐 iOS `ModelsCache`（7 天 TTL、cacheDir 作用域），但每家
+ * 供应商各占一个子目录：轮换一家凭据不污染别家的缓存。
  *
- * Construct once per provider (e.g. `ProviderModelsCache("openrouter")`),
- * then call [load] / [save] / [invalidate] with a credential + optional
- * baseURL in the key.
+ * 每家供应商构造一次（如 `ProviderModelsCache("openrouter")`），再以凭据
+ * （+可选 baseURL）为键调 [load]/[save]/[invalidate]。
  */
 internal class ProviderModelsCache(
     private val namespace: String,
@@ -27,34 +26,37 @@ internal class ProviderModelsCache(
     @Serializable
     private data class Entry(val models: List<LLMModel>, val savedAt: Long)
 
-    private fun cacheDir(context: Context): File =
+    private fun namespaceDir(context: Context): File =
         File(context.cacheDir, "models-cache/$namespace").apply { mkdirs() }
 
-    private fun keyFile(context: Context, cacheKey: String): File {
-        val digest = MessageDigest.getInstance("SHA-256")
+    /** 键 → 文件名：SHA-256 十六进制 + `.json`。 */
+    private fun fileFor(context: Context, cacheKey: String): File {
+        val hex = MessageDigest.getInstance("SHA-256")
             .digest(cacheKey.toByteArray(Charsets.UTF_8))
-        val hex = digest.joinToString("") { "%02x".format(it) }
-        return File(cacheDir(context), "$hex.json")
+            .joinToString("") { "%02x".format(it) }
+        return File(namespaceDir(context), "$hex.json")
     }
 
+    /** 读缓存：文件缺失/坏 JSON/过期一律 miss（null）。 */
     fun load(context: Context, cacheKey: String): List<LLMModel>? {
-        val file = keyFile(context, cacheKey)
+        val file = fileFor(context, cacheKey)
         if (!file.isFile) return null
-        val entry = runCatching { JSON.decodeFromString<Entry>(file.readText()) }
-            .getOrNull() ?: return null
+        val entry = runCatching { JSON.decodeFromString<Entry>(file.readText()) }.getOrNull()
+            ?: return null
         if (System.currentTimeMillis() - entry.savedAt > ttlMs) return null
         return entry.models
     }
 
     fun save(context: Context, cacheKey: String, models: List<LLMModel>) {
-        val file = keyFile(context, cacheKey)
         runCatching {
-            file.writeText(JSON.encodeToString(Entry(models, System.currentTimeMillis())))
+            fileFor(context, cacheKey).writeText(
+                JSON.encodeToString(Entry(models, System.currentTimeMillis())),
+            )
         }
     }
 
     fun invalidate(context: Context, cacheKey: String) {
-        runCatching { keyFile(context, cacheKey).delete() }
+        runCatching { fileFor(context, cacheKey).delete() }
     }
 
     companion object {

@@ -3,31 +3,27 @@ package com.openminis.app.data
 import android.content.Context
 import android.content.SharedPreferences
 import com.openminis.app.logging.AppLogger
-import org.json.JSONObject
 import java.io.File
 import java.security.MessageDigest
+import org.json.JSONObject
 
 /**
- * Persists a downloaded-but-not-yet-installed APK across Activity recreate /
- * process death.
+ * 「已下载、未安装」APK 的跨重建/跨进程死亡持久（血统清剿 P3.7 就地真
+ * 重写；prefs 名/键、JSON 字段集与日志行为契约冻结面）。
  *
- * Why this exists: the original update flow held the downloaded [File]
- * reference in a Composable `remember{}` slot. When the user tapped "Open
- * Settings" to grant "install unknown apps" permission, the system pushed
- * Minis to the background; on return the Activity often recreated, the slot
- * was reset, and the UI silently asked the user to download the APK again.
+ * 为什么要有它：原始更新流程把下载好的 [File] 引用放在 Composable 的
+ * `remember{}` 槽里。用户一点「去设置」授予「安装未知应用」权限，系统把
+ * 应用压后台；回来时 Activity 十有八九重建、槽位清零，UI 无声地请用户
+ * **再下载一次** APK。
  *
- * Storage: a single SharedPreferences key holding a small JSON blob. We
- * deliberately avoid DataStore here — this object is touched at most a
- * couple times per update flow, blocking access is fine, and SharedPreferences
- * is already initialised elsewhere.
+ * 存储：SharedPreferences 单键存一小段 JSON。刻意不用 DataStore——本件
+ * 每次更新流程至多碰几下，阻塞访问无所谓，SharedPreferences 别处已初始化。
  *
- * Freshness: a [PendingUpdate] older than [MAX_AGE_MS] (24 h) is discarded
- * on read so a stale APK can't auto-install on cold start a week later
- * after the GitHub release was re-rolled.
+ * 新鲜度：超过 [MAX_AGE_MS]（24 小时）的 [PendingUpdate] 读时即弃——一周
+ * 后冷启动自动装上陈旧 APK（GitHub release 已被重滚）是不允许的。
  *
- * Integrity: we compute and store sha256 if [setPending] is given the
- * file bytes; if absent, [verify] falls back to (size == expectedSize).
+ * 完整性：[setPending] 拿到文件字节就顺带算并存 sha256；没有字节时
+ * [verify] 回落到（尺寸 == 记录尺寸）。
  */
 object PendingUpdateStore {
 
@@ -45,30 +41,30 @@ object PendingUpdateStore {
         val channel: String = com.openminis.app.BuildConfig.UPDATE_CHANNEL,
     )
 
-    private var prefs: SharedPreferences? = null
+    private var store: SharedPreferences? = null
 
-    /** Idempotent. Safe to call from MinisApp.onCreate. */
+    /** 幂等；MinisApp.onCreate 调用安全。 */
     fun init(context: Context) {
-        if (prefs != null) return
-        prefs = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+        if (store != null) return
+        store = context.applicationContext.getSharedPreferences(PREFS, Context.MODE_PRIVATE)
     }
 
     private fun requirePrefs(context: Context): SharedPreferences {
-        prefs?.let { return it }
+        store?.let { return it }
         init(context)
-        return prefs!!
+        return store!!
     }
 
     fun setPending(context: Context, pending: PendingUpdate) {
-        val json = JSONObject().apply {
+        val blob = JSONObject().apply {
             put("targetVersionName", pending.targetVersionName)
             put("apkPath", pending.apkPath)
             put("apkSize", pending.apkSize)
-            if (pending.sha256 != null) put("sha256", pending.sha256) else put("sha256", JSONObject.NULL)
+            put("sha256", pending.sha256 ?: JSONObject.NULL)
             put("downloadedAtMs", pending.downloadedAtMs)
             put("channel", pending.channel)
         }
-        requirePrefs(context).edit().putString(KEY, json.toString()).apply()
+        requirePrefs(context).edit().putString(KEY, blob.toString()).apply()
         AppLogger.info(
             TAG,
             "setPending version=${pending.targetVersionName} size=${pending.apkSize} sha256=${pending.sha256 != null}",
@@ -76,36 +72,36 @@ object PendingUpdateStore {
     }
 
     /**
-     * Returns the persisted pending update, or null when:
-     *  - nothing stored
-     *  - JSON malformed (treated as gone, cleared)
-     *  - older than [MAX_AGE_MS] (cleared)
-     *  - target version no longer newer than the running build
+     * 取回挂起的更新；以下情形返回 null：
+     *  - 什么都没存；
+     *  - JSON 畸形（当作没有，顺手清除）；
+     *  - 超过 [MAX_AGE_MS]（清除）；
+     *  - 渠道与当前构建不一致（清除）。
      */
     fun getPending(context: Context): PendingUpdate? {
-        val p = requirePrefs(context)
-        val raw = p.getString(KEY, null) ?: return null
-        val obj = runCatching { JSONObject(raw) }.getOrNull()
-        if (obj == null) {
+        val prefs = requirePrefs(context)
+        val raw = prefs.getString(KEY, null) ?: return null
+        val blob = runCatching { JSONObject(raw) }.getOrNull()
+        if (blob == null) {
             AppLogger.warning(TAG, "stored JSON malformed, discarding")
-            p.edit().remove(KEY).apply()
+            prefs.edit().remove(KEY).apply()
             return null
         }
         val pending = PendingUpdate(
-            targetVersionName = obj.optString("targetVersionName"),
-            apkPath = obj.optString("apkPath"),
-            apkSize = obj.optLong("apkSize"),
-            sha256 = obj.optString("sha256", "").takeIf { it.isNotEmpty() && it != "null" },
-            downloadedAtMs = obj.optLong("downloadedAtMs"),
-            channel = obj.optString("channel", ""),
+            targetVersionName = blob.optString("targetVersionName"),
+            apkPath = blob.optString("apkPath"),
+            apkSize = blob.optLong("apkSize"),
+            sha256 = blob.optString("sha256", "").takeIf { it.isNotEmpty() && it != "null" },
+            downloadedAtMs = blob.optLong("downloadedAtMs"),
+            channel = blob.optString("channel", ""),
         )
         if (pending.channel != com.openminis.app.BuildConfig.UPDATE_CHANNEL) {
             clearPending(context)
             return null
         }
-        val age = System.currentTimeMillis() - pending.downloadedAtMs
-        if (age > MAX_AGE_MS) {
-            AppLogger.info(TAG, "pending update expired age=${age}ms; clearing")
+        val ageMs = System.currentTimeMillis() - pending.downloadedAtMs
+        if (ageMs > MAX_AGE_MS) {
+            AppLogger.info(TAG, "pending update expired age=${ageMs}ms; clearing")
             clearPending(context)
             return null
         }
@@ -118,44 +114,43 @@ object PendingUpdateStore {
     }
 
     /**
-     * Strict integrity check used before firing the install intent on resume:
-     *  - file exists
-     *  - length matches recorded size
-     *  - if sha256 was recorded, recomputed hash matches
+     * 恢复时开火安装意图前的严格完整性核查：
+     *  - 文件在；
+     *  - 长度与记录尺寸一致；
+     *  - 记了 sha256 的，重算须一致。
      *
-     * Returns the File when valid, null when corrupt/missing (caller should
-     * clear the pending record and re-download).
+     * 有效返回 File；损坏/缺失返回 null（调用方应清记录重下）。
      */
     fun verify(pending: PendingUpdate): File? {
-        val f = File(pending.apkPath)
-        if (!f.exists()) {
+        val apk = File(pending.apkPath)
+        if (!apk.exists()) {
             AppLogger.warning(TAG, "verify: file missing ${pending.apkPath}")
             return null
         }
-        if (f.length() != pending.apkSize) {
-            AppLogger.warning(TAG, "verify: size mismatch expected=${pending.apkSize} actual=${f.length()}")
+        if (apk.length() != pending.apkSize) {
+            AppLogger.warning(TAG, "verify: size mismatch expected=${pending.apkSize} actual=${apk.length()}")
             return null
         }
-        if (pending.sha256 != null) {
-            val actual = runCatching { sha256(f) }.getOrNull()
-            if (actual == null || !actual.equals(pending.sha256, ignoreCase = true)) {
-                AppLogger.warning(TAG, "verify: sha256 mismatch expected=${pending.sha256} actual=$actual")
-                return null
-            }
+        val expected = pending.sha256 ?: return apk
+        val actual = runCatching { sha256(apk) }.getOrNull()
+        if (actual == null || !actual.equals(expected, ignoreCase = true)) {
+            AppLogger.warning(TAG, "verify: sha256 mismatch expected=$expected actual=$actual")
+            return null
         }
-        return f
+        return apk
     }
 
+    /** 流式分块喂摘要的 SHA-256 十六进制输出。 */
     fun sha256(file: File): String {
-        val md = MessageDigest.getInstance("SHA-256")
+        val digest = MessageDigest.getInstance("SHA-256")
         file.inputStream().use { input ->
-            val buf = ByteArray(64 * 1024)
+            val chunk = ByteArray(64 * 1024)
             while (true) {
-                val n = input.read(buf)
-                if (n <= 0) break
-                md.update(buf, 0, n)
+                val got = input.read(chunk)
+                if (got <= 0) break
+                digest.update(chunk, 0, got)
             }
         }
-        return md.digest().joinToString("") { "%02x".format(it) }
+        return digest.digest().joinToString("") { "%02x".format(it) }
     }
 }

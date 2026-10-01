@@ -1,29 +1,29 @@
 package com.openminis.app.provider.xai
 
-import novex.android.data.model.LLMModel
 import com.openminis.app.logging.AppLogger
 import com.openminis.app.provider.ModelsDevApi
+import novex.android.data.model.LLMModel
 
 /**
- * Static catalog of xAI (Grok) models exposed to OAuth users.
+ * OAuth 用户可见的 xAI（Grok）静态目录（血统清剿 P3.7 就地真重写；
+ * 目录源 LLMModel.allXAI 与日志格式为冻结面）。
  *
- * Unlike OpenAI/Anthropic, the xAI Console doesn't gate `/v1/models` for
- * OAuth bearer holders, but the spec /tmp/grok-oauth-design.md §6 fixes
- * the user-facing default list to a known-good set so the Add Provider
- * step doesn't depend on a network round-trip. Returned in the exact
- * priority order the UI should display.
+ * 与 OpenAI/Anthropic 不同，xAI Console 不对 OAuth bearer 持有者关
+ * `/v1/models` 的闸，但规格 /tmp/grok-oauth-design.md §6 把用户面的默认
+ * 列表钉成一组合格已知集——「添加供应商」一步不依赖网络往返。按 UI 应
+ * 展示的优先次序原样返回。
  *
- * The same set is the [LLMModel.allXAI] companion list — keep them in
- * sync. Returned through [ModelsDevApi.enrichModels] so context window
- * / modality metadata fills in from the shared catalog.
+ * 同一集合就是 [LLMModel.allXAI] 伴生列表——两处保持同步。经
+ * [ModelsDevApi.enrichModels] 返回，上下文窗口/模态元数据从共享目录补齐。
  */
 object XAIModelsApi {
     private const val TAG = "XAIModelsApi"
 
-    /** Static fallback used when /v1/models is unreachable or untrusted. */
-    fun fetchModelsOAuth(): List<LLMModel> {
-        val models = LLMModel.allXAI
-        AppLogger.info(TAG, "xAI OAuth model list (${models.size} models): ${models.joinToString { it.id }}")
-        return ModelsDevApi.enrichModels(models)
-    }
+    /** /v1/models 不可达或不可信时的静态回落。 */
+    fun fetchModelsOAuth(): List<LLMModel> =
+        LLMModel.allXAI
+            .also { roster ->
+                AppLogger.info(TAG, "xAI OAuth model list (${roster.size} models): ${roster.joinToString { it.id }}")
+            }
+            .let(ModelsDevApi::enrichModels)
 }
