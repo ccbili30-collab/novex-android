@@ -1,6 +1,6 @@
 package novex.android.transport
 
-import com.openminis.app.auth.ClaudeOAuthManager
+import novex.android.authkit.ClaudeLoginFlow
 import novex.android.data.model.AgentContentPart
 import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.LLMError
@@ -12,7 +12,7 @@ import novex.android.data.model.LLMStreamChunk
 import novex.android.data.model.LLMUsage
 import novex.android.data.model.ThinkingLevel
 import novex.android.data.model.hasImageInput
-import com.openminis.app.logging.AppLogger
+import novex.android.logkit.RunLog
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.ImageDegradationLearning
 import com.openminis.app.provider.LLMProvider
@@ -556,7 +556,7 @@ class NovexTransportProvider(
         val offEffort = if (!thinkingLevel.isEnabled && !isMistralHost &&
             model.supportsReasoning == true && !effortFamilyClamp
         ) explicitOffEffort else null
-        AppLogger.info(
+        RunLog.info(
             "Thinking",
             "[resolve] provider=responses model=${model.id} level=${thinkingLevel.name} " +
                 "effort=${level?.name ?: "<omit>"} off=${offEffort ?: "<omit>"}",
@@ -592,7 +592,7 @@ class NovexTransportProvider(
                 definition.toAnthropicJson().getJSONObject("input_schema").toString())
         }
         val level = thinkingLevel.toWireLevel()
-        AppLogger.info(
+        RunLog.info(
             "Thinking",
             "[resolve] provider=anthropic model=${model.id} level=${thinkingLevel.name} " +
                 "shape=[${AnthropicWire.thinkingShape(model.id, model.supportsReasoning, level, maxTokens)
@@ -610,7 +610,7 @@ class NovexTransportProvider(
             // P3.1d 净眼挂账 e 前缀可注入（默认取 BuildConfig 定制常量）：公共镜像
             // 未配置该常量时，测试注入已知前缀也能跑满前缀拆分断言块。
             oauthSystemPrefix = if (isAnthropicOAuth)
-                (oauthSystemPrefixOverride ?: ClaudeOAuthManager.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT) else null,
+                (oauthSystemPrefixOverride ?: ClaudeLoginFlow.ANTHROPIC_OAUTH_IDENTIFIER_PROMPT) else null,
             echoUnsignedThinking = echoUnsignedAnthropicThinking(),
         )
     }
@@ -646,7 +646,7 @@ class NovexTransportProvider(
                 propertyOrdering = gemini.optJSONObject("parameters")?.optJSONArray("propertyOrdering")
                     ?.let { ordering -> (0 until ordering.length()).map { ordering.optString(it) } })
         }
-        AppLogger.info(
+        RunLog.info(
             "Thinking",
             "[resolve] provider=gemini model=${model.id} level=${thinkingLevel.name} " +
                 "keys=[${ThinkingContractResolver.geminiThinkingConfig(model.id, thinkingLevel)
@@ -915,7 +915,7 @@ class NovexTransportProvider(
             .catch { failure ->
                 if (failure is kotlinx.coroutines.CancellationException || emittedAny) throw failure
                 if (!ImageDegradationLearning.looksLikeImageRejection(failure.message)) throw failure
-                AppLogger.warning(
+                RunLog.warning(
                     "NovexTransport",
                     "[ImageDegrade] endpoint rejected image input for ${model.id} — retrying once with text placeholders",
                 )
@@ -955,7 +955,7 @@ class NovexTransportProvider(
             .onEach { emittedAny = true }
             .catch { failure ->
                 if (failure is kotlinx.coroutines.CancellationException || emittedAny) throw failure
-                AppLogger.warning(
+                RunLog.warning(
                     "NovexTransport",
                     "[ResponsesFallback] chat failed before first chunk " +
                         "(${failure.message}) — retrying the same request via /v1/responses",
@@ -1068,7 +1068,7 @@ class NovexTransportProvider(
                                 failure?.message ?: "stream failed", secrets)),
                     )
                     val error = failure?.let(::errorOf) ?: LLMError.ProviderError("流在错误状态结束")
-                    AppLogger.warning("NovexTransport", "[$name] stream failed: ${error.message}")
+                    RunLog.warning("NovexTransport", "[$name] stream failed: ${error.message}")
                     close(error)
                 }
                 StreamResult.TimedOut -> close(
