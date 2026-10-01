@@ -12,7 +12,6 @@ import novex.android.data.NovexMainDatabase
 import com.openminis.app.data.repository.BackgroundSettingsRepository
 import com.openminis.app.data.repository.ChatRepository
 import com.openminis.app.data.repository.EnvVarRepository
-import com.openminis.app.data.NovexUpdateMonitor
 import com.openminis.app.data.repository.MemoryRepository
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.data.repository.SkillRepository
@@ -403,9 +402,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         com.openminis.app.data.UpdateSourceStore.hydrate(this)
         // [T-reading-view-global] 阅读视图偏好注水（默认翻页）
         novex.android.ReadingViewPrefs.hydrate(this)
-        // [T-bulletin-cache] 冷启动公告缓存写入需要 filesDir
-        NovexUpdateMonitor.attachContext(this)
-        // [T-bulletin-v3] 冷启动唯一主动拉取：更新+名册+未读正文，产出叠卡跳脸
+        // [T-bulletin-v3] 冷启动唯一主动拉取：更新+名册+未读正文，只改状态不弹窗
         com.openminis.app.data.NovexBulletinMonitor.attachContext(this)
         com.openminis.app.data.NovexBulletinMonitor.coldStartOnAppStart()
         postHomeReady = true

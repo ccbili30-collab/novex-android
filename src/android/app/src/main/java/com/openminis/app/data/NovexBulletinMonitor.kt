@@ -11,12 +11,6 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import okhttp3.OkHttpClient
 
-/** 跳脸叠卡：公告在上、更新在下；单新单卡。关闭公告=已读，关闭更新=本进程不再跳（红点保留）。 */
-internal sealed interface BulletinStackCard {
-    data class Announcements(val entries: List<BulletinManifestEntry>) : BulletinStackCard
-    data class Update(val available: UpdateChecker.CheckResult.UpdateAvailable) : BulletinStackCard
-}
-
 internal data class BulletinUiState(
     val manifest: BulletinManifest? = null,
     /** 已缓存正文（id→markdown），来自磁盘或网络，仅供渲染。 */
@@ -25,27 +19,24 @@ internal data class BulletinUiState(
     val failedBodies: Set<String> = emptySet(),
     val readIds: Set<String> = emptySet(),
     val expandedIds: Set<String> = emptySet(),
-    val stack: List<BulletinStackCard> = emptyList(),
     val update: UpdateChecker.CheckResult.UpdateAvailable? = null,
-    val dismissedUpdateVersion: String? = null,
     val checkingUpdate: Boolean = false,
     val updateNotice: String? = null,
     val refreshing: Boolean = false,
     val refreshNotice: String? = null,
-    val coldStartNotice: String? = null,
 ) {
     val unread: List<BulletinManifestEntry>
         get() = manifest?.announcements?.filter { it.id !in readIds } ?: emptyList()
 
-    /** 红点双来源：未读公告 或 有未安装更新（更新跳脸关掉也保留，直到安装）。 */
+    /** 红点双来源：未读公告 或 有未安装更新（保留到安装完成）。 */
     val hasBadge: Boolean
         get() = unread.isNotEmpty() || update != null
 }
 
 /**
  * [T-bulletin-v3] 公告+更新双体系统一监视器：冷启动是唯一主动拉取时机
- * （名册+未读正文+更新检查），也是唯一产出跳脸叠卡的时机；会话内只有
- * 用户点刷新/检查更新才联网，且绝不弹窗——只改状态（列表/红点）。
+ * （名册+未读正文+更新检查）。用户 2026-09-30：叠卡跳脸退役，冷启动只
+ * 改状态（列表/红点），公告中心是唯一界面，任何时机都不主动弹窗。
  */
 internal object NovexBulletinMonitor {
 
@@ -62,10 +53,6 @@ internal object NovexBulletinMonitor {
     private val _state = MutableStateFlow(BulletinUiState())
     val state: StateFlow<BulletinUiState> = _state.asStateFlow()
 
-    // 关卡防重入：按钮 onClick 与 Dialog onDismissRequest 偶发双发，
-    // 双发会把后卡一并吞掉。350ms 内的第二次关闭忽略。
-    @Volatile private var lastDismissAt = 0L
-
     /** 冷启动：更新半边沿用 [NovexUpdateMonitor]（旧入口共享 _available）。 */
     fun coldStartOnAppStart() {
         if (!coldStarted.compareAndSet(false, true)) return
@@ -80,8 +67,7 @@ internal object NovexBulletinMonitor {
                 BulletinHub.fetchManifest(client, base)
             }.getOrNull()
             if (manifest == null) {
-                // 上游不可达：不跳脸、无提示打扰；离线兜底走缓存（面板打开时）
-                _state.update { it.copy(coldStartNotice = null) }
+                // 上游不可达：无提示打扰；离线兜底走缓存（面板打开时）
                 return@launch
             }
             BulletinHub.saveManifest(context.filesDir, manifest)
@@ -95,18 +81,12 @@ internal object NovexBulletinMonitor {
                     freshBodies[entry.id] = body
                 }
             }
-            val stack = buildList {
-                if (unread.isNotEmpty()) add(BulletinStackCard.Announcements(unread))
-                if (available != null) add(BulletinStackCard.Update(available))
-            }
             _state.update {
                 it.copy(
                     manifest = manifest,
                     readIds = read,
                     bodies = it.bodies + freshBodies,
                     update = available ?: it.update,
-                    stack = it.stack + stack,
-                    coldStartNotice = if (stack.isEmpty()) "没有新内容" else null,
                 )
             }
         }
@@ -152,13 +132,20 @@ internal object NovexBulletinMonitor {
         }
     }
 
-    /** 展开才加载：磁盘缓存（rev 匹配）优先，否则网络并落盘；失败保持未加载可重试。 */
+    /** 展开才加载：磁盘缓存（rev 匹配）优先，否则网络并落盘；失败保持未加载可重试。展开即已读。 */
     fun toggleExpand(id: String) {
         val wasExpanded = id in _state.value.expandedIds
         _state.update { s ->
             s.copy(expandedIds = if (wasExpanded) s.expandedIds - id else s.expandedIds + id)
         }
-        if (!wasExpanded) ensureBody(id)
+        if (!wasExpanded) {
+            // 只有公告计已读；往期版本/新版本行共用此展开路径但不算公告。
+            if (_state.value.manifest?.announcements?.any { it.id == id } == true) {
+                appContext?.let { NovexAnnouncementReadStore.markRead(it, listOf(id)) }
+                _state.update { it.copy(readIds = it.readIds + id) }
+            }
+            ensureBody(id)
+        }
     }
 
     fun ensureBody(id: String) = scope.launch {
@@ -184,31 +171,12 @@ internal object NovexBulletinMonitor {
         }
     }
 
-    /** 关闭叠卡首张：公告=关闭即已读；更新=本进程不再跳，红点保留到安装。 */
-    fun dismissFront() {
-        val now = System.currentTimeMillis()
-        if (now - lastDismissAt < 350) return
-        lastDismissAt = now
-        val front = _state.value.stack.firstOrNull() ?: return
-        val context = appContext
-        _state.update { s ->
-            when (front) {
-                is BulletinStackCard.Announcements -> {
-                    context?.let { NovexAnnouncementReadStore.markRead(it, front.entries.map { e -> e.id }) }
-                    s.copy(
-                        readIds = s.readIds + front.entries.map { it.id },
-                        stack = s.stack.drop(1),
-                    )
-                }
-                is BulletinStackCard.Update -> s.copy(
-                    dismissedUpdateVersion = front.available.versionName,
-                    stack = s.stack.drop(1),
-                )
-            }
-        }
+    /** 切换更新源后清掉上一源的检查结果。 */
+    fun clearUpdate() {
+        _state.update { it.copy(update = null, updateNotice = null) }
     }
 
-    /** 手动检查更新：不弹窗，结果就地显示；更新卡只在未被本进程略过时入叠卡。 */
+    /** 手动检查更新：不弹窗，结果就地显示在公告中心「更新」页签。 */
     fun manualCheckUpdate() = scope.launch {
         if (_state.value.checkingUpdate) return@launch
         _state.update { it.copy(checkingUpdate = true, updateNotice = null) }
@@ -219,10 +187,6 @@ internal object NovexBulletinMonitor {
                     checkingUpdate = false,
                     update = result,
                     updateNotice = "发现新版本 ${result.versionName}",
-                    stack = if (s.dismissedUpdateVersion == result.versionName) s.stack else {
-                        val hasUpdateCard = s.stack.any { it is BulletinStackCard.Update }
-                        if (hasUpdateCard) s.stack else s.stack + BulletinStackCard.Update(result)
-                    },
                 )
             }
             UpdateChecker.CheckResult.UpToDate -> _state.update {

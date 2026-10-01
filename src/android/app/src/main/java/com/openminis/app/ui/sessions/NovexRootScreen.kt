@@ -33,7 +33,6 @@ import com.openminis.app.ui.noven.NovenMessagesScreen
 import com.openminis.app.ui.noven.NovenTab
 import com.openminis.app.ui.noven.novenBackAction
 import com.openminis.app.ui.settings.NovexUpdateHost
-import com.openminis.app.ui.settings.NovexUpdateHub
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 
@@ -118,7 +117,6 @@ internal fun NovexRootScreen(
     LaunchedEffect(selected) {
         if (selected != NovenTab.SESSIONS) navVisible = true
     }
-    val updateHub = remember { NovexUpdateHub() }
     val bulletin by NovexBulletinMonitor.state.collectAsState()
     val detectedUpdate by NovexUpdateMonitor.available.collectAsState()
     val meBadged = bulletin.hasBadge || detectedUpdate != null
@@ -159,7 +157,6 @@ internal fun NovexRootScreen(
                             NovenTab.MESSAGES -> NovenMessagesScreen()
                             NovenTab.ME -> NovenMeScreen(
                                 libraryReady = libraryReady,
-                                updateHub = updateHub,
                                 chatRepository = chatRepository,
                                 onOpenCard = onOpenCard,
                                 onCreateWorld = onCreateWorld,
@@ -172,8 +169,8 @@ internal fun NovexRootScreen(
                     }
                 }
             }
-            // 公告宿主：冷启动叠卡弹窗/公告中心/更新对话框，任何 tab 生效。
-            NovexUpdateHost(updateHub)
+            // 公告宿主：公告中心页面与安装续接，任何 tab 生效，绝不弹窗。
+            NovexUpdateHost()
         }
         if (navVisible) {
             NovenBottomBar(

@@ -59,7 +59,6 @@ import novex.android.ui.NovexExportFileName
 import novex.android.ui.OutlinedTextField
 import novex.android.ui.TextButton
 import com.openminis.app.ui.settings.NovexUpdateEntry
-import com.openminis.app.ui.settings.NovexUpdateHub
 import androidx.compose.runtime.rememberCoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.launch
@@ -77,7 +76,6 @@ import novex.storage.CardSummary
  */
 @Composable
 internal fun NovenMeScreen(
-    updateHub: NovexUpdateHub,
     chatRepository: ChatRepository?,
     onOpenCard: (String, String) -> Unit,
     onCreateWorld: () -> Unit,
@@ -158,7 +156,7 @@ internal fun NovenMeScreen(
                 horizontalArrangement = Arrangement.End,
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                NovexUpdateEntry(updateHub)
+                NovexUpdateEntry()
                 IconButton(onClick = onOpenSettings, modifier = Modifier.size(36.dp)) {
                     Icon(
                         painter = painterResource(R.drawable.ic_phosphor_gear),

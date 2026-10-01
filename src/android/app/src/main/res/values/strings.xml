@@ -41,6 +41,7 @@
     <string name="update_channel_preview">Preview</string>
     <string name="check_update_check_button">Check for Updates</string>
     <string name="check_update_checking">Checking…</string>
+    <string name="check_update_open_bulletin_hint">Progress and install live in the bulletin page</string>
     <string name="check_update_up_to_date">You\'re on the latest version.</string>
     <string name="check_update_no_release">No release published yet.</string>
     <string name="check_update_no_apk_asset">Release %1$s is published but doesn\'t include an APK.</string>

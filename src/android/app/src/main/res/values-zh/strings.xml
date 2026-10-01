@@ -38,6 +38,7 @@
     <string name="update_channel_preview">预览版</string>
     <string name="check_update_check_button">检查更新</string>
     <string name="check_update_checking">检查中…</string>
+    <string name="check_update_open_bulletin_hint">进度与安装在公告页内完成</string>
     <string name="check_update_up_to_date">已经是最新版本。</string>
     <string name="check_update_no_release">暂未发布任何版本。</string>
     <string name="check_update_error">检查失败：%1$s</string>
