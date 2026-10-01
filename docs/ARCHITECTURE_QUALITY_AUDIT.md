@@ -261,6 +261,7 @@ ui 大包（42 件）虽大但内聚（全是 Novex 视觉系统 + 卡片编辑�
 | D16 | **P2** | sharekit/vault/netwatch/powerguard/localekit 零测试 | §4.1 | 触碰时补窄测 | 入站分享丢数据/自愈 prefs 误操作无防线 |
 | D17 | **P2** | 测试错位（新包目录测旧路径类） | `test/.../repo/SkillRepositoryLifecycleTest.kt` | 下次扩测时归位 | 按包找测试扑空 |
 | D18 | **P2** | 重试逻辑三处各写各的（暂可忍，第三处出现时收敛） | §5.2 | 触发条件出现时 | 重试语义分裂（退避基数/取消传播不一致） |
+| D19 | **P2** | ProviderConfigStore 初始异步装载的 reconcile()/persist() 在 configLock 外执行——哈希错位路径下与装载窗内早期 save() 的 persist 交错时，磁盘可能回退陈旧快照（重启丢一次保存）。窗口窄、存量债非 PR#79 引入（净眼复核补录） | novex/android/repo/ProviderConfigStore | 随 D11/接口层收缝轮 | 极端时序下重启丢一次保存；方式：reconcile 持锁或装载完成前延迟镜像写 |
 
 **通过项（不计债）**：novex.model 模块隔离（机器强制，零 app 依赖）；新包间无环、transport 无 DAO 直穿；门面零积肉、冻结面文档化全覆盖；TODO/FIXME/死代码/注释残留全零；LLMError 分类单点；transport/ui/model-transport 测试厚实且无空壳。
 
