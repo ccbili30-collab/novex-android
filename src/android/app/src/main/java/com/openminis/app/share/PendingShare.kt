@@ -1,49 +1,18 @@
 package com.openminis.app.share
 
-import org.json.JSONArray
-import org.json.JSONObject
-
 /**
- * Mirrors iOS Shared/PendingShare.swift wire format so Android and iOS
- * share extensions emit/consume the same on-disk JSON. Future-proofs a
- * cross-platform sync if it ever lands.
+ * 分享载荷的线上记录（P3.5c 真重写收编；嵌套 Item/Kind 被 ChatScreen
+ * 以 `PendingShare.Item.Kind` 形态钉住，无法经 typealias 转发——正典
+ * 留此、实现侧反向引用）。
  *
- * Wire shape: `{items: [{kind, value}], timestamp}`
- *   - kind ∈ {"inlineText", "attachment"}
- *   - value: for inlineText = the text; for attachment = filename in
- *            the share staging dir (filesDir/share_extension/).
+ * 线上形态（冻结面，对齐 iOS Shared/PendingShare.swift，两端分享扩展
+ * 产/消同一份盘上 JSON）：`{items: [{kind, value}], timestamp}`；
+ * kind ∈ {"inlineText", "attachment"}；inlineText 的 value 是文本本身，
+ * attachment 的 value 是暂存目录（filesDir/share_extension/）里的文件名。
+ * 编解码在 novex.android.sharekit.ShareWire。
  */
 data class PendingShare(val items: List<Item>, val timestampMs: Long) {
     data class Item(val kind: Kind, val value: String) {
-        enum class Kind(val wire: String) {
-            INLINE_TEXT("inlineText"),
-            ATTACHMENT("attachment"),
-        }
-    }
-
-    fun toJson(): JSONObject {
-        val arr = JSONArray()
-        for (item in items) {
-            arr.put(JSONObject().put("kind", item.kind.wire).put("value", item.value))
-        }
-        return JSONObject().put("items", arr).put("timestamp", timestampMs)
-    }
-
-    companion object {
-        fun fromJson(json: JSONObject): PendingShare? {
-            val arr = json.optJSONArray("items") ?: return null
-            val items = mutableListOf<Item>()
-            for (i in 0 until arr.length()) {
-                val o = arr.getJSONObject(i)
-                val kindStr = o.optString("kind", "")
-                if (kindStr.isEmpty()) continue
-                val kind = Item.Kind.entries.firstOrNull { it.wire == kindStr } ?: continue
-                val value = o.optString("value", "")
-                if (value.isEmpty()) continue
-                items += Item(kind, value)
-            }
-            if (items.isEmpty()) return null
-            return PendingShare(items, json.optLong("timestamp", System.currentTimeMillis()))
-        }
+        enum class Kind(val wire: String) { INLINE_TEXT("inlineText"), ATTACHMENT("attachment") }
     }
 }
