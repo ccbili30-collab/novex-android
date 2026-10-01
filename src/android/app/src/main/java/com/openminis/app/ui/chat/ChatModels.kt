@@ -1,94 +1,16 @@
 package com.openminis.app.ui.chat
 
-// [T-android-split-chat] Chat data models extracted verbatim from
-// ChatViewModel.kt: StreamingDelta, ChatMessage, QueuedPrompt,
-// ToolBlockStatus, SlashCommand, AssistantBlock. Full import block copied
-// from ChatViewModel.kt (unused=warnings). Visibility unchanged (public).
-
-import android.content.Context
-import android.graphics.Bitmap
-import android.graphics.BitmapFactory
 import android.net.Uri
-import android.util.Log
-import androidx.lifecycle.ViewModel
-import androidx.lifecycle.ViewModelProvider
-import androidx.lifecycle.viewModelScope
-import androidx.compose.foundation.lazy.LazyListState
-import com.openminis.app.agent.Level
-import com.openminis.app.agent.ToolLoopDetector
-import novex.android.data.chat.MessageRow
-import androidx.compose.material.icons.Icons
-import androidx.compose.material.icons.filled.Compress
-import androidx.compose.material.icons.filled.Delete
-import androidx.compose.material.icons.filled.Lightbulb
-import androidx.compose.material.icons.filled.Psychology
-import androidx.compose.material.icons.outlined.Build
-import androidx.compose.material.icons.outlined.Extension
-import com.openminis.app.data.BPETokenizer
-import com.openminis.app.data.ContextOffload
-import com.openminis.app.data.ContextPolicy
-import com.openminis.app.logging.AppLogger
-import com.openminis.app.data.FileMentionIndex
-import novex.android.data.chat.CompactMarkerRow
-import novex.android.data.model.AgentContentPart
-import novex.android.data.model.AgentToolDefinition
-import novex.android.data.model.LLMMessage
-import novex.android.data.model.LLMModel
-import novex.android.data.model.LLMStreamChunk
-import novex.android.data.model.LLMUsage
-import novex.android.data.model.ModelGroup
+import androidx.compose.ui.graphics.vector.ImageVector
 import novex.android.data.model.ThinkingLevel
-import com.openminis.app.R
-import com.openminis.app.data.repository.ChatRepository
-import com.openminis.app.data.repository.MemoryRepository
-import com.openminis.app.data.repository.ProviderRepository
-import com.openminis.app.provider.ImageBudget
-import com.openminis.app.provider.LLMProvider
-import com.openminis.app.provider.ProviderFactory
-import com.openminis.app.tools.AgentTools
-import com.openminis.app.tools.FileEditTool
-import com.openminis.app.tools.FileReadTool
-import com.openminis.app.tools.FileWriteTool
-import com.openminis.app.tools.MemoryTools
-import com.openminis.app.tools.ReadImageTool
-import com.openminis.app.tools.ToolExecutionResult
-import com.openminis.app.service.SessionActivityTracker
-import com.openminis.app.service.SessionConcurrencyManager
-import kotlinx.coroutines.CancellationException
-import kotlinx.coroutines.Dispatchers
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.flow.MutableSharedFlow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.SharedFlow
-import kotlinx.coroutines.flow.SharingStarted
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.asSharedFlow
-import kotlinx.coroutines.flow.asStateFlow
-import kotlinx.coroutines.flow.combine
-import kotlinx.coroutines.flow.first
-import kotlinx.coroutines.flow.stateIn
-import kotlinx.coroutines.launch
-import kotlinx.coroutines.withContext
-import kotlinx.coroutines.yield
-import org.json.JSONObject
+import novex.core.ContextUsageRecord
 
-/**
- * Per-message streaming snapshot — the high-frequency fields that
- * [ChatViewModel.updateAssistantMessage] used to write straight into
- * [ChatMessage] (and re-publish via the `messages` StateFlow on every
- * token). Splitting them off into a side-channel
- * ([ChatViewModel.streamingById]) keeps the `messages` reference stable
- * during a turn, so the ChatScreen top-level composable's reads
- * (`messages.any/.associate/.isNotEmpty/.lastOrNull`) don't recompose on
- * every token — only on message-level structural changes (new message,
- * delete, retry, etc.).
- *
- * Renderers that care about streaming content subscribe per-item; the
- * effective render value is `streamingById[id]?.content ?: message.content`
- * (and analogously for the other fields). At the end of a streaming turn
- * the side-channel is drained back into the canonical message and the
- * map entry is removed.
- */
+// 会话 UI 层的模型契约：消息气泡、流式增量、排队提示、工具块、斜杠命令。
+// 全部是数据形状定义，行为逻辑在各 ViewModel / 渲染器里。
+
+/** 流式增量侧信道：一条 assistant 消息在回合进行中高频变动的部分。
+ * 渲染端按 `streamingById[id]?.content ?: message.content` 取有效值；
+ * 回合结束后侧信道排空回写进 message 本体。 */
 data class StreamingDelta(
     val content: String,
     val toolBlocks: List<AssistantBlock>,
@@ -100,98 +22,61 @@ data class ChatMessage(
     val role: String,
     val content: String,
     val isStreaming: Boolean = false,
-    // True while waiting on the network for the next model response chunk —
-    // either before the first chunk of a turn, or in the gap after tool results
-    // are sent back and before the next turn starts streaming. Cleared the moment
-    // the next content chunk (text / thinking / tool_use) arrives.
+    // 等下一个模型 chunk 的网络间隙：回合首个 chunk 之前，或工具结果送回后、
+    // 下一轮流式开始前。下一个内容 chunk（text/thinking/tool_use）到达即清除。
     val isAwaitingModelResponse: Boolean = false,
     val imageUris: List<Uri> = emptyList(),
     val attachmentNames: List<String> = emptyList(),
-    // T150: file:// URIs of non-image attachments that the user bubble's
-    // file chip taps into FilePreviewScreen. Aligned with the non-image
-    // suffix of `attachmentNames` (after the imageUris-many image entries).
+    // 非图片附件的 file:// URI，用户气泡里的文件 chip 点进 FilePreviewScreen。
+    // 与 attachmentNames 尾段（imageUris 个图片条目之后）一一对齐。
     val attachmentUris: List<Uri> = emptyList(),
     val toolBlocks: List<AssistantBlock> = emptyList(),
-    // T300: thinking-level snapshot at the moment this assistant message
-    // was created. Used by the chat UI to suppress the "Deep Thinking"
-    // collapsible when the user's per-session toggle is OFF (forced-
-    // reasoning models on OpenRouter still emit reasoning_content even
-    // though the wire request omits the reasoning field — see the T300
-    // analysis report for why we hide rather than silence). In-memory
-    // only; assistant messages restored from DB get null and fall back
-    // to the chat's current thinking level at render time.
-    val thinkingLevel: novex.android.data.model.ThinkingLevel? = null,
+    // 本条 assistant 消息创建时的 thinking-level 快照。会话级深度思考开关
+    // 关掉时 UI 靠它隐藏 Deep Thinking 折叠块（强推理模型仍可能吐
+    // reasoning_content——UI 选择隐藏而不是静默）。仅内存态：DB 恢复出来的
+    // 消息为 null，渲染时回落到会话当前档位。
+    val thinkingLevel: ThinkingLevel? = null,
     val error: String? = null,
-    // Queued user prompt awaiting injection into the running agent loop.
-    // Mirrors iOS ChatMessage.isQueued / queuedPromptId.
+    // 已入队、等待注入正在运行的 agent loop 的用户提示。
     val isQueued: Boolean = false,
     val queuedPromptId: String? = null,
-    /** Exact structured sources selected for this request; null before selection or on legacy turns. */
-    val novexContextUsage: novex.core.ContextUsageRecord? = null,
-    // Set to true when this message belongs to a range that has been folded
-    // into a compact summary marker. Mirrors iOS ChatMessage.isCompactedHistory:
-    // the message stays in the UI, but renders at reduced opacity so the user
-    // can still scroll/read it while seeing it's no longer in the model's
-    // active context window.
+    /** 本次请求实际选中的结构化来源；选择前或老回合为 null。 */
+    val novexContextUsage: ContextUsageRecord? = null,
+    // 已被折叠进 compact 摘要标记的历史区间里的消息：留在 UI 可滚动可读，
+    // 但降透明度提示它已不在模型活跃上下文里。
     val isCompactedHistory: Boolean = false,
-    // Every DB row id this UI message represents — usually a single id,
-    // but consecutive assistant turns get merged in `loadSessionMessages`
-    // and the merged bubble carries every source row's id here. Phase
-    // 2.5 boundary resolution looks up `lastCompactedMessageId` /
-    // `firstKeptMessageId` against this set so a merged-into-tail row
-    // still locates the right divider position. Mirrors iOS
-    // ChatMessage.sourceSortOrder, which serves the same UI↔raw mapping
-    // role (AIChatViewModel.swift:3411, 3421).
+    // 该 UI 气泡代表的全部 DB 行 id——通常一个，但连续 assistant 回合在
+    // loadSessionMessages 合并后气泡携带每个来源行的 id。Phase 2.5 边界
+    // 解析用它在合并尾巴上定位正确的分割线位置。
     val sourceDbIds: List<String> = emptyList(),
-    /** First persisted row represented by this bubble; sibling navigation uses it. */
+    /** 气泡代表的首个持久化行；兄弟分支导航用它。 */
     val branchAnchorDbId: String? = sourceDbIds.firstOrNull(),
-    /** One-based sibling position rendered as e.g. 2/2. */
+    /** 一基兄弟位次，渲染为 2/2 之类。 */
     val branchIndex: Int = 1,
     val branchCount: Int = 1,
 ) {
-    /**
-     * [T-bridge-message-ui-leak-android] True when this UI message is the
-     * internal role-alternation bridge that `injectQueuedPromptsAsNewTurn`
-     * inserts into `agentHistory` (see ChatViewModel). It is an internal
-     * LLM-facing message and must NEVER render as a chat bubble.
-     *
-     * On Android the bridge goes into `agentHistory` ONLY (never persisted
-     * to the DB, never appended to `_messages`), so it cannot currently
-     * leak through any UI path — unlike iOS, where a persisted bridge row
-     * leaked after the 2026-07-23 wording change. This property exists as a
-     * belt-and-suspenders filter (applied at the `uiMessages` sink) so a
-     * future refactor that accidentally routes the bridge into `_messages`
-     * still can't surface it. Mirrors iOS `ChatMessage.isInternalBridge`.
-     */
+    /** 内部桥接消息：排队提示注入时插进 agentHistory 的角色交替占位。
+     * 只面向 LLM，绝不渲染成气泡——本属性是 uiMessages 出口处的兜底过滤。 */
     val isInternalBridge: Boolean
         get() = role == "assistant" && isInternalBridgeText(content)
 
     companion object {
-        /** Current bridge wording — MUST stay byte-identical to the string
-         *  written in ChatViewModel.injectQueuedPromptsAsNewTurn. */
+        /** 现行桥接文案——必须与 ChatViewModel.injectQueuedPromptsAsNewTurn
+         *  写入的字符串逐字节一致。 */
         private const val INTERNAL_BRIDGE_TEXT =
             "(Interrupted mid-task by a new user message. Decide based on the new " +
                 "message and overall context whether the prior task should continue — do " +
                 "not forget or abandon it unless the user explicitly says to stop, or the " +
                 "new message makes clear it is no longer needed.)"
 
-        /**
-         * Every bridge text this app has ever generated. Matching only the
-         * current constant would miss a message produced by an OLDER build
-         * carrying the previous wording — exactly the leak class iOS hit after
-         * its 2026-07-23 wording change (d2e111e9). Match against the full set
-         * so old and new bridges are both recognized. Mirrors iOS
-         * `RawMessage.internalBridgeTexts`.
-         */
+        // 历史上出现过的所有桥接文案，一起匹配——老版本写出的桥接消息
+        // 在 restore 后也要被认出，不能漏成可见气泡。
         private val INTERNAL_BRIDGE_TEXTS = listOf(
             INTERNAL_BRIDGE_TEXT,
-            // Pre-2026-07-23 wording.
             "(Interrupted mid-task to handle your new message. Will return to the prior task after.)",
         )
 
-        /** True when [text] is any known internal-bridge string. Trims
-         *  leading/trailing whitespace to tolerate encoding drift from any
-         *  round-trip, matching iOS `RawMessage.isInternalBridgeText`. */
+        /** [text] 是否为任一已知桥接文案；先 trim 容忍往返编码漂移。 */
         fun isInternalBridgeText(text: String): Boolean {
             val trimmed = text.trim()
             return INTERNAL_BRIDGE_TEXTS.any { trimmed == it }
@@ -199,49 +84,29 @@ data class ChatMessage(
     }
 }
 
-/** A user prompt queued while the agent loop is still running. Mirrors iOS QueuedPrompt. */
+/** agent loop 运行中入队的用户提示。 */
 data class QueuedPrompt(
     val id: String,
     val text: String,
     val attachments: List<InputAttachment> = emptyList(),
 )
 
-/**
- * Execution status of an assistant tool block. Mirrors iOS `ToolBlockStatus`
- * plus two Android-only granularity states for UI animation:
- *
- *  - `STREAMING`: partial tool-input JSON is still arriving (iOS `.streaming(bytes:)`).
- *  - `PENDING`: tool JSON is complete, waiting for the execution dispatcher
- *    to start. Brief window between ToolCallComplete and `executeTool()`
- *    invocation — visible when the agent pipelines multiple tool calls.
- *  - `RUNNING`: tool body is executing (iOS `.running`).
- *  - `SUCCESS`: tool returned without error (iOS `.success`).
- *  - `FAILED`: tool returned an error (iOS `.failed(message:)`).
- *  - `CANCELLED`: user cancelled mid-execution (iOS `.cancelled`).
- *  - `TIMEOUT`: wrapper timeout hit before the tool returned — distinct from
- *    FAILED so the UI can render a clock icon instead of a generic error.
- */
+/** 工具块的执行状态机：
+ *  STREAMING 输入 JSON 还在到达；PENDING JSON 齐了等执行调度；
+ *  RUNNING 执行中；SUCCESS/FAILED/CANCELLED 正常终态；
+ *  TIMEOUT 包装超时（与 FAILED 分开，UI 画时钟而不是错误）。 */
 enum class ToolBlockStatus {
     STREAMING, PENDING, RUNNING, SUCCESS, FAILED, CANCELLED, TIMEOUT
 }
 
-/** Slash command descriptor shown in the "/" popup. Mirrors iOS SlashCommand. */
+/** "/" 弹出菜单里的命令行。isSkill=true 的行由已安装 Skill 合成。 */
 data class SlashCommand(
     val id: String,
-    val icon: androidx.compose.ui.graphics.vector.ImageVector,
+    val icon: ImageVector,
     val title: String,
     val subtitle: String,
-    /**
-     * [T-skill-slash a88ea8f9] True when this row was synthesized from an
-     * installed Skill (vs. a built-in command). Skill rows fill the
-     * composer with `/<name>` on tap and dismiss the menu — the actual
-     * SKILL.md reading + behavior happens model-side when the message is
-     * sent (skills already get injected into the system prompt via
-     * SkillRepository.enabledForSession). Default false so existing
-     * built-in rows construct unchanged.
-     */
+    // Skill 行点按只往输入框填 /<name>；SKILL.md 的读取发生在模型侧。
     val isSkill: Boolean = false,
-    // [P3.3 裁军] isMcp 标志随 MCP 集成面退役删除。
 )
 
 data class AssistantBlock(
@@ -251,32 +116,25 @@ data class AssistantBlock(
     val toolStatus: ToolBlockStatus? = null,
     val toolTitle: String = "",
     val toolName: String = "",
-    val toolArgs: String = "",   // raw JSON args for UI rendering (command, path, old_string, etc.)
+    val toolArgs: String = "",   // 原始 JSON 参数（command/path/old_string 等），UI 渲染用
     val durationMs: Long = 0L,
     val startTimeMs: Long = 0L,
-    /** Page URL at time of browser action execution (mirrors iOS AssistantBlock.browserURL). */
+    /** 浏览器动作执行时刻的页面 URL。 */
     val browserURL: String? = null,
-    /** Local file path to screenshot JPEG (mirrors iOS AssistantBlock.imageFilePath). */
+    /** 截图 JPEG 的本地路径。 */
     val imageFilePath: String? = null,
-    /**
-     * [T-android-gemini3-thoughtsig / #179] Gemini 3.x thought signature for a
-     * tool_use block. Carried here so [buildTurnParts] (the persistence path,
-     * which rebuilds ToolUse parts from blocks) can round-trip it to the DB.
-     * Null for non-Gemini providers and thinking-off Gemini calls.
-     */
+    /** Gemini 3.x 的 thought signature，持久化路径（buildTurnParts）回写 DB 用；
+     *  非 Gemini provider 与关思考的调用为 null。 */
     val thoughtSignature: String? = null,
-    /** Host-assigned channel; text accompanying a tool turn is execution, not a final answer. */
+    /** 宿主判定的通道标记：随工具回合出现的文字是过程说明，不是最终回答。 */
     val executionText: Boolean = false,
-    /** Host-prepared effective parameters; raw toolArgs and persisted input remain verbatim. */
+    /** 宿主加工后的生效参数；raw toolArgs 与落库 input 保持原文。 */
     val executionArgs: String? = null,
 ) {
     val isText: Boolean get() = kind == "text"
 
-    /**
-     * The channel used by the conversation renderer.  Keeping this decision
-     * next to the persisted block shape prevents each screen from guessing
-     * whether a piece of text is a real answer or an execution note.
-     */
+    /** 会话渲染器的呈现通道——把「这段文本是回答还是过程」的判定收在
+     *  块结构旁边，免得每个屏各自猜。 */
     internal fun presentationChannel(): NovexPresentationChannel = when {
         kind == "thinking" -> NovexPresentationChannel.THINKING
         kind == "tool_use" -> NovexPresentationChannel.TOOL
@@ -286,7 +144,7 @@ data class AssistantBlock(
     }
 }
 
-/** Stable presentation channels; this is not a provider protocol. */
+/** 稳定的呈现通道枚举；这不是 provider 协议。 */
 internal enum class NovexPresentationChannel {
     FORMAL_ANSWER,
     PROCESS_TEXT,
@@ -295,7 +153,7 @@ internal enum class NovexPresentationChannel {
     INFO,
 }
 
-/** Visible answer consumers share this projection; raw/export/provider content remains untouched. */
+/** 可见回答的统一投影：只拼非过程文本块；原始/导出/provider 内容不受影响。 */
 internal fun formalAssistantText(blocks: List<AssistantBlock>, fallback: String): String =
     if (blocks.isEmpty()) fallback else blocks.filter { it.isText && !it.executionText }
         .joinToString("\n\n") { it.content }
