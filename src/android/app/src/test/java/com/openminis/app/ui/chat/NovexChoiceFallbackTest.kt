@@ -54,7 +54,11 @@ class NovexChoiceFallbackTest {
 
     @Test
     fun `explicit choice-tool request gets one forced structured retry`() {
-        val source = File("src/main/java/com/openminis/app/ui/chat/ChatViewModel.kt").readText()
+        // ChatViewModel is split across ChatViewModel*.kt collaborators; scan the family.
+        val source = File("src/main/java/com/openminis/app/ui/chat")
+            .listFiles { f -> f.name.startsWith("ChatViewModel") && f.extension == "kt" }
+            .orEmpty()
+            .joinToString("\n") { it.readText() }
 
         assertTrue(source.contains("MissingChoiceToolRecoveryPolicy"))
         assertTrue(source.contains("choiceRepairAttempted"))
