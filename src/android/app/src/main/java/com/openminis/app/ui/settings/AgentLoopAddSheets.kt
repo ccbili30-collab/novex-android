@@ -44,12 +44,12 @@ import novex.android.ui.Scaffold
 import novex.android.ui.TopAppBar
 
 /**
- * Agent 循环可用集的两个添加页，共用一张多选骨架：
+ * 多选挑选页骨架（Agent 循环添加页 + 模型组添加页共用）：
  * 顶栏 = 返回 + 取消 + 「添加 N」，主体留给各页自己填。
  */
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-private fun AgentLoopPickerScaffold(
+internal fun AgentLoopPickerScaffold(
     titleRes: Int,
     confirmCount: Int,
     onBack: () -> Unit,

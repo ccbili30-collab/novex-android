@@ -3,14 +3,6 @@ package com.openminis.app.ui.settings
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.lazy.LazyColumn
-import androidx.compose.material3.ExperimentalMaterial3Api
-import androidx.compose.material3.Icon
-import androidx.compose.material3.IconButton
-import androidx.compose.material3.MaterialTheme
-import novex.android.ui.Scaffold
-import androidx.compose.material3.Text
-import novex.android.ui.TopAppBar
-import androidx.compose.material3.TopAppBarDefaults
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.collectAsState
 import androidx.compose.runtime.getValue
@@ -18,18 +10,16 @@ import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.text.font.FontWeight
-import androidx.compose.ui.unit.dp
 import androidx.compose.ui.res.stringResource
 import com.openminis.app.R
-import novex.android.data.model.SystemVoiceEntries
 import com.openminis.app.data.repository.ProviderRepository
 import com.openminis.app.ui.components.PickerModalityFilter
+import com.openminis.app.ui.components.QuickTestSheet
 import com.openminis.app.ui.components.modelEntryPickerItems
-import com.openminis.app.ui.components.MinisButton
-import com.openminis.app.ui.components.MinisTextButton
+import novex.android.data.model.ModelEntry
+import novex.android.data.model.SystemVoiceEntries
 
-@OptIn(ExperimentalMaterial3Api::class)
+/** 往某个模型组里批量加条目：多选 + 顶栏确认。Vision 组只列图像模态模型。 */
 @Composable
 fun AddModelsToGroupScreen(
     groupId: String,
@@ -37,84 +27,46 @@ fun AddModelsToGroupScreen(
     onBack: () -> Unit,
 ) {
     val config by providerRepository.config.collectAsState()
-    val group = config.modelGroups.find { it.id == groupId }
-
-    if (group == null) {
+    val group = config.modelGroups.find { it.id == groupId } ?: run {
         onBack()
         return
     }
 
     val existingIds = group.memberEntryIds.toSet()
-    // [P3.3 裁军] 语音 ASR/TTS 模态过滤分支随语音全家退役删除；仅保留
-    // Vision Group 的图像模态过滤。
     val modalityFilter = when (groupId) {
-        // [T-android-vision-group] Vision Group picker: only image-capable models.
         config.visionGroupId -> PickerModalityFilter.IMAGE_INPUT
         else -> null
     }
-    val availableEntries = config.modelEntries.filter {
-        !it.isHidden && it.id !in existingIds
-    }
+    val available = config.modelEntries.filter { !it.isHidden && it.id !in existingIds }
 
     val searchQuery = remember { mutableStateOf("") }
     var selectedIds by remember { mutableStateOf(setOf<String>()) }
-    var quickTestEntry by remember { mutableStateOf<novex.android.data.model.ModelEntry?>(null) }
+    var quickTestEntry by remember { mutableStateOf<ModelEntry?>(null) }
     val collapsedInstanceIds = remember(config) {
-        // T185: default-collapsed mirrors pre-refactor behaviour. The
-        // shared picker auto-expands when search is non-empty so hits
-        // remain visible regardless of section state.
-        // [T-android-provider-voice] Voice scenario: DON'T collapse — a
-        // multi-voice provider (Azure ~39, MiMo 9) would fold all-but-one
-        // voice behind a disclosure (iOS d4e3198f seedCollapse fix).
+        // 默认折叠；搜索非空时共享 picker 会自动展开命中项。
+        // 但模态过滤场景（如多 voice 的 provider）不折叠，否则只剩一行可见。
         mutableStateOf(
-            if (modalityFilter != null) emptySet()
-            else config.instances.map { it.id }.toSet(),
+            if (modalityFilter != null) emptySet() else config.instances.map { it.id }.toSet(),
         )
     }
 
-    Scaffold(
-        topBar = {
-            TopAppBar(
-                title = { Text(stringResource(R.string.model_group_detail_add_models), fontWeight = FontWeight.SemiBold) },
-                navigationIcon = {
-                    IconButton(onClick = onBack) {
-                        Icon(novex.android.ui.NovexIcons.ArrowBack, contentDescription = stringResource(R.string.model_group_detail_back))
-                    }
-                },
-                actions = {
-                    MinisTextButton(onClick = onBack) { Text(stringResource(R.string.common_cancel)) }
-                    MinisButton(
-                        onClick = {
-                            val updated = group.copy(
-                                memberEntryIds = (group.memberEntryIds + selectedIds).toMutableList()
-                            )
-                            providerRepository.updateGroup(updated)
-                            onBack()
-                        },
-                        enabled = selectedIds.isNotEmpty(),
-                        modifier = Modifier.padding(end = 8.dp),
-                    ) {
-                        Text(stringResource(R.string.add_models_to_group_add_count, selectedIds.size))
-                    }
-                },
-                colors = TopAppBarDefaults.topAppBarColors(
-                    containerColor = MaterialTheme.colorScheme.background,
-                ),
+    AgentLoopPickerScaffold(
+        titleRes = R.string.model_group_detail_add_models,
+        confirmCount = selectedIds.size,
+        onBack = onBack,
+        onConfirm = {
+            providerRepository.updateGroup(
+                group.copy(memberEntryIds = (group.memberEntryIds + selectedIds).toMutableList()),
             )
+            onBack()
         },
-        containerColor = MaterialTheme.colorScheme.background,
     ) { padding ->
-        // Resolved here (Composable context) — LazyListScope below can't call
-        // stringResource. Localizes the injected System provider section label.
+        // LazyListScope 里调不了 stringResource，System 分区标签在 Composable 层先取。
         val systemProviderLabel = stringResource(R.string.voice_provider_system)
-        LazyColumn(
-            modifier = Modifier
-                .fillMaxSize()
-                .padding(padding),
-        ) {
+        LazyColumn(Modifier.fillMaxSize().padding(padding)) {
             modelEntryPickerItems(
                 instances = config.instances,
-                availableEntries = availableEntries,
+                availableEntries = available,
                 selectedIds = selectedIds,
                 onToggleSelection = { id ->
                     selectedIds = if (id in selectedIds) selectedIds - id else selectedIds + id
@@ -125,7 +77,7 @@ fun AddModelsToGroupScreen(
                 emptySearchTextRes = R.string.add_models_to_group_no_match,
                 searchPlaceholderRes = R.string.add_models_to_group_search_models,
                 clearContentDescriptionRes = R.string.add_models_to_group_clear,
-                // System virtual entries have no cloud endpoint to smoke-test.
+                // System 虚拟条目没有云端端点可冒烟测试。
                 onQuickTest = { if (!SystemVoiceEntries.isSystemEntryId(it.id)) quickTestEntry = it },
                 modalityFilter = modalityFilter,
                 excludeIds = existingIds,
@@ -134,9 +86,9 @@ fun AddModelsToGroupScreen(
         }
     }
 
-    quickTestEntry?.let { entry ->
-        com.openminis.app.ui.components.QuickTestSheet(
-            entry = entry,
+    quickTestEntry?.let {
+        QuickTestSheet(
+            entry = it,
             providerRepository = providerRepository,
             onDismiss = { quickTestEntry = null },
         )
