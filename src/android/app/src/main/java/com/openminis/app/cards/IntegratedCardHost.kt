@@ -14,7 +14,7 @@ import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import novex.content.CardKind
-import novex.android.IntegratedCardLibrary
+import novex.android.ui.cards.IntegratedCardLibrary
 import com.openminis.app.MinisApp
 
 @Composable fun IntegratedCardHost(kind:CardKind?=null,root:String?=null,target:String?=null,onChat:(String)->Unit,onBack:()->Unit={},onSurface:(Boolean)->Unit={},importUri:String?=null,resumeDraftId:String?=null,embedded:Boolean=false,createOnly:Boolean=false,onOpenCard:((String)->Unit)?=null) {

@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.data
 
 import android.content.Context
 import android.util.Log

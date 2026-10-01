@@ -16,7 +16,7 @@ import com.openminis.app.logging.AppLogger
 import java.io.File
 import java.security.MessageDigest
 import org.json.JSONObject
-import novex.android.ContentPaths
+import novex.android.data.ContentPaths
 
 internal fun imageCredentialFingerprint(credential: String): String =
     MessageDigest.getInstance("SHA-256")

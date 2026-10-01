@@ -4,7 +4,7 @@ import android.content.Context
 import novex.android.data.model.AgentToolDefinition
 import novex.android.data.model.AgentToolParam
 import org.json.JSONObject
-import novex.android.ContentPaths
+import novex.android.data.ContentPaths
 
 object FileWriteTool {
     const val NAME = "file_write"

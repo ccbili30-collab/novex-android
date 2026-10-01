@@ -1,7 +1,7 @@
 package com.openminis.app.agent
 
 import android.content.Context
-import novex.android.ContentPaths
+import novex.android.data.ContentPaths
 
 /**
  * The single Novex system prompt shared by every conversation. Creation is an

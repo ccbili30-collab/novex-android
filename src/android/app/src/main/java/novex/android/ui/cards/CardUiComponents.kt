@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.ui.cards
 
 import androidx.compose.foundation.*
 import androidx.compose.foundation.layout.*

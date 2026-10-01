@@ -1,4 +1,4 @@
-package novex.android
+package novex.android.ui.cards
 
 import android.content.Context
 import novex.content.ReadingLayout

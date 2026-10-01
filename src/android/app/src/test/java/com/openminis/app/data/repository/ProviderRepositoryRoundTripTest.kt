@@ -1,6 +1,7 @@
 package com.openminis.app.data.repository
 
 import android.app.Application
+import novex.android.data.model.LLMModel
 import novex.android.data.model.ModelGroup
 import novex.android.data.model.ProviderCredential
 import novex.android.data.model.ProviderInstance
@@ -119,6 +120,51 @@ class ProviderRepositoryRoundTripTest {
         assertEquals(
             listOf("order-z", "order-x", "order-y"),
             repo.instances.map { it.id }.filter { it.startsWith("order-") },
+        )
+    }
+
+    /**
+     * P0（审计 D2，对齐 P3.5a 冻结面）：replaceEntries 的疑缩守护——
+     * 原本 ≥4 条且新表不足一半时视为瞬时 API 抽风，分组引用原样保留；
+     * 正常缩水则照旧清理失效引用（分组与 agent-loop 直钉）。
+     */
+    @Test
+    fun replaceEntriesSuspiciousShrinkKeepsGroupRefs() {
+        val repo = newRepository()
+        // 第三方端不播种，条目全由 replaceEntries 驱动，计数可控。
+        repo.addInstance(
+            ProviderInstance(
+                id = "shrink-relay", label = "疑缩中转", providerType = ProviderType.openAI,
+                credentialType = ProviderCredential.apiKey,
+                customBaseURL = "https://relay.example.com/v1",
+            ),
+        )
+        fun model(id: String) = LLMModel(id = id, displayName = id, provider = "OpenAI")
+
+        repo.replaceEntries("shrink-relay", List(4) { i -> model("m$i") })
+        val full = repo.entriesFor("shrink-relay").map { it.id }
+        assertEquals(4, full.size)
+        repo.addGroup(ModelGroup(id = "shrink-group", name = "疑缩组", memberEntryIds = mutableListOf(full[0], full[1], full[2])))
+
+        // 疑缩：4 条 → 1 条（不足一半）→ 条目替换照做，分组引用不动。
+        repo.replaceEntries("shrink-relay", listOf(model("m0")))
+        assertEquals(listOf(full[0]), repo.entriesFor("shrink-relay").map { it.id })
+        assertEquals(
+            "疑缩守护：瞬时抽风不得清掉用户整理的分组引用",
+            listOf(full[0], full[1], full[2]),
+            repo.group("shrink-group")!!.memberEntryIds,
+        )
+
+        // 重建到 4 条后正常缩到 2 条（2*2 ≥ 4，不触发守护）→ 失效引用照常清理。
+        repo.replaceEntries("shrink-relay", List(4) { i -> model("m$i") })
+        val rebuilt = repo.entriesFor("shrink-relay").map { it.id }
+        assertEquals(4, rebuilt.size)
+        repo.addGroup(ModelGroup(id = "shrink-group-2", name = "正常组", memberEntryIds = mutableListOf(rebuilt[0], rebuilt[2], rebuilt[3])))
+        repo.replaceEntries("shrink-relay", listOf(model("m0"), model("m1")))
+        assertEquals(
+            "正常缩水：被换掉的条目引用应清理",
+            listOf(rebuilt[0]),
+            repo.group("shrink-group-2")!!.memberEntryIds,
         )
     }
 }

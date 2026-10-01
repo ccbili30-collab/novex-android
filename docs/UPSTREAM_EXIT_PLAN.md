@@ -811,6 +811,78 @@ ui 战线合计（本刀树口径）：≥80% 档约 85 件里 ui 占 55 件 / �
 半血档 25 件里 ui 占 13 件 / 约 24,900 行。ui.navigation（61.5%）、
 ui.theme（46.0%）已落半血，维持随邻近战役顺带即可。
 
+### P3.6 · 门面拆除排期 — 黄档 — 审计 D12 记档 — [ ]
+
+> 来源：架构质量审计（`docs/ARCHITECTURE_QUALITY_AUDIT.md` §2）逐件清点。
+> 消费者数实测口径见审计附录命令，动手前重跑一次（数字会随改接漂移，
+> 本表数字为 2026-09-30 审计基线 + 本刀已知变化）。
+> **排序原则：消费者少的先拆、纯转发先于正典留位、有嵌套类型钉死的跟 UI 线联动最后拆。**
+
+#### 批次 A · 疑似零消费 typealias（先 grep 确认，零即直接删）
+
+| 旧路径件 | 本体 | 剩余消费者 | 可拆条件 |
+|---|---|---|---|
+| OpenAIOAuthManager（+异常别名） | authkit.CodexLoginFlow | 未计（疑 0） | grep 全仓零引用即删 |
+| GeminiOAuthManager / KimiOAuthManager / XAIOAuthManager | authkit.*LoginFlow | 未计（疑 0） | 同上 |
+| OAuthCallbackServer | authkit.LoopbackReceiver | 未计（疑 0） | 同上 |
+
+#### 批次 B · 纯转发对象门面（无正典形状，消费点改 import 即拆，最廉价）
+
+| 旧路径件 | 行数 | 转发目标 | 剩余消费者 | 可拆条件 |
+|---|---|---|---|---|
+| SessionActivityTracker | 14+ 成员 | runtime.LiveSessionHub | 旧 runtime 调用方 | 消费点改引 LiveSessionHub |
+| AppLogger | 52 | logkit.RunLog | 全仓约 50（transport/models 已直引 RunLog） | 随 UI 清洗线逐屏改接；RunLog API 同名 info/warning/error/debug 可机械换 |
+| BackgroundTaskNotifier | 35 | runtime.TaskDoneNotifier | 少量 | 同上 |
+| SessionConcurrencyManager | 24 | runtime.StreamSlotLimiter | 少量 | 同上 |
+| DynamicIslandSupport | 20 | runtime.LiveUpdatesProbe | 少量 | 同上 |
+| CrashFrequencyDetector | 40 | crashguard 两件 | 少量 | 同上 |
+
+#### 批次 C · typealias 门面（按剩余消费者数降序）
+
+| 旧路径符号 | 本体 | 剩余消费者 | 可拆条件 |
+|---|---|---|---|
+| SoulStore/SoulMetadata/SoulFile/SoulMDParser（4 别名同文件） | soul 三件 | 11 件 | 消费点（设置页为主）改引 soul 包 |
+| ModelsDevApi | models.ModelsDevCatalog | 8 件 | 消费点改 import |
+| OAuthManager | authkit.VendorLoginFlow | 7 件 | 消费点改 import |
+| ClaudeOAuthManager | authkit.ClaudeLoginFlow | 4 → 3（本刀 transport 已穿透改接） | 余 3 处改 import |
+| LocaleWrap | localekit.LocaleOverride | 4 | 消费点改 import |
+| EncryptedPrefsFactory | vault.SelfHealingPrefs | 4 | 消费点改 import |
+| ShareCoordinator | sharekit | 4 | 消费点改 import |
+| DeepLinkHandler | navlink.LinkParser | 3 | 同文件正典 DeepLinkAction 拆完后一并（见批次 D） |
+| SharedShareStore | sharekit | 3 | 消费点改 import |
+| ChatExporter | sharekit | 2 | 消费点改 import |
+| NetworkMonitor | netwatch.LinkMonitor | 2 | 消费点改 import |
+
+#### 批次 D · 正典留位件（嵌套类型钉死，需消费方改引新类型）
+
+| 旧路径件 | 钉住的形状 | 剩余消费者 | 可拆条件 |
+|---|---|---|---|
+| agent/SoulStore.kt（同文件） | `SoulBodyLimitCheck` 密封族 + `migrateLegacyAssistantName` | 11 | 设置页 when 分支改引 soul 包 |
+| deeplink/DeepLinkCoordinator | `ChatAction`/`PendingChatInput` | 7 | MainActivity/AppNavigation 改引 PendingLinkFx 同名类型 |
+| share/PendingShare | `PendingShare.Item.Kind` | 7 | sharekit 内部类型升顶层后改引 |
+| deeplink/DeepLinkHandler.kt（同文件） | `DeepLinkAction` 密封族 | 3 | 同 DeepLinkCoordinator |
+| service/SessionBadgeStore | `SessionBadgeState` 枚举 + prefs 键契约 | 4 | UI 改引 runtime.SessionBadges |
+| power/PowerOptimizationManager | `Vendor` 枚举（OEM 名单冻结） | 2 | 设置页改用 OemPowerGates.Vendor（typealias 已备好） |
+| share/ShareHandoffPolicy | `Outcome` | 1 | sharekit 类型升顶层后改引 |
+
+#### 批次 E · 新增桥件（本刀 D1 包根归位产生，与 UI 清洗线联动）
+
+| 件 | 保的旧名字 | 剩余消费者 | 可拆条件 |
+|---|---|---|---|
+| `novex/android/LegacyUiBridge.kt` | ContentPaths/CardSessionModel/LibraryModel/FileTransferModel/CardThumbnail/ReadingViewPrefs/CardImportProvider/introductionModule/moduleExcerptText | 15（com.openminis.app.ui 14 件 + MinisApp） | UI 清洗线逐件改引 `novex.android.ui.cards` / `novex.android.data.ContentPaths`；MinisApp/AppNavigation 的全限定引用随 P4 改接；全部改完即删桥 |
+
+#### 编排门面（不排拆除，立防增规矩 —— 审计 D13）
+
+`ProviderRepository`(756)/`ChatRepository`(600)/`SkillRepository`(708)：对外 API
+形状钉死旧路径，机制已全部下沉 novex.android.repo / data。**只准减不准增**：
+新能力一律先落 novex 包再转发；往这三件里加方法需要在 PR 里说明为什么不能落新包。
+
+#### 大手术排期记档（本刀不做，防丢档）
+
+- **NovexTransportProvider 1,379 行四线协议拆分**（审计 D3）：下次加供应商/线协议时按线拆 request-mapper + 公共调度壳；建议 UI 线落地后随接口层收缝一并做。
+- **repo/authkit/迁移链测试补全**（审计 D7/D8/D16）：下次触碰对应包时先补（五家 OAuth PKCE/回调、46 步迁移链 MigrationTestHelper、sharekit/vault 窄测）。
+- **runtime 三族拆包**（审计 D4）、**JSON 双栈收敛**（D9）、**GlobalScope/runBlocking**（D11）：见审计还债时点列。
+
 ### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
 
 MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
@@ -873,3 +945,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-30 | 本 PR（P3.5a） | 战线重划（UI 移交 feat/ui-rikkahub，本线专打非 UI 底层）；data/repository 三件真重写：实现层拆入新包 novex.android.repo 12 件（技能 4 + 会话 3 + 供应商 5），公共 API 门面钉旧路径（ui 嵌套类型/全限定引用不可经 typealias 或继承桥透传，调用方零改动、与 UI 战线零冲突）；冻结面逐字保留（skills.db DDL 与升级、目录与虚拟挂载布局、SKILL.md 格式与解析容忍度、提示协议文本、导出 zip/TTL、GitHub 重试纪律、prefs 名与键集、导出导入 JSON 键集与模态位域、DAO 面零改动、API 签名含参数名）；既有测试零断言改动全过 + 新增 repository 层 16 例 + 全量单测 1,369 条通过 | 旧路径三件相似度 95%→25.7%、69%→18.9%、70%→10.8%（全部 <40% 达标）；新包 12 件对上游原件 <16%；血统：上游未动 60f/11,827 不变，上游改动 118f/74,890→118f/71,618（-3,272 行），Novex 新增 402f/56,627→413f/59,146；改动桶三档 85f/39,732、25f/29,330、8f/2,556（<40% 档 +3 件即本轮三件）；P3.5 小节落款含给 UI 战线的移交清单 |
 | 2026-09-30 | 本 PR（P3.5b） | service 三件+crash+小件真重写：主刀 AgentForegroundService（96.4%→7.4，Manifest 壳+委托）/ToolOverlayController（99.7%→整体迁移删件）/SessionActivityTracker（99.4%→3.3，占据状态中枢 syncService 单点边沿裁决）/CrashFrequencyDetector（未动桶→4.4，风暴检测与分享流程拆 BurstGuard+ShareFlow）；小件血统甄别全为上游：BackgroundTaskNotifier（99.1→11.5）/AppLogger+LogcatTailer（未动桶→7.5/迁移删件）/DynamicIslandSupport（→32.3）/SessionBadgeStore（→15.9）/SessionConcurrencyManager（47.9→14.0）；新包 novex.android.runtime 9 件 + crashguard 2 件 + logkit 2 件（对上游原件 12 件 <40%，TaskDoneNotifier 43.4 为冻结面记档；旧路径 ToolOutcome 枚举钉原位 100% 记档）；未动三件：CrashFileReporter（ACRA SPI）、NativeCrashHandler（JNI 符号绑类名）、ProcessExitEvidence（Novex 自有）；冻结面逐字保留（渠道 id/通知 id/Manifest 组件/广播 action/prefs 名键/悬浮窗类型与 FLAG 与几何/崩溃窗语义/zip 与收件箱/logcat 命令行/日志文件名与行格式/深链）；既有测试零改动 + 新增 5 件 33 例 | 血统：上游未动 59f/11,664 → 53f/9,960，上游改动 119f/71,325 → 123f/68,947，Novex 新增 421f/61,681 → 434f/65,011；改动桶三档 84f/36,610 → 81f/33,962（≥80%）、27f/32,160 → 26f/32,066、8f/2,555 → 16f/2,919（<40% 档 +8 件即本轮重写件） |
 | 2026-09-30 | 本 PR（P3.5c） | auth 十件+SoulStore+ModelsDevApi+横切残件（deeplink/network/i18n/power/util/share）真重写：实现拆入 novex.android.authkit 12 件（OAuthWire/PkceMaterial/CredentialVault/LoopbackReceiver/LoopbackRedirectRelay/VendorLoginFlow+Claude/Codex/Gemini/Xai/Kimi/OpenRouter 六流/RefreshGate 刷新单飞抽公共）+ soul 2 件 + models 并入 ModelsDevCatalog + navlink/netwatch/localekit/powerguard/vault/sharekit 17 件；旧路径 typealias 门面 + 钉形嵌套类型正典留位（DeepLinkAction/ChatAction/Vendor/SoulBodyLimitCheck/PendingShare.Item.Kind/Outcome——typealias 转发不了嵌套类）+ 两 Manifest 壳；冻结面逐字（六家端点/client_id/scope/PKCE 形态/端口/prefs 名键/刷新时序含 403 保令牌与先比对再删除/models.dev TTL 与缓存文件/深链 URI 表/分享 wire 与 300s 窗/OEM 组件清单/自愈阶梯/SOUL.md 全套）；SystemPromptBuilder 零引用裁撤；既有测试零改动 + 新增 4 件 27 例（OAuth 过期与刷新/Soul 回路/models.dev 缓存与富化/深链解析）；全量 1,444 条 0 失败；新增 scripts/p35c_similarity_check.py 自查脚本（新实现↔基线配对；净眼复核补收漏配对后 OpenRouterKeyFlow 实测 50.4%——三通道确认上游即零调用死码，删除随葬；其余全 <40%、最差 39.4） | 血统：上游未动 53f/9,960 → 38f/7,143，上游改动 123f/68,947 → 136f/66,615，Novex 新增 434f/65,011 → 463f/69,307；改动桶三档 81f/33,962 → 74f/31,197（≥80%）、26f/32,066 → 24f/31,818、16f/2,919 → 38f/3,600（<40% 档 +22 件即本轮重写件）；死码 OpenRouter 流（含旧名别名）零调用确认后删除随葬（净眼复核处置） |
+| 2026-09-30 | 本 PR（质量审计修复轮） | 审计报告 `docs/ARCHITECTURE_QUALITY_AUDIT.md` 入档；D1 包根归位：novex.android 根散件 20 件 → 19 件卡片族进 `ui.cards`、ContentPaths 进 `data`、LegacyUiBridge 桥件留根保旧名（`com.openminis.app.ui` 红线区 14 件 + MinisApp 不动，拆除条件入 P3.6 批次 E）；D2 对账失败分支直接测试 7 例（ProviderConfigStoreReconcileTest 5 例：拒空配置/坏镜像 DB 权威/哈希错位镜像重导入落库/DAO 失败镜像救命/legacy lastUsed 改写 + RoundTrip 疑缩守护 1 例 + WAL 残留清理加固）；P3.6 门面拆除排期表（审计 §2 五类 32 件逐件：消费者数+可拆条件，编排门面立只减不增规矩，大手术记档不本刀做）；ARCHITECTURE.md 修订（model-transport 依赖方向修正、provider/openai 失真剔除、novex.android 终态版图与四条规矩）；顺手清 D5 两漏网：transport/models AppLogger→logkit.RunLog 9 处直引、transport ClaudeOAuthManager→authkit.ClaudeLoginFlow 穿透改接 1 处 | 包根 20 件 → 1 件（桥）；novex.android.ui.cards 19 件（→ui 72 import 边随文件整体迁移）；data 30→31；血统三分类不变（机械搬家 + 新增测试与文档，零旧路径文件增删）；ClaudeOAuthManager 门面消费者 4→3 |

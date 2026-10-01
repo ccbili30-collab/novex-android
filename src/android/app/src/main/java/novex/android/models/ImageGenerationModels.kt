@@ -2,7 +2,7 @@ package novex.android.models
 
 import novex.android.data.model.LLMModel
 import novex.android.data.model.ProviderType
-import com.openminis.app.logging.AppLogger
+import novex.android.logkit.RunLog
 import java.util.concurrent.TimeUnit
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
@@ -123,7 +123,7 @@ object ImageGenerationModels {
             val safeUrl = request.url.newBuilder().query(null).build().toString()
             val compactBody = body.replace(Regex("\\s+"), " ").take(2_000)
             if (!response.isSuccessful) {
-                AppLogger.error(
+                RunLog.error(
                     "ImageGenerationModels",
                     "model list failed url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
                 )
@@ -135,7 +135,7 @@ object ImageGenerationModels {
                 trimmed.startsWith("<!doctype", ignoreCase = true) ||
                 trimmed.startsWith("<html", ignoreCase = true)
             if (isHtml) {
-                AppLogger.error(
+                RunLog.error(
                     "ImageGenerationModels",
                     "model list returned HTML url=$safeUrl status=${response.code} contentType=$contentType body=$compactBody",
                 )
@@ -144,7 +144,7 @@ object ImageGenerationModels {
             return try {
                 parse(body)
             } catch (error: Exception) {
-                AppLogger.error(
+                RunLog.error(
                     "ImageGenerationModels",
                     "model list parse failed url=$safeUrl status=${response.code} contentType=$contentType " +
                         "error=${error::class.java.simpleName}: ${error.message} body=$compactBody",
