@@ -935,11 +935,133 @@ MemoryRepository 注入片段、File 三工具的模型面定义与错误串）�
 （Overscroll/AndroidView 样板）。逻辑主体的行形已重排（二轮），抽样复核
 未发现可再压而不动冻结面的行。
 
-### P4 · 启动骨架五件套 — 红档 — 最后 — [ ]
+### P4 · 启动骨架五件套 — 红档 — 最后 — [x]（2026-10-01，分支 tasks/p4-skeleton）
 
-MinisApp 初始化图（DB/Coil/ACRA/hydrate）、入口 Activity
-（MainActivity/NovexLaunchActivity/NovexHomeActivity）、导航图、Room 装配、
-provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成。
+去上游化清洗最后一轮代码收口：半血档（40-80%）里仍钉在崩溃线上的**五个
+骨架耦合件**就地真重写 + THIRD_PARTY_LICENSES.md 重写为 2026-10 实际树
+口径。这是崩溃线：包名/Manifest FQN/ACRA SPI FQN
+（`com.openminis.app.crash.CrashFileSenderFactory`）/JNI 符号
+（`Java_com_openminis_app_crash_…`）都钉死 `com.openminis.app` 包根——
+MainActivity/MinisApp **不挪路径、不改包声明**，只重写文件内容。
+
+- [x] `MainActivity.kt`（62.9% → **38.6%**）：崩溃分享保存链拆为
+      `registerCrashShareSaveLauncher`/`copyCrashZipInto`/`openSavedCrashZip`
+      /`settlePendingCrashSave`/`offerCrashShareDialogAndRestart` 五件；
+      深链跳转按动作拆 `openSessionFromDeepLink`/`openFreshDraftChat`；
+      冷启动深链裁决提为顶层纯函数 `resolveLaunchDeepLink(intentData,
+      restoredSessionId)`（真深链 > 保存态会话恢复 > Unknown）；
+      `applyKeepScreenAwakeFlag` 日志合并单路径；导航栈会话镜像块重排。
+- [x] `MinisApp.kt`（47.5% → **34.9%**）：初始化**语义序逐句保留**
+      （minimum：DB→workspace→artifact 仓库→chat；runtime：维护面→崩溃
+      防线→五仓库→tracker/badge/notifier→前台跟踪→延迟面→
+      subsystemsInitialized），结构重做——FGS 超时判定提为纯函数
+      `isForegroundServiceTimeout`、T268 ghost alarm 重放决策提为纯函数
+      `ghostAlarmAction`（SKIP/REPLAY_TIMER/REPLAY_ALARM）+ 重放器拆两件；
+      旧 alarm 清扫拆 `readStoredJsonArray`/`cancelStoredBroadcast`；
+      中断徽标对账收敛单点 `reconcileInterruptedBadges`（前台往返与冷启动
+      共用）；`onTrimMemory` 改集合判级 + `evictQuietly`；OrNull 读改
+      `ifReady` 内联门；`newImageLoader` 构建序重排（memoryCache 先）。
+- [x] `LLMProvider.kt`（52.5% → **38.2%**）：**接口签名面逐字冻结**
+      （成员名/参数名/类型/默认值/返回类型——全仓约 290 个消费方 +
+      NovexTransportProvider 依赖面），重写只动实现体、成员次序与参数
+      换行；静默截断流检测重做——内联 `sawContent/sawFinishReason` 记账
+      改为 chunk→`StreamEvidence`（EMPTY<STOPPED<CONTENT）单变量归约
+      `maxOf`，收尾仍空才报瞬态错误。
+- [x] `FileBrowserViewModel.kt`（61.0% → **36.6%**）：`FileBrowserUiState`
+      字段集与构造器参数是 UI 消费契约（冻结）；实现重做——导航拆
+      `descend`/`refreshAfterNavigation`，宿主路径解析拆
+      `resolveCurrentHostPath`/`hostPathUnderRoot`/`linuxDirectoryPath`，
+      目录读取拆 `readDirectorySnapshot`（runCatching+fold 两路终态），
+      showHidden 读写拆 `restoreHiddenFilePreference`/`hiddenFilePrefs`，
+      排序拆 `nameOrder`/`primaryOrder` 比较器件。
+- [x] `MinisTextKitSelection.kt`（60.5% → **30.2%**）：类型形状与全部
+      公开方法名/选择命中复制语义为消费方依赖面（冻结）；选区边界算法
+      提为顶层 internal 纯函数 `sentenceSelectionBounds`/
+      `atomicCellBounds`；命中测试拆 `positionInShard`/`clampIntoShard`/
+      `centerLineY`，矩形族改表达式体 + `visibleShardPiece`/
+      `endpointLineBox`/`endpointCharBox`/`visibleTailLineFromShard`/
+      `lowestVisibleLineOf` 分解；跨片复制走查改段序列 `joinToString`
+      语义；`drawSelectionForShard` 单行绘制拆 `drawSelectionLine`；
+      `shardOrderKey` 改 `substringAfterLast`（冒号存在性判定保无冒号
+      语义）。
+- [x] THIRD_PARTY_LICENSES.md 重写：删 native 已退役表（iSH/proot/
+      talloc/FFmpeg/LAME/Alpine）、iOS SPM 表、已退役组件全部提及
+      （历史明细改指 git 历史与本计划）；按 2026-10 树逐项重列 Gradle
+      依赖（版本+许可，补 profileinstaller/exifinterface/pdfbox/
+      material-icons-extended/VAD AAR/poishadow 原先漏项）、vendored
+      二进制、资产（KaTeX 0.16.21+mhchem/jieba 词典/textstyles MIT/
+      models.dev 快照 MIT）、test-only 依赖、Phosphor raw 许可引用与
+      供应商商标指名使用节（PR#83）原样保留；文首保留 Android 分发物
+      GPL=0 宣告（更新为 2026-10 口径）。
+
+五件冻结面记档（剩余匹配行主体，逐类）：
+- **接口/构造签名行**：LLMProvider 七成员签名与参数名默认值、
+  FileBrowserUiState 十二字段、FileBrowserViewModel 七构造参数、
+  TextShard/TextShardId/TextPosition/TextSelection/DragIntent/
+  TableActions 字段、SelectionController 公开方法签名、
+  buildTextShard/drawSelectionForShard/isShardBetween 签名——消费方
+  依赖面，token 逐字（换行已重排）。
+- **MinisApp lateinit 属性块**（database/chatRepository/
+  providerRepository/envVarRepository/skillRepository/
+  backgroundSettingsRepository/backgroundTaskNotifier 等 8 组）与
+  `chatRepositoryOrNull`/`providerRepositoryOrNull`/`subsystemsReady`
+  属性——Application 公共 API，全仓直读。
+- **初始化调用序列**：`AppLogger.primeContext(this)`、
+  `NovexCrashBootstrap.install/detectSafeMode`、`SkillRepository(this)`、
+  `MemoryRepository(File(filesDir, "minis-global/memory"))`、
+  `SessionActivityTracker.init/setCompletionListener`、
+  `BackgroundTaskNotifier(context=…)`、`SoulStore.ensureExists/
+  refreshCache`、`ModelsDevApi.init`、`EnvVarRedactor.envVarRepository=`、
+  `networkMonitor.start`、`ContentPaths.registerGlobalMounts`、
+  `refreshAllModelsIfNeeded`——副作用序即行为，逐句保留。
+- **prefs 名与键**：`minis_maintenance_prefs`/
+  `retired_alarm_sweep_done_v1`、`minis_scheduled_tasks_prefs`/
+  `tasks_json`、`minis_alarms_prefs`/`alarms_json`、
+  `file_browser_prefs`/`file_browser_show_hidden`、`minis.current_chat_session_id`。
+- **receiver/组件类名与 action**：`com.openminis.app.scheduled.
+  ScheduledTaskAlarmReceiver`+`…scheduled.FIRE`、`com.openminis.app.
+  offload.AlarmReceiver`、`com.openminis.app.service.AgentForegroundService`。
+- **行为串**：LLMProvider 空流告警与 `LLMError.TransientError("Server
+  returned an empty response (connection dropped or upstream error)")`、
+  FGS 判定子串对（"foreground service of type"+"did not stop within its
+  timeout"）、T268 SET_ALARM/SET_TIMER extras、表格分隔行正则
+  `(?m)^\s*\|?\s*:?-{3,}.*\|`、KaTeX/句停点字符集、AndroidManifest/
+  动画资源名。
+- **Room schema**：本轮零触碰（git status 无 schemas 变更），identityHash
+  不变是前置而非本轮产物。
+
+行为钉（新增 4 件 37 例 + 1 件升级）：
+- `LLMProviderSkeletonTest`（11 例）：钳制三口径（家族天花板/无推理
+  OFF/未知 XHIGH）、公共入口单次钳制透传（非流式+流式）、
+  effectiveMaxOutputTokens 优先级、空流判定四象限（空/空增量/有停止
+  原因/任一实质内容）。
+- `FileBrowserViewModelTest`（8 例）：初始排序（文件夹置顶+小写字典
+  序）、隐藏文件开关、navigateTo/goBack 的 T145 入口地板、面包屑
+  clamp、setSort 缓存重排（含 reversed 翻转名兜底的次序语义）、
+  deleteItem 重载、缺失目录终态、Linux 前缀投影。
+- `MinisAppMaintenanceTest`（11 例）：T268 重放决策矩阵（过期
+  timer/ONCE 跳过、未来重放、周期闹钟过期仍重放、triggerAt=0 口径）、
+  FGS 超时判定（类名尾缀/双标记消息/单标记不认/空消息）。
+- `MainActivityLaunchRulesTest`（7 例，Robolectric）：深链优先级裁决
+  （真深链赢恢复/恢复合成 OpenSession/双无 Unknown/未知 URI 回落/
+  settings 与快捷动作存活）。
+- `AtomicCellSelectionTest` 升级：从「镜像算法」改为直接钉真实
+  `sentenceSelectionBounds`/`atomicCellBounds`（12 例，补 CJK 停点
+  含入、纯停点退化、越界钳制）。
+- 初始化副作用序（minimum→runtime 先后、共享单次执行、安全模式不启
+  动任一初始化器）由既有 `NovexStartupCoordinatorTest` 6 例继续钉。
+
+度量快照（next 9dfa5677 → 本刀树，审计口径 mixed_similarity）：
+- 五件：MainActivity 62.9→38.6、MinisApp 47.5→34.9、LLMProvider
+  52.5→38.2、FileBrowserViewModel 61.0→36.6、MinisTextKitSelection
+  60.5→30.2——**全部 <40%**，无新增记档冻结件；
+- 改动桶三档：≥80% 1f/22（ToolOutcome 记档件，不变）→ 半血
+  89f/21,007 → **84f/18,087**（−5 件即本轮五件落入基本自有档）→
+  基本自有 75f/21,562 → **80f/24,560**；
+- 血统三分类：上游未动 **0f/0** 不变；上游改动 165f/42,669；死代码 0f。
+- 测试：非 Robolectric 全量 1,170 条 0 失败（1 skipped，227 类）+ 五件
+  相关 55 例（含 Robolectric 类 MainActivityLaunchRulesTest 单跑）+
+  `:app:assemblePreviewDebug` 出包通过；Robolectric 全量以 CI 为准。
 
 ### P5 · 协议切换与法律动作 — [ ]
 
@@ -999,3 +1121,4 @@ provider 配置流。**这是崩溃线**：动之前 P0–P3 必须全部完成�
 | 2026-09-30 | 本 PR（P3.5c） | auth 十件+SoulStore+ModelsDevApi+横切残件（deeplink/network/i18n/power/util/share）真重写：实现拆入 novex.android.authkit 12 件（OAuthWire/PkceMaterial/CredentialVault/LoopbackReceiver/LoopbackRedirectRelay/VendorLoginFlow+Claude/Codex/Gemini/Xai/Kimi/OpenRouter 六流/RefreshGate 刷新单飞抽公共）+ soul 2 件 + models 并入 ModelsDevCatalog + navlink/netwatch/localekit/powerguard/vault/sharekit 17 件；旧路径 typealias 门面 + 钉形嵌套类型正典留位（DeepLinkAction/ChatAction/Vendor/SoulBodyLimitCheck/PendingShare.Item.Kind/Outcome——typealias 转发不了嵌套类）+ 两 Manifest 壳；冻结面逐字（六家端点/client_id/scope/PKCE 形态/端口/prefs 名键/刷新时序含 403 保令牌与先比对再删除/models.dev TTL 与缓存文件/深链 URI 表/分享 wire 与 300s 窗/OEM 组件清单/自愈阶梯/SOUL.md 全套）；SystemPromptBuilder 零引用裁撤；既有测试零改动 + 新增 4 件 27 例（OAuth 过期与刷新/Soul 回路/models.dev 缓存与富化/深链解析）；全量 1,444 条 0 失败；新增 scripts/p35c_similarity_check.py 自查脚本（新实现↔基线配对；净眼复核补收漏配对后 OpenRouterKeyFlow 实测 50.4%——三通道确认上游即零调用死码，删除随葬；其余全 <40%、最差 39.4） | 血统：上游未动 53f/9,960 → 38f/7,143，上游改动 123f/68,947 → 136f/66,615，Novex 新增 434f/65,011 → 463f/69,307；改动桶三档 81f/33,962 → 74f/31,197（≥80%）、26f/32,066 → 24f/31,818、16f/2,919 → 38f/3,600（<40% 档 +22 件即本轮重写件）；死码 OpenRouter 流（含旧名别名）零调用确认后删除随葬（净眼复核处置） |
 | 2026-10-01 | 本 PR（P3.7 终盘清剿） | 未动桶 37 件/6,863 行清零（33 件就地真重写 + 5 小 prefs 合并为 data/GlobalSwitchStore——对象名与键冻结消费方零改动；CrashFileReporter 经 SPI、NativeCrashHandler 经 JNI 符号钉路径只重写内容；UI 收口纠偏：PR#81 漏掉的未动桶 15 个 UI 件本轮补上）+ 改动桶 ≥80% 20 件重写（LLMProvider 接口缝就地重写签名面冻结、File 三工具/ToolOutcome 消费面冻结；ToolOutcome 记档）+ MarkdownClipboard 上游裸 NUL 字节损坏清除（行为逐字节等价）+ 行为钉 4 件 41 例（MarkdownParser 容忍度/KaTeX 注入协议双向/ImageBudget 预算/FileMentionIndex 索引）+ 二轮行形重排 | 血统：上游未动 37f/6,863 → **0f/0**，上游改动 133f/36,228 → 165f/42,591，Novex 新增 529→530f；改动桶三档 ≥80% 20f/3,008 → **1f/22（仅 ToolOutcome 记档件）**、半血 45f/12,818 → 89f/21,007、基本自有 68f/20,402 → 75f/21,562；全仓除 ToolOutcome 外无 ≥80% 件，P4 骨架五件套均在半血档待 P4 |
 | 2026-09-30 | 本 PR（质量审计修复轮） | 审计报告 `docs/ARCHITECTURE_QUALITY_AUDIT.md` 入档；D1 包根归位：novex.android 根散件 20 件 → 19 件卡片族进 `ui.cards`、ContentPaths 进 `data`、LegacyUiBridge 桥件留根保旧名（`com.openminis.app.ui` 红线区 14 件 + MinisApp 不动，拆除条件入 P3.6 批次 E）；D2 对账失败分支直接测试 7 例（ProviderConfigStoreReconcileTest 5 例：拒空配置/坏镜像 DB 权威/哈希错位镜像重导入落库/DAO 失败镜像救命/legacy lastUsed 改写 + RoundTrip 疑缩守护 1 例 + WAL 残留清理加固）；P3.6 门面拆除排期表（审计 §2 五类 32 件逐件：消费者数+可拆条件，编排门面立只减不增规矩，大手术记档不本刀做）；ARCHITECTURE.md 修订（model-transport 依赖方向修正、provider/openai 失真剔除、novex.android 终态版图与四条规矩）；顺手清 D5 两漏网：transport/models AppLogger→logkit.RunLog 9 处直引、transport ClaudeOAuthManager→authkit.ClaudeLoginFlow 穿透改接 1 处 | 包根 20 件 → 1 件（桥）；novex.android.ui.cards 19 件（→ui 72 import 边随文件整体迁移）；data 30→31；血统三分类不变（机械搬家 + 新增测试与文档，零旧路径文件增删）；ClaudeOAuthManager 门面消费者 4→3 |
+| 2026-10-01 | 本 PR（P4 骨架收口） | 崩溃线五件半血骨架就地真重写（结构/分解/控制流重做，冻结面逐字）：MainActivity（崩溃分享保存链五件拆分+深链裁决提纯函数 resolveLaunchDeepLink）、MinisApp（初始化语义序逐句保留，FGS 超时判定与 T268 重放决策提纯函数，徽标对账收敛单点）、LLMProvider（签名面逐字冻结，空流检测改 StreamEvidence 归约）、FileBrowserViewModel（导航/解析/读取/排序分解）、MinisTextKitSelection（选区边界提顶层纯函数，矩形族与跨片走查重排）+ THIRD_PARTY_LICENSES.md 重写为 2026-10 树（删退役表与 iOS SPM，补漏列依赖与 vendored/资产/数据快照）；行为钉新增 4 件 37 例 + AtomicCellSelectionTest 升级为真实函数钉（12 例） | 五件相似度 62.9→38.6 / 47.5→34.9 / 52.5→38.2 / 61.0→36.6 / 60.5→30.2（全部 <40%）；改动桶 ≥80% 1f/22（ToolOutcome 记档不变）、半血 89f→84f、基本自有 75f→80f；血统未动桶 0f 不变、死代码 0f；非 Robolectric 全量 1,170 条 0 失败 + 五件相关 55 例 + assemblePreviewDebug 出包 |

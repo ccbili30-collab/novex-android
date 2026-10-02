@@ -1,75 +1,77 @@
 # Third-Party Licenses
 
+> **GPL=0 现状（Android 分发物，2026-10，upstream-exit P4）**：Android
+> 分发物**不含任何 GPL 组件**。当前打包/链接的全部第三方件均为 MIT、
+> Apache-2.0 或 BSD 系许可（逐项见下表）。历史上的 GPL/LGPL 实体（iOS
+> 层与沙箱执行层）已在 upstream-exit 早期轮次（P2.5/R2/P3.3）随对应子
+> 系统整体出清，`src/ios` 与 `deps/` 目录不复存在——历史明细见 git
+> 历史与 `docs/UPSTREAM_EXIT_PLAN.md`，本清单只反映现存树。
+
 ## Phosphor Icons
 
 The selected interface icons under `src/android/app/src/main/res/drawable/ic_phosphor_*.xml`
-are derived from Phosphor Icons and used under the MIT License. The complete
-license text is included in `src/android/app/src/main/res/raw/phosphor_icons_license.txt`.
+are derived from [Phosphor Icons](https://phosphoricons.com) and used under the
+MIT License. The complete license text is included in
+`src/android/app/src/main/res/raw/phosphor_icons_license.txt`.
 
-Novex bundles, links, or depends on the following third-party components. Versions reflect the current source tree; license types were verified against each project's repository (GitHub license metadata / LICENSE files).
+## Bundled web/UI assets
 
-> **GPL=0 declaration（Android 分发物，2026-09-29）**：随着沙箱退役
-> （upstream-exit P2.5/R2），Android 分发物**不含任何 GPL 组件**——
-> KaTeX（MIT）、jieba/cppjieba（MIT），其余均为 Apache-2.0（Shizuku
-> 为 MIT，已于 P3.3 裁军轮出清依赖）。历史上的 GPL/传染风险实体
-> （iSH、proot、talloc、Alpine rootfs 内的 apk-tools）全部只存在于
-> iOS 时代或沙箱时代的构建产物中，现已出清（见下表 Removed / historical）。
+| Asset | Location | License | Notes |
+|---|---|---|---|
+| [KaTeX](https://katex.org) | `src/android/app/src/main/assets/katex/` (`katex.min.js` 0.16.21, `katex.min.css`, fonts, `mhchem.min.js`, `katex-render.html` 壳) | **MIT** | 离屏 WebView 公式渲染；mhchem 为 KaTeX 官方 contrib 扩展（同 MIT） |
+| jieba 分词词典 | `src/android/app/src/main/assets/jieba/` | **MIT** | 随 [cppjieba](https://github.com/yanyiwu/cppjieba) 发行的分词词典（dict.txt 等） |
+| [textstyles](https://github.com/oh-story-claudecode) 文体预设 | `src/android/app/src/main/assets/textstyles/genre/*.md`（含 `textstyles/LICENSE`） | **MIT** (oh-story-claudecode) | 中文文体预设语料；许可文件随资产同目录分发 |
 
 ## Native C/C++ components
-
-### Currently shipped (Android)
 
 | Component | Version / Source | License | Notes |
 |---|---|---|---|
 | [cppjieba](https://github.com/yanyiwu/cppjieba) | vendored at `src/android/app/src/main/cpp/cppjieba` (+ `jieba_jni.cpp`, dictionaries in `assets/jieba/`) | **MIT** | Chinese word segmentation (header-only + dictionaries) |
+| Native crash handler | `src/android/app/src/main/cpp/crash_handler.cpp`（自有源码） | 本项目自有 | NDK 信号捕获，无第三方版权 |
 
-### Removed / historical
+## Vendored binaries (app/libs)
 
-| Component | Version / Source | License | Notes |
+| Component | Version | License | Notes |
 |---|---|---|---|
-| [iSH](https://github.com/OpenMinis/ish-arm64) (ARM64 fork) | former git submodule `deps/ish` | **GPL-3.0** (post-`0e3a414` contributions also under GPL-2.0), with an App Store distribution exception (`LICENSE.IOS`) | iOS-era x86 Linux usermode emulation on iOS; deleted with the iOS layer — never part of the Android distribution |
-| [proot](https://github.com/OpenMinis/proot) (fork) | former git submodule `deps/proot` | **GPL-2.0** | Linux sandbox on Android (`libproot.so`, `proot-aarch64`) — **removed** (upstream-exit P2.5, 2026-09-29) |
-| [talloc](https://talloc.samba.org) (Samba) | former vendored `deps/talloc` | **LGPL-3.0-or-later** | Memory allocator required by proot — **removed** (upstream-exit P2.5, 2026-09-29), gone with proot |
-| [FFmpeg](https://ffmpeg.org) | 6.1.2, former `deps/build_ffmpeg.sh` | **LGPL-2.1-or-later** (built without `--enable-gpl` / `--enable-nonfree`) | iOS-era dynamic frameworks; removed with `deps/` |
-| [LAME](https://lame.sourceforge.io) | 3.100, former vendored `deps/lame-3.100` | **LGPL-2.0-or-later** | MP3 encoder, linked into FFmpeg via `--enable-libmp3lame`; iOS-era, removed with `deps/` |
-| Alpine Linux minirootfs (de-GPL variant) | former download in `scripts/prepare_android_sandbox.sh` | musl **MIT**, dash **BSD-2-Clause**, apk-tools **GPL-2.0-or-later** | **已移除（沙箱退役，upstream-exit P2.5/R2）** — BusyBox 早已在 P2 出包，rootfs 整体随沙箱执行层拆除，脚本与资产一并删除 |
+| [RealTimeCutVADLibrary](https://github.com/helloooideeeeea/RealTimeCutVADLibrary) For Android | 1.0.5（`libs/RealTimeCutVADLibraryForAndroid-1.0.5.aar`） | **MIT** | Silero v5 VAD（ONNX Runtime + WebRTC APM）——JitPack 间歇不可达，钉版 vendor 保证可复现构建 |
+| [poi-on-android](https://github.com/centic9/poi-on-android) shaded Apache POI | 5.2.5-4（`libs/poishadow-all-5.2.5-4.jar`） | **Apache-2.0** | DOCX 主读取器（shaded 包，避免依赖冲突） |
 
-## iOS — Swift Package Manager dependencies（历史口径）
-
-> 以下为 iOS 时代依赖清单，仅作历史记录；Android 分发物不含其中任何
-> 组件（Android 已出清，见顶部 GPL=0 宣告）。
-
-Direct packages declared in `src/ios/Minis.xcodeproj`:
-
-| Package | Version | Repository | License |
-|---|---|---|---|
-| SwiftAnthropic | 2.2.0 (exact) | https://github.com/jamesrochabrun/SwiftAnthropic | **MIT** |
-| swift-cmark (`cmark-gfm`, `cmark-gfm-extensions`) | 0.7.1 | https://github.com/swiftlang/swift-cmark | **BSD-2-Clause** (with some MIT-licensed vendored files, see its `COPYING`) |
-| SwiftMath | 1.7.3 | https://github.com/mgriebling/SwiftMath | **MIT** |
-| RealTimeCutVADLibrary | 1.0.14 | https://github.com/helloooideeeeea/RealTimeCutVADLibrary | **MIT** |
-
-Transitive packages (pinned in `Package.resolved`), all **Apache-2.0**, maintained by Apple / the Swift Server Workgroup: `async-http-client`, `swift-algorithms`, `swift-asn1`, `swift-async-algorithms`, `swift-atomics`, `swift-certificates`, `swift-collections`, `swift-crypto`, `swift-distributed-tracing`, `swift-http-structured-headers`, `swift-http-types`, `swift-log`, `swift-nio` (+ `-extras`, `-http2`, `-ssl`, `-transport-services`), `swift-numerics`, `swift-service-context`, `swift-service-lifecycle`, `swift-system`.
-
-## Android — Gradle dependencies
+## Android — Gradle dependencies（`src/android/app/build.gradle.kts`，2026-10 树）
 
 | Library | Version | License |
 |---|---|---|
-| AndroidX / Jetpack (Compose BOM 2025.09.00, core-ktx, lifecycle, activity, navigation, Room, DataStore, security-crypto, browser, exifinterface) | see `app/build.gradle.kts` | **Apache-2.0** (Google / AOSP) |
-| OkHttp + okhttp-sse | 4.12.0 | **Apache-2.0** |
-| kotlinx-serialization-json | 1.7.3 | **Apache-2.0** |
-| kotlinx-coroutines-android | 1.9.0 | **Apache-2.0** |
-| Coil (coil-compose) | 2.7.0 | **Apache-2.0** |
-| multiplatform-markdown-renderer (+ m3) — mikepenz | 0.33.0 | **Apache-2.0** |
-| Reorderable (sh.calvin.reorderable) | 2.4.0 | **Apache-2.0** |
-| ACRA (acra-core) | 5.12.0 | **Apache-2.0** |
-| poi-on-android shaded Apache POI bundle | 5.2.5-4 | **Apache-2.0** |
+| androidx.compose:compose-bom（material3 / material-icons-extended / ui / ui-tooling-preview / ui-tooling(debug) / ui-test-manifest(debug)） | BOM 2025.09.00 | **Apache-2.0** |
+| androidx.core:core-ktx | 1.15.0 | **Apache-2.0** |
+| androidx.lifecycle（runtime-ktx / viewmodel-compose / lifecycle-process） | 2.8.7 | **Apache-2.0** |
+| androidx.profileinstaller | 1.4.1 | **Apache-2.0** |
+| androidx.activity:activity-compose | 1.9.3 | **Apache-2.0** |
+| androidx.exifinterface:exifinterface | 1.3.7 | **Apache-2.0** |
+| androidx.navigation:navigation-compose | 2.8.5 | **Apache-2.0** |
+| androidx.room（runtime / ktx / compiler-ksp） | 2.6.1 | **Apache-2.0** |
+| androidx.datastore:datastore-preferences | 1.1.1 | **Apache-2.0** |
+| androidx.security:security-crypto | 1.1.0-alpha06 | **Apache-2.0** |
+| androidx.browser:browser（OAuth Custom Tabs） | 1.8.0 | **Apache-2.0** |
+| com.squareup.okhttp3（okhttp / okhttp-sse / mockwebserver(test)） | 4.12.0 | **Apache-2.0** |
+| org.jetbrains.kotlinx:kotlinx-serialization-json | 1.7.3 | **Apache-2.0** |
+| org.jetbrains.kotlinx:kotlinx-coroutines（android / test） | 1.9.0 | **Apache-2.0** |
+| com.tom-roush:pdfbox-android（PDF 文本提取） | 2.0.27.0 | **Apache-2.0** |
+| io.coil-kt:coil-compose | 2.7.0 | **Apache-2.0** |
+| com.mikepenz（multiplatform-markdown-renderer-android / -m3-android） | 0.33.0 | **Apache-2.0** |
+| sh.calvin.reorderable:reorderable | 2.4.0 | **Apache-2.0** |
+| ch.acra:acra-core（本地崩溃上报，无 http sender） | 5.12.0 | **Apache-2.0** |
 
-Removed / historical: **Shizuku API + provider (dev.rikka.shizuku 13.1.5, MIT)
-— 依赖随 P3.3 裁军轮（2026-09-30，Shizuku/特权后端 offload/ 体系整体退役）
-出清**；androidx.webkit（PWA 资产加载器）同轮出清，androidx.browser 保留
-（provider OAuth 的 Custom Tabs 仍在用）。
+Test-only dependencies（不随应用打包）: JUnit 4.13.2（**EPL-1.0**）,
+Robolectric 4.16.1（**MIT**）, MockWebServer 4.12.0（Apache-2.0）,
+kotlinx-coroutines-test 1.9.0（Apache-2.0）, org.json 20231013（Public
+Domain / JSON License）。Instrumented-test 侧：androidx.compose
+ui-test-junit4、androidx.test runner/rules/ext-junit（均 Apache-2.0）。
 
-Test-only dependencies: JUnit 4.13.2 (**EPL-1.0**), MockWebServer 4.12.0 (**Apache-2.0**), kotlinx-coroutines-test 1.9.0 (**Apache-2.0**), org.json 20231013 (**Public Domain / JSON License**).
+## Bundled data snapshots
+
+| Data | Location | Source / License | Notes |
+|---|---|---|---|
+| models.dev registry snapshot | `src/android/app/src/main/assets/models-dev-api.json` | [models.dev](https://models.dev) 开放目录数据（MIT） | 模型目录种子数据；运行时 48h TTL 后台自更到 cacheDir |
+| 中文背景词频表 | `src/android/app/src/main/res/raw/zh_background_wordfreq.txt` | 本项目自编（curated） | 语音纠错 typed_vocabulary 评分用的常见词判定表，非语料库派生 |
 
 ## Provider trademarks (logos)
 
@@ -78,14 +80,3 @@ Test-only dependencies: JUnit 4.13.2 (**EPL-1.0**), MockWebServer 4.12.0 (**Apac
 （nominative use，指名使用）：帮助用户辨认正在配置哪家供应商的接口，不构
 成对来源的背书或关联。自定义卡片的小鸟图形为本项目自有素材。若权利方提出
 异议，相关图形将移除并以中性占位替代。
-
-## Bundled web/UI assets
-
-| Asset | Location | License |
-|---|---|---|
-| KaTeX | Android `app/src/main/assets/katex/` | **MIT** |
-| jieba dictionaries | iOS bundle / Android `assets/jieba/` | **MIT** (cppjieba distribution) |
-
-## Other removed / historical
-
-- **swift-markdown-ui** (MIT) — formerly vendored under `deps/swift-markdown-ui`; no longer referenced by the Xcode project or imported by any source file, and is not part of the open-source tree.

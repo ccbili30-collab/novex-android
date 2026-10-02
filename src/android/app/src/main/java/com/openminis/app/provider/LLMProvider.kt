@@ -12,7 +12,7 @@ import novex.android.data.model.ThinkingLevel
 
 /**
  * 供应商接入的公共接口（P4 骨架耦合件：血统清剿 P3.7 就地真重写文件内容，
- * **接口签名面整体冻结**——成员名/类型/默认值即全仓消费方与
+ * **接口签名面整体冻结**——成员名/参数名/类型/默认值即全仓消费方与
  * NovexTransportProvider 的依赖面，搬包留给 P4）。
  *
  * 结构分三层：
@@ -30,6 +30,64 @@ interface LLMProvider {
 
     var model: LLMModel
 
+    // ─── 第 1 层：公共入口（实现方不覆写） ─────────────────────────────────
+
+    /**
+     * [T-android-thinking-level-arch] 公共入口（非流式）。不被实现覆写：
+     * 钳一次，转 [sendMessageClamped]。
+     */
+    suspend fun sendMessage(
+        messages: List<LLMMessage>, systemPrompt: String?, maxTokens: Int,
+        temperature: Double? = null,
+        imageParts: List<LLMMessage.ImagePart> = emptyList(),
+        tools: List<AgentToolDefinition> = emptyList(),
+        thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
+    ): LLMResponse {
+        val admitted = clampThinkingLevel(thinkingLevel)
+        return sendMessageClamped(
+            messages, systemPrompt, maxTokens, temperature,
+            imageParts, tools, admitted,
+        )
+    }
+
+    /**
+     * [T-stream-stall-watchdog] 公共入口（流式）+[failOnStreamStall] 看门狗
+     * 的唯一挂载点：一处挂全供应商生效，看门狗的 NetworkError 进既有自动
+     * 重试链——中转收下请求然后装死，5 分钟后断线，不再把聊天挂上大半个
+     * 小时（conversation-f899bf05：51 分钟空洞）。
+     */
+    fun streamMessage(
+        messages: List<LLMMessage>, systemPrompt: String?, maxTokens: Int,
+        temperature: Double? = null,
+        imageParts: List<LLMMessage.ImagePart> = emptyList(),
+        tools: List<AgentToolDefinition> = emptyList(),
+        thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
+    ): Flow<LLMStreamChunk> {
+        val admitted = clampThinkingLevel(thinkingLevel)
+        return streamMessageClamped(
+            messages, systemPrompt, maxTokens, temperature,
+            imageParts, tools, admitted,
+        ).failOnStreamStall(name)
+    }
+
+    // ─── 第 2 层：供应商实现面 ─────────────────────────────────────────────
+
+    /** 供应商实现面（非流式）——实现方覆写这个而非 [sendMessage]。 */
+    suspend fun sendMessageClamped(
+        messages: List<LLMMessage>, systemPrompt: String?, maxTokens: Int,
+        temperature: Double?, imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>, thinkingLevel: ThinkingLevel,
+    ): LLMResponse
+
+    /** 供应商实现面（流式）。 */
+    fun streamMessageClamped(
+        messages: List<LLMMessage>, systemPrompt: String?, maxTokens: Int,
+        temperature: Double?, imageParts: List<LLMMessage.ImagePart>,
+        tools: List<AgentToolDefinition>, thinkingLevel: ThinkingLevel,
+    ): Flow<LLMStreamChunk>
+
+    // ─── 第 3 层：档位钳制与输出上限协议 ───────────────────────────────────
+
     /**
      * [T-android-thinking-level-arch] 按当前 [model] 目录天花板（rank 口径）
      * 钳请求档位。钳制做在结构层（公共入口默认实现）而不是每个实现各自
@@ -43,68 +101,6 @@ interface LLMProvider {
         val ceiling = model.catalogMaxThinkingLevel
         return level.takeIf { it.rank <= ceiling.rank } ?: ceiling
     }
-
-    /**
-     * [T-android-thinking-level-arch] 公共入口（非流式）。不被实现覆写：
-     * 钳一次，转 [sendMessageClamped]。
-     */
-    suspend fun sendMessage(
-        messages: List<LLMMessage>,
-        systemPrompt: String?,
-        maxTokens: Int,
-        temperature: Double? = null,
-        imageParts: List<LLMMessage.ImagePart> = emptyList(),
-        tools: List<AgentToolDefinition> = emptyList(),
-        thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
-    ): LLMResponse {
-        val clamped = clampThinkingLevel(thinkingLevel)
-        return sendMessageClamped(
-            messages, systemPrompt, maxTokens, temperature, imageParts, tools, clamped,
-        )
-    }
-
-    /**
-     * [T-stream-stall-watchdog] 公共入口（流式）+[failOnStreamStall] 看门狗
-     * 的唯一挂载点：一处挂全供应商生效，看门狗的 NetworkError 进既有自动
-     * 重试链——中转收下请求然后装死，5 分钟后断线，不再把聊天挂上大半个
-     * 小时（conversation-f899bf05：51 分钟空洞）。
-     */
-    fun streamMessage(
-        messages: List<LLMMessage>,
-        systemPrompt: String?,
-        maxTokens: Int,
-        temperature: Double? = null,
-        imageParts: List<LLMMessage.ImagePart> = emptyList(),
-        tools: List<AgentToolDefinition> = emptyList(),
-        thinkingLevel: ThinkingLevel = ThinkingLevel.OFF,
-    ): Flow<LLMStreamChunk> {
-        val clamped = clampThinkingLevel(thinkingLevel)
-        return streamMessageClamped(
-            messages, systemPrompt, maxTokens, temperature, imageParts, tools, clamped,
-        ).failOnStreamStall(name)
-    }
-
-    /** 供应商实现面（非流式）——实现方覆写这个而非 [sendMessage]。 */
-    suspend fun sendMessageClamped(
-        messages: List<LLMMessage>,
-        systemPrompt: String?,
-        maxTokens: Int,
-        temperature: Double?,
-        imageParts: List<LLMMessage.ImagePart>,
-        tools: List<AgentToolDefinition>,
-        thinkingLevel: ThinkingLevel,
-    ): LLMResponse
-
-    /** 供应商实现面（流式）。 */
-    fun streamMessageClamped(
-        messages: List<LLMMessage>,
-        systemPrompt: String?,
-        maxTokens: Int,
-        temperature: Double?,
-        imageParts: List<LLMMessage.ImagePart>,
-        tools: List<AgentToolDefinition>,
-        thinkingLevel: ThinkingLevel,
-    ): Flow<LLMStreamChunk>
 
     /**
      * 给定模型的生效输出 token 上限。取值优先级：model.maxOutputTokens >
@@ -143,17 +139,19 @@ interface LLMProvider {
  * 归 agent 循环的「工具结果后空回应提醒」路径（ChatViewModel）管；
  * "length"/"max_tokens" 截断出来的空是合法的空。取消与抛错先于此检查传播
  * （`collect` 之后的代码只在正常收尾时执行）。
+ *
+ * 判定实现：每个 chunk 归约为一个 [StreamEvidence]（ordinal 递增 = 证据
+ * 越强），归约取 max——收尾时仍是 [StreamEvidence.EMPTY] 才算静默截断。
  */
 fun Flow<LLMStreamChunk>.failOnSilentEmptyCompletion(providerName: String): Flow<LLMStreamChunk> = flow {
-    val witness = StreamWitness()
+    var strongest = StreamEvidence.EMPTY
     collect { chunk ->
-        witness.observe(chunk)
+        strongest = maxOf(strongest, evidenceOf(chunk))
         emit(chunk)
     }
-    if (witness.isEmptyRun()) {
-        reportEmptyCompletion(providerName)
-        throw LLMError.TransientError("Server returned an empty response (connection dropped or upstream error)")
-    }
+    if (strongest != StreamEvidence.EMPTY) return@flow
+    reportEmptyCompletion(providerName)
+    throw LLMError.TransientError("Server returned an empty response (connection dropped or upstream error)")
 }
 
 private fun reportEmptyCompletion(providerName: String) {
@@ -163,29 +161,18 @@ private fun reportEmptyCompletion(providerName: String) {
     )
 }
 
-/** 空流判定的私有记账：见过实质内容或停止原因之一即非空。 */
-private class StreamWitness {
+/** 一次收尾能拿到的最强证据；ordinal 即强度（EMPTY < STOPPED < CONTENT）。 */
+private enum class StreamEvidence { EMPTY, STOPPED, CONTENT }
 
-    private var contentSeen = false
-    private var stopReasonSeen = false
-
-    fun observe(chunk: LLMStreamChunk) {
-        when (chunk) {
-            is LLMStreamChunk.Text -> noteContent(chunk.text.isNotEmpty())
-            is LLMStreamChunk.ThinkingDelta -> noteContent(chunk.text.isNotEmpty())
-            is LLMStreamChunk.ReasoningContent -> noteContent(chunk.content.isNotEmpty())
-            is LLMStreamChunk.ToolUseStart,
-            is LLMStreamChunk.ToolInputDelta,
-            is LLMStreamChunk.ToolCallComplete,
-            is LLMStreamChunk.MediaAttachment -> noteContent(true)
-            is LLMStreamChunk.Finished -> stopReasonSeen = stopReasonSeen || chunk.stopReason != null
-            else -> {}
-        }
-    }
-
-    fun isEmptyRun(): Boolean = !contentSeen && !stopReasonSeen
-
-    private fun noteContent(present: Boolean) {
-        contentSeen = contentSeen || present
-    }
+/** 单个 chunk 的证据归约：空文本增量/无停止原因的收尾不构成本量。 */
+private fun evidenceOf(chunk: LLMStreamChunk): StreamEvidence = when (chunk) {
+    is LLMStreamChunk.Text -> if (chunk.text.isEmpty()) StreamEvidence.EMPTY else StreamEvidence.CONTENT
+    is LLMStreamChunk.ThinkingDelta -> if (chunk.text.isEmpty()) StreamEvidence.EMPTY else StreamEvidence.CONTENT
+    is LLMStreamChunk.ReasoningContent -> if (chunk.content.isEmpty()) StreamEvidence.EMPTY else StreamEvidence.CONTENT
+    is LLMStreamChunk.ToolUseStart,
+    is LLMStreamChunk.ToolInputDelta,
+    is LLMStreamChunk.ToolCallComplete,
+    is LLMStreamChunk.MediaAttachment -> StreamEvidence.CONTENT
+    is LLMStreamChunk.Finished -> if (chunk.stopReason == null) StreamEvidence.EMPTY else StreamEvidence.STOPPED
+    else -> StreamEvidence.EMPTY
 }

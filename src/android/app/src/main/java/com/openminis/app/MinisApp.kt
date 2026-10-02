@@ -29,16 +29,68 @@ import kotlinx.coroutines.launch
 /** [P3.4 净眼] 一次性旧 alarm 清扫的完成标志键（minis_maintenance_prefs）。 */
 private const val KEY_RETIRED_ALARM_SWEEP_DONE = "retired_alarm_sweep_done_v1"
 
+/**
+ * T268 ghost alarm 重放判定（纯函数，行为钉见 MinisAppMaintenanceTest）。
+ *
+ * T266 之前的老安装把闹钟/计时器写进 minis 自己的 prefs + AlarmManager；
+ * T266 退役该路径后这些条目成了只在应用内生效的幽灵。重放规则：
+ *  - 过期的 timer 没有可恢复的东西（OS 不会再触发）→ 跳过；
+ *  - 过期的一次性（ONCE）闹钟同样跳过；
+ *  - 其余（未来 timer / 未来闹钟 / 周期闹钟即便触发点已过——下一轮还会
+ *    响）按原类型经系统 Clock 应用的 SET_TIMER / SET_ALARM 意图重放。
+ */
+internal enum class GhostAlarmAction { SKIP, REPLAY_TIMER, REPLAY_ALARM }
+
+internal fun ghostAlarmAction(
+    type: String,
+    triggerAtMs: Long,
+    repeatMode: String,
+    now: Long,
+): GhostAlarmAction {
+    val alreadyPast = triggerAtMs in 1L..now
+    if (alreadyPast && type == "timer") return GhostAlarmAction.SKIP
+    if (alreadyPast && repeatMode == "ONCE") return GhostAlarmAction.SKIP
+    return if (type == "timer") GhostAlarmAction.REPLAY_TIMER else GhostAlarmAction.REPLAY_ALARM
+}
+
+/**
+ * T-android-fgs-timeout-crash 的判定核（纯函数，行为钉见
+ * MinisAppMaintenanceTest）：这个 Throwable 是不是
+ * RemoteServiceException$ForegroundServiceDidNotStopInTimeException？
+ * 异常类名在一些 OS 上被包一层，故同时认「消息同时包含 foreground
+ * service of type 与 did not stop within its timeout」的消息面判定。
+ */
+internal fun isForegroundServiceTimeout(throwable: Throwable): Boolean {
+    if (throwable.javaClass.name.endsWith("RemoteServiceException\$ForegroundServiceDidNotStopInTimeException")) {
+        return true
+    }
+    val message = throwable.message ?: return false
+    return message.contains("foreground service of type") &&
+        message.contains("did not stop within its timeout")
+}
+
 class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProvider {
-    override fun prepareCardImport(store:novex.storage.CardStore,input:java.io.InputStream,name:String,kind:novex.content.CardKind):novex.storage.CardDraft =
-        com.openminis.app.cards.LegacyArchiveImport(store,cacheDir.toPath().resolve("legacy-card-incoming")).prepare(input,name,kind)
+
+    // ─── 初始化器次序契约（冻结面） ────────────────────────────────────────
+    // onCreate → attachBaseContext 已装 ACRA → :acra 进程早退 → 日志上下文
+    // → wire 抓取目录 → 安全模式探测 → 协调器；两段初始化（minimum/runtime）
+    // 的内部次序分别见 [initializeMinimumSubsystems] 与
+    // [initializeRuntimeSubsystems]——各初始化器的先后与副作用等价，
+    // 重排结构不得改变初始化效果顺序。
+
+    override fun prepareCardImport(store: novex.storage.CardStore, input: java.io.InputStream, name: String, kind: novex.content.CardKind): novex.storage.CardDraft =
+        com.openminis.app.cards.LegacyArchiveImport(store, cacheDir.toPath().resolve("legacy-card-incoming")).prepare(input, name, kind)
+
     private val startupScope = kotlinx.coroutines.CoroutineScope(
         kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.IO,
     )
+
     lateinit var startupCoordinator: NovexStartupCoordinator
         private set
+
     private val postHomeLock = Any()
     private val cardDirectoryMigrationStarted = java.util.concurrent.atomic.AtomicBoolean(false)
+
     @Volatile
     private var postHomeReady = false
 
@@ -60,6 +112,9 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     @Volatile
     var subsystemsInitialized: Boolean = false
         private set
+
+    /** 子系统未就绪时把 lateinit 读转成 null（见各 OrNull 属性）。 */
+    private inline fun <T> ifReady(read: () -> T): T? = if (subsystemsInitialized) read() else null
 
     /**
      * [T-android-safemode-lateinit-crash-147] Null-safe view of
@@ -88,7 +143,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
      * layer needs is ready".
      */
     val chatRepositoryOrNull: ChatRepository?
-        get() = if (subsystemsInitialized) chatRepository else null
+        get() = ifReady { chatRepository }
 
     /**
      * [T-android-share-launch-crash] Same contract as [chatRepositoryOrNull],
@@ -103,7 +158,7 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
      * "import failed", which it already does for the missing-Application case.
      */
     val providerRepositoryOrNull: ProviderRepository?
-        get() = if (subsystemsInitialized) providerRepository else null
+        get() = ifReady { providerRepository }
 
     /**
      * [T-android-safemode-lateinit-crash-147] True when the app-layer
@@ -272,6 +327,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         }
     }
 
+    // ─── 第一段：数据层最小可用 ─────────────────────────────────────────────
+
     private fun initializeMinimumSubsystems() {
         database = NovexMainDatabase.getInstance(this)
         novexWorkspace = novex.android.adapter.NovexWorkspaceFactory.createDeferred(
@@ -295,9 +352,14 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             ensurePostHomeMaintenance()
             sweepRetiredAlarmsOnce()
             if (cardDirectoryMigrationStarted.compareAndSet(false, true)) {
-                runCatching { creativeArtifactRepository.migrateCardImages() + novexWorkspace.migrateCardDirectories() }
-                    .onSuccess { count -> if (count > 0) Log.w("NovexCardDirectories", "$count card directories need retry") }
-                    .onFailure { if (it is kotlinx.coroutines.CancellationException) throw it; Log.w("NovexCardDirectories", "Card directory migration will retry next launch") }
+                runCatching {
+                    creativeArtifactRepository.migrateCardImages() + novexWorkspace.migrateCardDirectories()
+                }.onSuccess { count ->
+                    if (count > 0) Log.w("NovexCardDirectories", "$count card directories need retry")
+                }.onFailure {
+                    if (it is kotlinx.coroutines.CancellationException) throw it
+                    Log.w("NovexCardDirectories", "Card directory migration will retry next launch")
+                }
             }
         }
     }
@@ -324,53 +386,17 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             var cancelled = 0
             // ① 定时任务（P3.3 删 scheduled/）：requestCode = taskId.hashCode()
             // 正数化，action=FIRE（filterEquals 含 action，缺了匹配不上）。
-            val taskIds = mutableListOf<String>()
-            getSharedPreferences("minis_scheduled_tasks_prefs", Context.MODE_PRIVATE)
-                .getString("tasks_json", null)?.let { raw ->
-                    runCatching {
-                        val arr = org.json.JSONArray(raw)
-                        for (i in 0 until arr.length()) {
-                            arr.optJSONObject(i)?.optString("id")?.takeIf { it.isNotEmpty() }
-                                ?.let(taskIds::add)
-                        }
-                    }
-                }
-            for (id in taskIds) {
+            val sweptTasks = collectStoredTaskIds()
+            for (id in sweptTasks) {
                 val intent = Intent().setClassName(this, "com.openminis.app.scheduled.ScheduledTaskAlarmReceiver")
                     .setAction("com.openminis.app.scheduled.FIRE")
-                val pi = android.app.PendingIntent.getBroadcast(
-                    this, id.hashCode() and 0x7FFFFFFF, intent,
-                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
-                )
-                if (pi != null) {
-                    alarmManager.cancel(pi)
-                    pi.cancel()
-                    cancelled++
-                }
+                cancelled += cancelStoredBroadcast(alarmManager, id.hashCode() and 0x7FFFFFFF, intent)
             }
             // ② 上游助理闹钟/计时器（R2 删 offload/）：requestCode 原样存档。
-            val offloadAlarms = mutableListOf<Int>()
-            getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
-                .getString("alarms_json", null)?.let { raw ->
-                    runCatching {
-                        val arr = org.json.JSONArray(raw)
-                        for (i in 0 until arr.length()) {
-                            arr.optJSONObject(i)?.optInt("requestCode", 0)?.takeIf { it != 0 }
-                                ?.let(offloadAlarms::add)
-                        }
-                    }
-                }
-            for (requestCode in offloadAlarms) {
+            val sweptOffload = collectStoredRequestCodes()
+            for (requestCode in sweptOffload) {
                 val intent = Intent().setClassName(this, "com.openminis.app.offload.AlarmReceiver")
-                val pi = android.app.PendingIntent.getBroadcast(
-                    this, requestCode, intent,
-                    android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
-                )
-                if (pi != null) {
-                    alarmManager.cancel(pi)
-                    pi.cancel()
-                    cancelled++
-                }
+                cancelled += cancelStoredBroadcast(alarmManager, requestCode, intent)
             }
 
             // 清存档 + 落一次性标志（同一次提交，崩溃也不留半程状态）。
@@ -379,24 +405,59 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             getSharedPreferences("minis_alarms_prefs", Context.MODE_PRIVATE)
                 .edit().remove("alarms_json").apply()
             flagPrefs.edit().putBoolean(KEY_RETIRED_ALARM_SWEEP_DONE, true).apply()
-            if (cancelled > 0 || taskIds.isNotEmpty() || offloadAlarms.isNotEmpty()) {
+            if (cancelled > 0 || sweptTasks.isNotEmpty() || sweptOffload.isNotEmpty()) {
                 AppLogger.info(
                     "MinisApp",
                     "retired alarm sweep: cancelled=$cancelled " +
-                        "(scheduled=${taskIds.size} ids, offload=${offloadAlarms.size} ids)",
+                        "(scheduled=${sweptTasks.size} ids, offload=${sweptOffload.size} ids)",
                 )
             }
         }.onFailure { Log.w("MinisApp", "retired alarm sweep failed (will retry next launch): ${it.message}") }
     }
 
+    /** 定时任务存档：minis_scheduled_tasks_prefs.tasks_json 里逐项的字符串 id。 */
+    private fun collectStoredTaskIds(): List<String> =
+        readStoredJsonArray("minis_scheduled_tasks_prefs", "tasks_json") { obj ->
+            obj.optString("id").takeIf { it.isNotEmpty() }
+        }
+
+    /** 闹钟存档：minis_alarms_prefs.alarms_json 里逐项的整型 requestCode。 */
+    private fun collectStoredRequestCodes(): List<Int> =
+        readStoredJsonArray("minis_alarms_prefs", "alarms_json") { obj ->
+            obj.optInt("requestCode", 0).takeIf { it != 0 }
+        }
+
+    /** prefs 里的 JSON 数组存档逐项抽取（键名与形态是历史契约，解析失败得空）。 */
+    private inline fun <T> readStoredJsonArray(prefsName: String, key: String, pick: (org.json.JSONObject) -> T?): List<T> =
+        getSharedPreferences(prefsName, Context.MODE_PRIVATE).getString(key, null)
+            ?.let { raw ->
+                runCatching {
+                    val arr = org.json.JSONArray(raw)
+                    List(arr.length()) { i -> arr.optJSONObject(i) }.mapNotNull { obj -> obj?.let(pick) }
+                }.getOrDefault(emptyList())
+            }
+            ?: emptyList()
+
+    /** 照原形重建（FLAG_NO_CREATE）并撤销一个存量广播 PendingIntent；返回撤销数。 */
+    private fun cancelStoredBroadcast(
+        alarmManager: android.app.AlarmManager,
+        requestCode: Int,
+        intent: Intent,
+    ): Int {
+        val pending = android.app.PendingIntent.getBroadcast(
+            this, requestCode, intent,
+            android.app.PendingIntent.FLAG_NO_CREATE or android.app.PendingIntent.FLAG_IMMUTABLE,
+        ) ?: return 0
+        alarmManager.cancel(pending)
+        pending.cancel()
+        return 1
+    }
+
     private fun ensurePostHomeMaintenance() = synchronized(postHomeLock) {
         if (postHomeReady) return@synchronized
         AppLogger.init(this)
-        try {
-            com.openminis.app.diagnostics.LaunchCycleBeacon.recordLaunch(this)
-        } catch (t: Throwable) {
-            Log.w("MinisApp", "LaunchCycleBeacon.recordLaunch failed: ${t.message}")
-        }
+        runCatching { com.openminis.app.diagnostics.LaunchCycleBeacon.recordLaunch(this) }
+            .onFailure { Log.w("MinisApp", "LaunchCycleBeacon.recordLaunch failed: ${it.message}") }
         com.openminis.app.diagnostics.HangDetector.start(this)
         // [T-dual-update-source] 用户选的更新源要先于冷启动检查注水（默认 Gitee）
         com.openminis.app.data.UpdateSourceStore.hydrate(this)
@@ -407,6 +468,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         com.openminis.app.data.NovexBulletinMonitor.coldStartOnAppStart()
         postHomeReady = true
     }
+
+    // ─── 第二段：旧运行时与通知面 ───────────────────────────────────────────
 
     private fun initializeRuntimeSubsystems() {
         ensurePostHomeMaintenance()
@@ -450,23 +513,23 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     private fun initializeLegacyCrashAndPreferenceServices() {
         com.openminis.app.data.FastModePrefs.prime(this)
         com.openminis.app.data.AutoCompactPrefs.prime(this)
-        try {
-            com.openminis.app.crash.NativeCrashHandler.install(
-                java.io.File(filesDir, "logs"),
-            )
-        } catch (t: Throwable) {
-            Log.w("MinisApp", "NativeCrashHandler install failed: ${t.message}")
-        }
+        runCatching { com.openminis.app.crash.NativeCrashHandler.install(java.io.File(filesDir, "logs")) }
+            .onFailure { Log.w("MinisApp", "NativeCrashHandler install failed: ${it.message}") }
+        installForegroundServiceTimeoutGuard()
+    }
 
+    /**
+     * T-android-fgs-timeout-crash: 在 ACRA 之前串一层 UncaughtExceptionHandler
+     * 拦 FGS 超时崩溃——进程反正是 SystemServer 判死的，拦下来能做的是把
+     * 前台服务显式停掉（通知干净撤下而不是留僵尸行），再交给前手（ACRA
+     * 落盘流程原样走完）。判定核见顶层 [isForegroundServiceTimeout]。
+     */
+    private fun installForegroundServiceTimeoutGuard() {
         try {
             val priorHandler = Thread.getDefaultUncaughtExceptionHandler()
             Thread.setDefaultUncaughtExceptionHandler { thread, throwable ->
                 try {
-                    val isFgsTimeout = throwable.javaClass.name.endsWith(
-                        "RemoteServiceException\$ForegroundServiceDidNotStopInTimeException",
-                    ) || (throwable.message?.contains("foreground service of type") == true &&
-                        throwable.message?.contains("did not stop within its timeout") == true)
-                    if (isFgsTimeout) {
+                    if (isForegroundServiceTimeout(throwable)) {
                         Log.w(
                             "MinisApp",
                             "FGS timeout caught; stopping service before deferring to ACRA: ${throwable.message}",
@@ -495,17 +558,14 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             override fun onActivityStarted(activity: Activity) {
                 val wasBackgrounded = foregroundActivityCount == 0
                 foregroundActivityCount++
-                if (wasBackgrounded) _isAppForegroundFlow.value = true
                 if (wasBackgrounded) {
+                    _isAppForegroundFlow.value = true
+                    // T298: 用户回到前台——托盘里「任务完成」通知已经没有
+                    // 意义，用户正要直接看那个结果。
                     backgroundTaskNotifier.cancelAllCompletedNotifications()
-                    kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-                        val interrupted = runCatching {
-                            chatRepository.interruptedSessionIds()
-                        }.getOrElse { emptySet() }
-                        val active = SessionActivityTracker.activeSessions.value
-                        com.openminis.app.service.SessionBadgeStore
-                            .reconcileInterruptedSessions(interrupted - active)
-                    }
+                    // [T-android-session-paused-badge-hardkill] 前台往返是
+                    // 软路径；硬杀后冷启动的对账在 initializeDeferredRuntime。
+                    reconcileInterruptedBadges()
                 }
             }
 
@@ -527,6 +587,21 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
             override fun onActivitySaveInstanceState(activity: Activity, outState: Bundle) = Unit
             override fun onActivityDestroyed(activity: Activity) = Unit
         })
+    }
+
+    /**
+     * [T-android-session-paused-badge-hardkill] 用 DB 的中断会话集对账
+     * PAUSED 徽标：排除正在流式输出的会话（「活跃 ⇒ 永不暂停」），其余
+     * 补挂。前台往返与冷启动两处共用。
+     */
+    private fun reconcileInterruptedBadges() {
+        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
+            val interrupted = runCatching { chatRepository.interruptedSessionIds() }
+                .getOrElse { emptySet() }
+            val active = SessionActivityTracker.activeSessions.value
+            com.openminis.app.service.SessionBadgeStore
+                .reconcileInterruptedSessions(interrupted - active)
+        }
     }
 
     private fun initializeDeferredRuntime() {
@@ -573,21 +648,11 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // 该桶零消费方）；memory/skills/shared 三桶原样保留。
         novex.android.ContentPaths.registerGlobalMounts(this)
 
-        // [T-android-session-paused-badge-hardkill] Reconcile PAUSED badges
-        // against the DB's interrupted-session set. The lifecycle-callback push
-        // (onActivityStarted, below) only fires on a graceful background→
-        // foreground round-trip; a hard kill (force-quit / process death) never
-        // runs it, so the badge would be missing after restart. The persisted
-        // message tail is the durable source of truth — scan it off-main and
-        // reconcile. Runs after init() so it merges with the restored queues.
-        kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.IO).launch {
-            val interrupted = runCatching { chatRepository.interruptedSessionIds() }.getOrElse { emptySet() }
-            // Exclude any session that is already actively streaming (defensive;
-            // at cold start this is empty, but keeps the rule "active ⇒ never
-            // paused" uniform with the foreground reconcile path).
-            val active = SessionActivityTracker.activeSessions.value
-            com.openminis.app.service.SessionBadgeStore.reconcileInterruptedSessions(interrupted - active)
-        }
+        // [T-android-session-paused-badge-hardkill] 冷启动对账：生命周期
+        // 回调的推送只在优雅的后台→前台往返时触发；硬杀（强退/进程死亡）
+        // 永远走不到，重启后徽标会缺。持久化的消息尾是权威事实源——
+        // 在后台线程扫一遍对账。init() 之后跑，与恢复的队列合并。
+        reconcileInterruptedBadges()
 
         // [P3.3 裁军] ConfigConfirmationGate 后台通知器（config-confirm 门）
         // 与语音识别适配层（SpeechRecognitionManager.init）随各自体系退役。
@@ -643,44 +708,47 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         for (i in 0 until arr.length()) {
             val entry = arr.optJSONObject(i) ?: continue
             val triggerAt = entry.optLong("triggerAtMs", 0L)
-            if (triggerAt in 1L..now && entry.optString("type") == "timer") {
-                skipped++; continue  // Past timer — nothing to recover.
-            }
-            if (triggerAt in 1L..now && entry.optString("repeatMode", "ONCE") == "ONCE") {
-                skipped++; continue  // Past one-shot alarm.
-            }
-            val migrationOk = runCatching {
-                if (entry.optString("type") == "timer") {
-                    val secs = entry.optInt("durationSec", -1)
-                    val remaining = ((triggerAt - now) / 1000L).toInt()
-                    if (remaining <= 0 && secs <= 0) return@runCatching false
-                    val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_TIMER).apply {
-                        putExtra(android.provider.AlarmClock.EXTRA_LENGTH, if (remaining > 0) remaining else secs)
-                        putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, entry.optString("label", "Timer"))
-                        putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    true
-                } else {
-                    val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
-                        putExtra(android.provider.AlarmClock.EXTRA_HOUR, entry.optInt("hour", 0))
-                        putExtra(android.provider.AlarmClock.EXTRA_MINUTES, entry.optInt("minute", 0))
-                        putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, entry.optString("label", "Alarm"))
-                        putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
-                        addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(intent)
-                    true
+            when (ghostAlarmAction(entry.optString("type"), triggerAt, entry.optString("repeatMode", "ONCE"), now)) {
+                GhostAlarmAction.SKIP -> skipped++
+                GhostAlarmAction.REPLAY_TIMER -> {
+                    if (replayGhostTimer(entry, triggerAt, now)) migrated++ else skipped++
                 }
-            }.getOrDefault(false)
-            if (migrationOk) migrated++ else skipped++
+                GhostAlarmAction.REPLAY_ALARM -> {
+                    if (replayGhostAlarm(entry)) migrated++ else skipped++
+                }
+            }
         }
         // Clear the blob unconditionally — entries we couldn't replay are
         // still useless ghosts, and leaving the blob would re-trigger
         // migration on every launch.
         prefs.edit().remove("alarms_json").apply()
         Log.i("MinisApp", "T268 ghost alarm migration: migrated=$migrated skipped=$skipped (prefs cleared)")
+    }
+
+    /** 重放一条 timer：剩余秒数优先，回落存档时长；两者皆尽则放弃。 */
+    private fun replayGhostTimer(entry: org.json.JSONObject, triggerAt: Long, now: Long): Boolean {
+        val storedSecs = entry.optInt("durationSec", -1)
+        val remaining = ((triggerAt - now) / 1000L).toInt()
+        if (remaining <= 0 && storedSecs <= 0) return false
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_TIMER).apply {
+            putExtra(android.provider.AlarmClock.EXTRA_LENGTH, if (remaining > 0) remaining else storedSecs)
+            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, entry.optString("label", "Timer"))
+            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { startActivity(intent) }.isSuccess
+    }
+
+    /** 重放一条闹钟：时/分/标签照存档，跳过 UI 直接入系统 Clock。 */
+    private fun replayGhostAlarm(entry: org.json.JSONObject): Boolean {
+        val intent = android.content.Intent(android.provider.AlarmClock.ACTION_SET_ALARM).apply {
+            putExtra(android.provider.AlarmClock.EXTRA_HOUR, entry.optInt("hour", 0))
+            putExtra(android.provider.AlarmClock.EXTRA_MINUTES, entry.optInt("minute", 0))
+            putExtra(android.provider.AlarmClock.EXTRA_MESSAGE, entry.optString("label", "Alarm"))
+            putExtra(android.provider.AlarmClock.EXTRA_SKIP_UI, true)
+            addFlags(android.content.Intent.FLAG_ACTIVITY_NEW_TASK)
+        }
+        return runCatching { startActivity(intent) }.isSuccess
     }
 
     /**
@@ -690,6 +758,15 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
      */
     override fun newImageLoader(): ImageLoader =
         ImageLoader.Builder(this)
+            .memoryCache(
+                // [T-memory-cap-and-storage] 用户实测内存 1-5G（GH#206 同病：位图
+                // 像素堆积在 GC 够不到的 native/graphics 区）。Coil 默认按可用
+                // 内存比例给缓存（largeHeap 再放大）——改为固定 128MB 封顶，
+                // 到顶丢最旧；磁盘文件不受影响。
+                coil.memory.MemoryCache.Builder(this)
+                    .maxSizeBytes(128 * 1024 * 1024)
+                    .build()
+            )
             .components {
                 add(MinisImageFetcher.Factory())
                 add(MinisImageFetcher.UriFactory())
@@ -699,16 +776,17 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
                 add(MinisImageFetcher.MtimeKeyer())
                 add(MinisImageFetcher.StringMtimeKeyer())
             }
-            // [T-memory-cap-and-storage] 用户实测内存 1-5G（GH#206 同病：位图
-            // 像素堆积在 GC 够不到的 native/graphics 区）。Coil 默认按可用
-            // 内存比例给缓存（largeHeap 再放大）——改为固定 128MB 封顶，
-            // 到顶丢最旧；磁盘文件不受影响。
-            .memoryCache(
-                coil.memory.MemoryCache.Builder(this)
-                    .maxSizeBytes(128 * 1024 * 1024)
-                    .build()
-            )
             .build()
+
+    /** 压力分档：这些级别上丢弃公式位图缓存；COMPLETE 再加拆离屏 KaTeX WebView。 */
+    private val formulaCacheDropLevels = setOf(
+        TRIM_MEMORY_RUNNING_LOW, TRIM_MEMORY_RUNNING_CRITICAL,
+        TRIM_MEMORY_BACKGROUND, TRIM_MEMORY_MODERATE, TRIM_MEMORY_COMPLETE,
+    )
+
+    private inline fun evictQuietly(what: String, evict: () -> Unit) {
+        runCatching(evict).onFailure { Log.w("MinisApp", "$what failed: ${it.message}") }
+    }
 
     /**
      * [GH#206] Respond to system memory pressure.
@@ -736,27 +814,14 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
     override fun onTrimMemory(level: Int) {
         super.onTrimMemory(level)
 
-        val dropFormulaCaches = when (level) {
-            TRIM_MEMORY_RUNNING_LOW,
-            TRIM_MEMORY_RUNNING_CRITICAL,
-            TRIM_MEMORY_BACKGROUND,
-            TRIM_MEMORY_MODERATE,
-            TRIM_MEMORY_COMPLETE,
-            -> true
-            else -> false
-        }
-        if (!dropFormulaCaches) return
-
+        if (level !in formulaCacheDropLevels) return
         Log.i("MinisApp", "onTrimMemory(level=$level): releasing formula bitmap caches")
-        runCatching { com.openminis.app.ui.chat.KatexWebViewPool.evictAll() }
-            .onFailure { Log.w("MinisApp", "KatexWebViewPool.evictAll failed: ${it.message}") }
-        runCatching { com.openminis.app.ui.markdown.KaTeXRendererCache.evictAll() }
-            .onFailure { Log.w("MinisApp", "KaTeXRendererCache.evictAll failed: ${it.message}") }
+        evictQuietly("KatexWebViewPool.evictAll") { com.openminis.app.ui.chat.KatexWebViewPool.evictAll() }
+        evictQuietly("KaTeXRendererCache.evictAll") { com.openminis.app.ui.markdown.KaTeXRendererCache.evictAll() }
 
         if (level >= TRIM_MEMORY_COMPLETE) {
             Log.i("MinisApp", "onTrimMemory(level=$level): tearing down the offscreen KaTeX WebView")
-            runCatching { com.openminis.app.ui.chat.KatexWebViewPool.releaseWebView() }
-                .onFailure { Log.w("MinisApp", "KatexWebViewPool.releaseWebView failed: ${it.message}") }
+            evictQuietly("KatexWebViewPool.releaseWebView") { com.openminis.app.ui.chat.KatexWebViewPool.releaseWebView() }
         }
     }
 
@@ -766,11 +831,8 @@ class MinisApp : Application(), ImageLoaderFactory, novex.android.CardImportProv
         // worth marking the beacon: a present clean_exit on a real
         // device proves we shut down voluntarily; its absence is the
         // signal we care about for [LaunchCycleBeacon].
-        try {
-            com.openminis.app.diagnostics.LaunchCycleBeacon.recordCleanExit(this)
-        } catch (t: Throwable) {
-            Log.w("MinisApp", "LaunchCycleBeacon.recordCleanExit failed: ${t.message}")
-        }
+        runCatching { com.openminis.app.diagnostics.LaunchCycleBeacon.recordCleanExit(this) }
+            .onFailure { Log.w("MinisApp", "LaunchCycleBeacon.recordCleanExit failed: ${it.message}") }
         super.onTerminate()
     }
 

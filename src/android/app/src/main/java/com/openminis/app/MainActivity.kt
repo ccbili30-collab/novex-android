@@ -1,15 +1,16 @@
 package com.openminis.app
 
+import android.app.AlertDialog
 import android.app.LocaleManager
 import android.content.Intent
 import android.content.SharedPreferences
+import android.graphics.Canvas
+import android.graphics.Color
+import android.graphics.drawable.GradientDrawable
 import android.net.Uri
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
-import android.graphics.Color
-import android.graphics.Canvas
-import android.graphics.drawable.GradientDrawable
 import android.view.Gravity
 import android.widget.FrameLayout
 import android.widget.LinearLayout
@@ -20,16 +21,10 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.ActivityResultLauncher
 import androidx.activity.result.contract.ActivityResultContracts
-import android.app.AlertDialog
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.SideEffect
-import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
-import androidx.core.app.ActivityCompat
-import androidx.core.content.ContextCompat
 import androidx.lifecycle.lifecycleScope
-import kotlinx.coroutines.flow.filterNotNull
-import kotlinx.coroutines.launch
 import androidx.navigation.NavHostController
 import androidx.navigation.compose.rememberNavController
 import com.openminis.app.deeplink.DeepLinkAction
@@ -39,7 +34,6 @@ import com.openminis.app.logging.AppLogger
 import com.openminis.app.service.SessionActivityTracker
 import com.openminis.app.ui.navigation.AppNavigation
 import com.openminis.app.ui.navigation.Routes
-import com.openminis.app.ui.navigation.safeNavigate
 import com.openminis.app.ui.settings.KEY_KEEP_SCREEN_AWAKE
 import com.openminis.app.ui.settings.KEY_LANGUAGE
 import com.openminis.app.ui.settings.PREF_APPEARANCE
@@ -48,8 +42,23 @@ import com.openminis.app.ui.settings.keepScreenAwakeEnabled
 import com.openminis.app.ui.theme.NovexAppTheme
 import com.openminis.app.ui.theme.ThemeVariantMode
 import com.openminis.app.ui.theme.relativeLuminance
+import kotlinx.coroutines.launch
 
 private const val KEY_CURRENT_CHAT_SESSION_ID = "minis.current_chat_session_id"
+
+/**
+ * T166 冷启动深链裁决（纯函数，行为钉见 MainActivityLaunchRulesTest）：
+ * 用户点进来的真深链永远赢过保存态恢复；否则恢复上次所在会话；都没有
+ * 才落 Unknown。AppNavigation 拿到结果作 initialDeepLink。
+ */
+internal fun resolveLaunchDeepLink(
+    intentData: Uri?,
+    restoredSessionId: String?,
+): DeepLinkAction {
+    val explicit = DeepLinkHandler.parse(intentData)
+    if (explicit !is DeepLinkAction.Unknown) return explicit
+    return restoredSessionId?.let { DeepLinkAction.OpenSession(it) } ?: DeepLinkAction.Unknown
+}
 
 class MainActivity : ComponentActivity() {
 
@@ -125,9 +134,10 @@ class MainActivity : ComponentActivity() {
         // Let the toast render before tearing the process down. The delay
         // runs on the main looper of a process we are about to kill, which
         // is fine — nothing else is scheduled on it at this point.
-        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed({
-            android.os.Process.killProcess(android.os.Process.myPid())
-        }, 1200L)
+        android.os.Handler(android.os.Looper.getMainLooper()).postDelayed(
+            { android.os.Process.killProcess(android.os.Process.myPid()) },
+            1200L,
+        )
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -135,48 +145,7 @@ class MainActivity : ComponentActivity() {
         com.openminis.app.crash.ProcessExitEvidence.collect(this)
         com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.create restored=${savedInstanceState != null}")
 
-        // Register the crash-share "Save to..." launcher BEFORE the
-        // safe-mode early-return below — ActivityResultLauncher must be
-        // registered before STARTED, and the safe-mode path needs it.
-        // The launcher pairs with `pendingCrashZip` to copy the zip into
-        // whatever URI the user picked in the system file picker, then
-        // opens that URI with ACTION_VIEW so they see it land.
-        val crashSaveLauncher = registerForActivityResult(
-            ActivityResultContracts.StartActivityForResult()
-        ) { result ->
-            val targetUri = result.data?.data
-            val zip = pendingCrashZip
-            pendingCrashZip = null
-            if (result.resultCode != android.app.Activity.RESULT_OK || targetUri == null || zip == null) {
-                pendingCrashSaveOnClosed?.invoke()
-                pendingCrashSaveOnClosed = null
-                return@registerForActivityResult
-            }
-            try {
-                contentResolver.openOutputStream(targetUri)?.use { out ->
-                    java.io.FileInputStream(zip).use { input -> input.copyTo(out) }
-                } ?: throw java.io.IOException("openOutputStream returned null")
-                // Auto-open the saved file so the user sees where it
-                // landed. ACTION_VIEW with the SAF URI hands control to
-                // whatever app the system associates with .zip /
-                // application/zip (file managers, archive viewers).
-                try {
-                    val view = Intent(Intent.ACTION_VIEW).apply {
-                        setDataAndType(targetUri, "application/zip")
-                        addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-                    }
-                    startActivity(view)
-                } catch (t: Throwable) {
-                    android.util.Log.w("MainActivity", "ACTION_VIEW after save failed: ${t.message}")
-                }
-            } catch (t: Throwable) {
-                android.util.Log.w("MainActivity", "crash zip save failed: ${t.message}")
-            } finally {
-                pendingCrashSaveOnClosed?.invoke()
-                pendingCrashSaveOnClosed = null
-            }
-        }
+        val crashSaveLauncher = registerCrashShareSaveLauncher()
 
         // Safe-mode short-circuit: if CrashFrequencyDetector tripped in
         // MinisApp.onCreate (≥THRESHOLD recent crash files), the
@@ -210,55 +179,18 @@ class MainActivity : ComponentActivity() {
         // genuinely unsafe.
         val minisApp = application as? MinisApp
         if (minisApp != null && !minisApp.subsystemsInitialized && !minisApp.startupCoordinator.safeMode) {
+            // 数据层还没起（首帧延迟初始化路径）：先画自有的启动面，
+            // 等首帧真正画出来再拉起运行时，避免在系统 splash 上卡住。
             showLaunchSurfaceThen {
                 lifecycleScope.launch {
                     val result = minisApp.startupCoordinator.ensureRuntime()
-                    if (result.isSuccess) {
-                        recreate()
-                    } else {
-                        showInitializationFailure(result.exceptionOrNull())
-                    }
+                    if (result.isSuccess) recreate() else showInitializationFailure(result.exceptionOrNull())
                 }
             }
             return
         }
         if (minisApp == null || !minisApp.subsystemsInitialized) {
-            android.util.Log.w(
-                "MainActivity",
-                "app subsystems not initialized (safeMode=" +
-                    "${com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()}) — " +
-                    "showing crash share dialog and finishing",
-            )
-            com.openminis.app.crash.CrashFrequencyDetector.maybeShowOnActivity(
-                activity = this,
-                // T-android-safemode-lateinit-crash: plain finish() here is a
-                // dead end on the second launch. maybeShowOnActivity invokes
-                // onClosed immediately when pendingShareFiles is null, which
-                // is exactly the state after the user dismissed the dialog on
-                // the previous launch — the app would close the instant it was
-                // tapped, reading as "Minis won't open at all". The process
-                // still holds a permanently uninitialized Application, so the
-                // only real recovery is a fresh process: tell the user, then
-                // exit hard so the next tap gets a clean init.
-                onClosed = { finishAndRestartProcess() },
-                saveLauncher = { zip, onSaveDone ->
-                    pendingCrashZip = zip
-                    pendingCrashSaveOnClosed = onSaveDone
-                    val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
-                        addCategory(Intent.CATEGORY_OPENABLE)
-                        type = "application/zip"
-                        putExtra(Intent.EXTRA_TITLE, zip.name)
-                    }
-                    try {
-                        crashSaveLauncher.launch(intent)
-                    } catch (t: Throwable) {
-                        android.util.Log.w("MainActivity", "CREATE_DOCUMENT launch failed: ${t.message}")
-                        pendingCrashZip = null
-                        pendingCrashSaveOnClosed = null
-                        onSaveDone()
-                    }
-                },
-            )
+            offerCrashShareDialogAndRestart(crashSaveLauncher)
             return
         }
 
@@ -277,9 +209,7 @@ class MainActivity : ComponentActivity() {
         // covers the path where saved-state would override the
         // launch-mode dispatch entirely.
         restoredChatSessionId = savedInstanceState?.getString(KEY_CURRENT_CHAT_SESSION_ID)
-            ?.takeUnless {
-                com.openminis.app.crash.CrashFrequencyDetector.shouldForceHomeOnLaunch(this)
-            }
+            ?.takeUnless { com.openminis.app.crash.CrashFrequencyDetector.shouldForceHomeOnLaunch(this) }
 
         // [P3.3 裁军] 系统权限桥两段（pendingAndroidPermission /
         // pendingSettingsGate 收集器）随 OffloadPermissionManager 退役删除。
@@ -329,20 +259,9 @@ class MainActivity : ComponentActivity() {
         // Non-null and fully initialized — proven by the guard above.
         val app = requireNotNull(application as? MinisApp)
 
-        // Parse deep link from launch intent. A real deep-link in the
-        // launch intent always wins over a saved-state restore (the
-        // user explicitly tapped a link). Otherwise, if we were killed
-        // while inside a chat, synthesise an OpenSession deep-link so
-        // the navigation stack lands on that chat instead of the
-        // sessions list. T166.
-        val explicitDeepLink = DeepLinkHandler.parse(intent?.data)
-        val launchDeepLink = if (explicitDeepLink !is DeepLinkAction.Unknown) {
-            explicitDeepLink
-        } else {
-            restoredChatSessionId
-                ?.let { DeepLinkAction.OpenSession(it) }
-                ?: DeepLinkAction.Unknown
-        }
+        // Parse deep link from launch intent — 见顶层 resolveLaunchDeepLink
+        // 的裁决规则（真深链 > 保存态会话恢复 > Unknown）。T166.
+        val launchDeepLink = resolveLaunchDeepLink(intent?.data, restoredChatSessionId)
         val novexStartRoute = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE)
 
         setContent {
@@ -377,19 +296,21 @@ class MainActivity : ComponentActivity() {
                 val navController = rememberNavController().also { this.navController = it }
 
                 DisposableEffect(navController) {
+                    // T166: 把导航栈上的会话进出镜像给 SessionActivityTracker
+                    // ——只有 route 实际变化才做 setAbsent/setPresent 对账，
+                    // 重组不触发。
                     val job = lifecycleScope.launch {
                         navController.currentBackStackEntryFlow.collect { entry ->
-                            com.openminis.app.crash.ProcessExitEvidence.record(this@MainActivity, "navigation.destination=${entry.destination.route}")
+                            com.openminis.app.crash.ProcessExitEvidence.record(
+                                this@MainActivity,
+                                "navigation.destination=${entry.destination.route}",
+                            )
                             val isChatRoute = entry.destination.route == Routes.CHAT
                             val sid = entry.arguments?.getString("sessionId").takeIf { isChatRoute }
                             val previous = currentChatSessionId
                             if (sid != previous) {
-                                if (previous != null) {
-                                    SessionActivityTracker.setAbsent(previous)
-                                }
-                                if (sid != null) {
-                                    SessionActivityTracker.setPresent(sid)
-                                }
+                                previous?.let { SessionActivityTracker.setAbsent(it) }
+                                sid?.let { SessionActivityTracker.setPresent(it) }
                                 currentChatSessionId = sid
                             }
                         }
@@ -412,6 +333,110 @@ class MainActivity : ComponentActivity() {
                 // （ConfigConfirmDialogHost）随 config/ 体系退役删除。
             }
         }
+    }
+
+    // ─── 安全模式 / 崩溃分享路径 ────────────────────────────────────────────
+
+    /**
+     * Register the crash-share "Save to..." launcher BEFORE the
+     * safe-mode early-return below — ActivityResultLauncher must be
+     * registered before STARTED, and the safe-mode path needs it.
+     * The launcher pairs with `pendingCrashZip` to copy the zip into
+     * whatever URI the user picked in the system file picker, then
+     * opens that URI with ACTION_VIEW so they see it land.
+     */
+    private fun registerCrashShareSaveLauncher(): ActivityResultLauncher<Intent> =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val targetUri = result.data?.data
+            val zip = pendingCrashZip
+            pendingCrashZip = null
+            if (result.resultCode != android.app.Activity.RESULT_OK || targetUri == null || zip == null) {
+                settlePendingCrashSave()
+                return@registerForActivityResult
+            }
+            try {
+                copyCrashZipInto(zip, targetUri)
+                openSavedCrashZip(targetUri)
+            } catch (t: Throwable) {
+                android.util.Log.w("MainActivity", "crash zip save failed: ${t.message}")
+            } finally {
+                settlePendingCrashSave()
+            }
+        }
+
+    private fun settlePendingCrashSave() {
+        pendingCrashSaveOnClosed?.invoke()
+        pendingCrashSaveOnClosed = null
+    }
+
+    /** 把崩溃 zip 复制到用户在 SAF 选择的目标；流打不开视为失败。 */
+    private fun copyCrashZipInto(zip: java.io.File, targetUri: Uri) {
+        val out = contentResolver.openOutputStream(targetUri)
+            ?: throw java.io.IOException("openOutputStream returned null")
+        out.use { sink -> java.io.FileInputStream(zip).use { source -> source.copyTo(sink) } }
+    }
+
+    /**
+     * Auto-open the saved file so the user sees where it landed. ACTION_VIEW
+     * with the SAF URI hands control to whatever app the system associates
+     * with .zip / application/zip (file managers, archive viewers).
+     */
+    private fun openSavedCrashZip(targetUri: Uri) {
+        try {
+            val view = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(targetUri, "application/zip")
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(view)
+        } catch (t: Throwable) {
+            android.util.Log.w("MainActivity", "ACTION_VIEW after save failed: ${t.message}")
+        }
+    }
+
+    /**
+     * 子系统不可用（安全模式早退 / 非 MinisApp 进程）：弹崩溃分享对话框。
+     * 关闭即 [finishAndRestartProcess]——
+     * T-android-safemode-lateinit-crash: plain finish() here is a
+     * dead end on the second launch. maybeShowOnActivity invokes
+     * onClosed immediately when pendingShareFiles is null, which is
+     * exactly the state after the user dismissed the dialog on
+     * the previous launch — the app would close the instant it was
+     * tapped, reading as "Minis won't open at all". The process
+     * still holds a permanently uninitialized Application, so the
+     * only real recovery is a fresh process: tell the user, then
+     * exit hard so the next tap gets a clean init.
+     */
+    private fun offerCrashShareDialogAndRestart(
+        crashSaveLauncher: ActivityResultLauncher<Intent>,
+    ) {
+        android.util.Log.w(
+            "MainActivity",
+            "app subsystems not initialized (safeMode=" +
+                "${com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()}) — " +
+                "showing crash share dialog and finishing",
+        )
+        com.openminis.app.crash.CrashFrequencyDetector.maybeShowOnActivity(
+            activity = this,
+            onClosed = { finishAndRestartProcess() },
+            saveLauncher = { zip, onSaveDone ->
+                pendingCrashZip = zip
+                pendingCrashSaveOnClosed = onSaveDone
+                val intent = Intent(Intent.ACTION_CREATE_DOCUMENT).apply {
+                    addCategory(Intent.CATEGORY_OPENABLE)
+                    type = "application/zip"
+                    putExtra(Intent.EXTRA_TITLE, zip.name)
+                }
+                try {
+                    crashSaveLauncher.launch(intent)
+                } catch (t: Throwable) {
+                    android.util.Log.w("MainActivity", "CREATE_DOCUMENT launch failed: ${t.message}")
+                    pendingCrashZip = null
+                    pendingCrashSaveOnClosed = null
+                    onSaveDone()
+                }
+            },
+        )
     }
 
     /**
@@ -496,6 +521,8 @@ class MainActivity : ComponentActivity() {
             .show()
     }
 
+    // ─── 会话镜像与生命周期 ────────────────────────────────────────────────
+
     /**
      * T166: persist the current chat sessionId so an LMK kill while in
      * chat restarts back to the same session (see `restoredChatSessionId`
@@ -506,9 +533,7 @@ class MainActivity : ComponentActivity() {
      */
     override fun onSaveInstanceState(outState: Bundle) {
         super.onSaveInstanceState(outState)
-        currentChatSessionId?.let {
-            outState.putString(KEY_CURRENT_CHAT_SESSION_ID, it)
-        }
+        currentChatSessionId?.let { outState.putString(KEY_CURRENT_CHAT_SESSION_ID, it) }
     }
 
     /**
@@ -518,11 +543,26 @@ class MainActivity : ComponentActivity() {
      * to bias OOM through.
      */
     override fun onDestroy() {
-        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.destroy changingConfiguration=$isChangingConfigurations finishing=$isFinishing")
+        com.openminis.app.crash.ProcessExitEvidence.record(
+            this,
+            "activity.destroy changingConfiguration=$isChangingConfigurations finishing=$isFinishing",
+        )
         currentChatSessionId?.let { SessionActivityTracker.setAbsent(it) }
         currentChatSessionId = null
         super.onDestroy()
     }
+
+    override fun finish() {
+        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.finish")
+        val enteredFromNovexSettings = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE) == "settings"
+        super.finish()
+        if (enteredFromNovexSettings) {
+            @Suppress("DEPRECATION")
+            overridePendingTransition(R.anim.novex_enter_from_right, R.anim.novex_exit_to_left)
+        }
+    }
+
+    // ─── 屏幕常亮与语言 ────────────────────────────────────────────────────
 
     /**
      * Apply (or release) the activity window's `FLAG_KEEP_SCREEN_ON` based on
@@ -534,14 +574,14 @@ class MainActivity : ComponentActivity() {
         val want = keepScreenAwakeEnabled(this) && hasActiveSession
         if (want) {
             window.addFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            AppLogger.info("KeepScreenAwake", "screen-on lock acquired (active sessions present)")
         } else {
             window.clearFlags(android.view.WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
-            AppLogger.info(
-                "KeepScreenAwake",
-                "screen-on lock released (toggle=${keepScreenAwakeEnabled(this)}, active=$hasActiveSession)",
-            )
         }
+        AppLogger.info(
+            "KeepScreenAwake",
+            "screen-on lock ${if (want) "acquired (active sessions present)" else "released"} " +
+                "(toggle=${keepScreenAwakeEnabled(this)}, active=$hasActiveSession)",
+        )
     }
 
     private fun applySavedLanguage() {
@@ -554,6 +594,8 @@ class MainActivity : ComponentActivity() {
         }
     }
 
+    // ─── 热启动分发 ────────────────────────────────────────────────────────
+
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
         // T51: warm-start share — ShareReceiverActivity re-launches with
@@ -563,36 +605,21 @@ class MainActivity : ComponentActivity() {
         if (intent.getBooleanExtra("shared_content", false)) {
             com.openminis.app.share.ShareCoordinator.processPendingShare(this)
         }
-        val route = intent.getStringExtra(EXTRA_NOVEX_START_ROUTE)
-        if (route != null) {
+        intent.getStringExtra(EXTRA_NOVEX_START_ROUTE)?.let { route ->
             navController?.navigate(route) { launchSingleTop = true }
-        } else {
-            handleDeepLink(intent.data)
-        }
+        } ?: run { handleDeepLink(intent.data) }
     }
 
     private fun handleDeepLink(uri: Uri?) {
-        val action = DeepLinkHandler.parse(uri)
         val nav = navController ?: return
-        when (action) {
-            is DeepLinkAction.OpenSession -> {
-                // T-double-chat-fix (secondary): mirror AppNavigation's
-                // OpenSession options so a runtime deep-link (notification /
-                // shortcut / onNewIntent) can't stack a duplicate chat on
-                // top of the same chat that's already showing.
-                nav.navigate(Routes.chat(action.sessionId)) {
-                    popUpTo(Routes.SESSION_LIST) {
-                        inclusive = false
-                        saveState = true
-                    }
-                    launchSingleTop = true
-                    restoreState = true
-                }
-            }
+        when (val action = DeepLinkHandler.parse(uri)) {
+            // T-double-chat-fix (secondary): mirror AppNavigation's
+            // OpenSession options so a runtime deep-link (notification /
+            // shortcut / onNewIntent) can't stack a duplicate chat on
+            // top of the same chat that's already showing.
+            is DeepLinkAction.OpenSession -> openSessionFromDeepLink(nav, action.sessionId)
             // T183: any settings screen reachable by route string.
-            is DeepLinkAction.OpenSettingsScreen -> {
-                nav.navigate(action.route)
-            }
+            is DeepLinkAction.OpenSettingsScreen -> nav.navigate(action.route)
             // [P3.3 裁军] OpenPermissionSettings（权限屏路由）、OpenHtmlPreview
             // （HTML 预览捷径）、OpenAlarmList（系统闹钟列表跳转）随对应功能
             // 退役删除；minis://views/alarm 等旧深链现在落入 Unknown。
@@ -600,29 +627,29 @@ class MainActivity : ComponentActivity() {
             // new_chat / camera_chat open a fresh draft chat; camera seeds
             // DeepLinkCoordinator.pendingChatAction so ChatScreen auto-fires
             // the camera on first compose. voice_chat 快捷方式随语音退役。
-            is DeepLinkAction.NewChat,
-            is DeepLinkAction.NewCameraChat -> {
-                if (action is DeepLinkAction.NewCameraChat) {
-                    DeepLinkCoordinator
-                        .setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CAMERA)
-                }
-                val newRoute = Routes.chat("__new__${java.util.UUID.randomUUID()}")
-                nav.navigate(newRoute) {
-                    popUpTo(Routes.SESSION_LIST) { inclusive = false }
-                    launchSingleTop = true
-                }
-            }
+            is DeepLinkAction.NewChat, is DeepLinkAction.NewCameraChat -> openFreshDraftChat(nav, action)
             else -> {}
         }
     }
 
-    override fun finish() {
-        com.openminis.app.crash.ProcessExitEvidence.record(this, "activity.finish")
-        val enteredFromNovexSettings = intent?.getStringExtra(EXTRA_NOVEX_START_ROUTE) == "settings"
-        super.finish()
-        if (enteredFromNovexSettings) {
-            @Suppress("DEPRECATION")
-            overridePendingTransition(R.anim.novex_enter_from_right, R.anim.novex_exit_to_left)
+    private fun openSessionFromDeepLink(nav: NavHostController, sessionId: String) {
+        nav.navigate(Routes.chat(sessionId)) {
+            popUpTo(Routes.SESSION_LIST) {
+                inclusive = false
+                saveState = true
+            }
+            launchSingleTop = true
+            restoreState = true
+        }
+    }
+
+    private fun openFreshDraftChat(nav: NavHostController, action: DeepLinkAction) {
+        if (action is DeepLinkAction.NewCameraChat) {
+            DeepLinkCoordinator.setPendingChatAction(DeepLinkCoordinator.ChatAction.OPEN_CAMERA)
+        }
+        nav.navigate(Routes.chat("__new__${java.util.UUID.randomUUID()}")) {
+            popUpTo(Routes.SESSION_LIST) { inclusive = false }
+            launchSingleTop = true
         }
     }
 }
