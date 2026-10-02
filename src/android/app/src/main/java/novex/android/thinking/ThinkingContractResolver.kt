@@ -107,8 +107,9 @@ object ThinkingContractResolver {
         { p -> if (p.dashScope) contract("qwen-dashscope", ThinkingWireFormat.QwenDual, ThinkingContract.Scope.AllModels) else null },
         { _ -> patternSeat("*qwen*", "qwen-dashscope", null, ThinkingWireFormat.QwenDual) },
         { p -> if (p.unifiedGateway) contract("unified-gateway(ark|azure|venice)", ThinkingWireFormat.ReasoningEffort(p.offEffort), ThinkingContract.Scope.AllModels) else null },
-        // 智谱官方直连的 GLM 席：thinking:{type} 兄弟键（开档同 DeepSeek 形态，
-        // 关档省略——GLM-5.3 拒收 disabled）。仅官方 host 命中，中转不设席。
+        // 智谱官方直连的 GLM 席：thinking:{type} 兄弟键（开档同 DeepSeek 形态；
+        // 关档 disabled 被拒，按官方迁移指引以 enabled+low 模拟关闭）。仅官方
+        // host 命中，中转不设席。
         { p -> if (p.zhipuDirect) patternSeat("*glm*", "glm-zhipu-official", null, ThinkingWireFormat.GlmZhipuSibling) else null },
         { _ -> patternSeat("*deepseek-v4*", "deepseek-v4-official", null, ThinkingWireFormat.DeepSeekSibling, echo = afterToolEcho) },
         { p -> defaultSeat(p.offEffort) },
@@ -260,12 +261,18 @@ object ThinkingContractResolver {
     }
 
     /**
-     * 智谱 GLM 直连（开档与 [deepSeekSibling] 同形态）。关档差异：GLM-5.3 官方
-     * 文档明确拒收 thinking.type:"disabled"（迁移指引改发 enabled + low），这里
-     * 关闭即整个省略交给厂商默认——发 disabled 会把「思考关不掉」升级成整单 400。
+     * 智谱 GLM 直连（开档与 [deepSeekSibling] 同形态）。关档差异：GLM-5.3 系
+     * 文档原文「不再支持关闭思考（thinking.type 传 disabled 将会报错）」，也
+     * 不能整个省略——省略会落回厂商默认 enabled+max（推理最深最贵），与用户
+     * 关闭意图相反。按官方迁移指引的模拟关闭形态：enabled + reasoning_effort
+     * =low（5.3 系 API 的最浅档）。
      */
     private fun glmZhipuSibling(ctx: ThinkingResolveContext, body: JSONObject): Pair<String?, String?> {
-        if (!ctx.level.isEnabled) return NO_CLAMP
+        if (!ctx.level.isEnabled) {
+            body.put("thinking", JSONObject().put("type", "enabled"))
+            body.put("reasoning_effort", "low")
+            return NO_CLAMP
+        }
         val want = tierOf(ctx.level)
         val allowed = snapToDeclared(want, ctx.declaredEffortValues)
         body.put("thinking", JSONObject().put("type", "enabled"))

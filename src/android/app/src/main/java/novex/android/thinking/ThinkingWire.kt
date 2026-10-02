@@ -81,8 +81,9 @@ sealed interface ThinkingWireFormat {
     /**
      * 智谱 GLM 直连（open.bigmodel.cn）：开档与 [DeepSeekSibling] 同形态
      * （thinking:{type:"enabled"} + 根级 reasoning_effort 兄弟键），差异在
-     * 关档——GLM-5.3 官方文档明确 thinking.type:"disabled" 会被拒（迁移指引：
-     * 改发 enabled + reasoning_effort=low），此处关闭即整个省略，交厂商默认。
+     * 关档——GLM-5.3 系文档明确 thinking.type:"disabled" 会报错，也不能省略
+     * （省略落回厂商默认 enabled+max，与关闭意图相反），故按官方迁移指引发
+     * enabled + reasoning_effort=low 模拟关闭。
      */
     data object GlmZhipuSibling : StorageFormat {
         override val tag = "glm_zhipu_sibling"

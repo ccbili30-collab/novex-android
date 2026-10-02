@@ -306,7 +306,7 @@ class NovexTransportProviderTest {
     }
 
     @Test
-    fun `token 上限键按主机白名单选择`() {
+    fun `token 上限键按主机白名单与模型族选择`() {
         val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
         val messages = listOf(LLMMessage(LLMMessage.Role.USER, "问"))
 
@@ -329,7 +329,7 @@ class NovexTransportProviderTest {
         assertEquals(64, official.getInt("max_completion_tokens"))
         assertFalse(official.has("max_tokens"))
 
-        // 其余主机（含中转）：一律 wire() 默认 max_tokens——OpenAI 专用的
+        // 中转 + 普通机型：一律 wire() 默认 max_tokens——OpenAI 专用的
         // max_completion_tokens 发给智谱/DeepSeek 等只认 max_tokens 的服务
         // 会整单 400（[T-provider-onboarding] 根因①）。
         val relay = JSONObject(
@@ -351,6 +351,39 @@ class NovexTransportProviderTest {
     }
 
     /**
+     * [PR#83 净眼] 模型族信号：中转前端转投 OpenAI 的 o 系 / gpt-5 机型对
+     * max_tokens 同样整单 400（PR#63 事故，1df2dbae）——白名单外补模型族
+     * 判定（复用思考座次表的 o-star 与 gpt-5-star glob 口径），无论 host
+     * 一律发 max_completion_tokens；glm/deepseek 等不命中，根因①修复面不变。
+     */
+    @Test
+    fun `中转上的 OpenAI 原生机型按模型族发 max_completion_tokens`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val messages = listOf(LLMMessage(LLMMessage.Role.USER, "问"))
+
+        for (openAiNative in listOf("o3", "o4-mini", "gpt-5.5")) {
+            val body = JSONObject(
+                provider(model = LLMModel(openAiNative, openAiNative, "OpenAI"), call = call,
+                    basePath = "https://relay.example.com/v1").buildStreamRequest(
+                    messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+                ).encode(),
+            )
+            assertEquals("$openAiNative 应发 max_completion_tokens", 64, body.getInt("max_completion_tokens"))
+            assertFalse("$openAiNative 不带 max_tokens", body.has("max_tokens"))
+        }
+
+        // 同 host 的 glm 机型不命中模型族——max_tokens，防误伤智谱根因①。
+        val glm = JSONObject(
+            provider(model = LLMModel("glm-5.3", "GLM-5.3", "智谱"), call = call,
+                basePath = "https://relay.example.com/v1").buildStreamRequest(
+                messages, null, 64, emptyList(), emptyList(), ThinkingLevel.OFF,
+            ).encode(),
+        )
+        assertEquals(64, glm.getInt("max_tokens"))
+        assertFalse(glm.has("max_completion_tokens"))
+    }
+
+    /**
      * [T-provider-onboarding] 智谱根因②的请求侧守护：/api/paas/v4 是终态
      * 路径，chat 端点 = 基址原样 + /chat/completions——不许出现任何 /v1 注入。
      */
@@ -366,7 +399,10 @@ class NovexTransportProviderTest {
 
     /**
      * [T-provider-onboarding] 智谱根因④：GLM 直连思考席位——智谱官方 host +
-     * 思考开 → thinking:{"type":"enabled"} + 根级 reasoning_effort 兄弟键。
+     * 思考开 → thinking:{"type":"enabled"} + 根级 reasoning_effort 兄弟键；
+     * 思考关 → disabled 被拒（5.3 系文档原文），按官方迁移指引发
+     * enabled + reasoning_effort=low 模拟关闭——省略会落回厂商默认
+     * enabled+max（最深最贵），与关闭意图相反。
      */
     @Test
     fun `智谱主机思考开时请求体含 thinking enabled 与根级 reasoning_effort`() {
@@ -387,7 +423,7 @@ class NovexTransportProviderTest {
         )
         assertEquals("enabled", body.getJSONObject("thinking").getString("type"))
         assertEquals("high", body.getString("reasoning_effort"))
-        // GLM-5.3 不支持 disabled；关档必须整个省略（发 disabled 会整单 400）。
+        // 关档 = 模拟关闭形态：enabled + low（disabled 会报错，省略落回 max）。
         val off = JSONObject(
             provider(model = glm, call = call, basePath = "https://open.bigmodel.cn/api/paas/v4")
                 .buildStreamRequest(
@@ -395,8 +431,8 @@ class NovexTransportProviderTest {
                     null, 512, emptyList(), emptyList(), ThinkingLevel.OFF,
                 ).encode(),
         )
-        assertFalse(off.has("thinking"))
-        assertFalse(off.has("reasoning_effort"))
+        assertEquals("enabled", off.getJSONObject("thinking").getString("type"))
+        assertEquals("low", off.getString("reasoning_effort"))
     }
 
     /** GLM 席位只设在智谱官方 host：中转上的 glm 仍走通用线（根因④不越界）。 */
@@ -412,6 +448,27 @@ class NovexTransportProviderTest {
                 ).encode(),
         )
         assertFalse(body.has("thinking"))
+    }
+
+    /**
+     * [PR#83 净眼] host 判定统一严格 URI 相等：形如
+     * open.bigmodel.cn.relay.tld 的伪造域中转子串包含会误命中 GLM 思考席位。
+     */
+    @Test
+    fun `伪造智谱域名的中转不命中 GLM 思考席位`() {
+        val call = ScriptedCall(listOf(StreamChunk.Done(null)), StreamResult.Completed)
+        val glm = LLMModel("glm-5.3", "GLM-5.3", "中转", supportsReasoning = true)
+        val body = JSONObject(
+            provider(model = glm, call = call, basePath = "https://open.bigmodel.cn.relay.tld/v1")
+                .buildStreamRequest(
+                    listOf(LLMMessage(LLMMessage.Role.USER, "问")),
+                    null, 512, emptyList(), emptyList(), ThinkingLevel.HIGH,
+                ).encode(),
+        )
+        assertFalse("伪造域不得命中 GLM 思考席位", body.has("thinking"))
+        // 伪造域同样不在 host 白名单、glm 不命中模型族——token 键走 max_tokens。
+        assertEquals(512, body.getInt("max_tokens"))
+        assertFalse(body.has("max_completion_tokens"))
     }
 
     @Test
