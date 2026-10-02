@@ -32,6 +32,10 @@ import kotlinx.coroutines.withContext
  * [SessionGroupSuggester]（AI 组建议），共享 [extractMessageText] /
  * [buildProvider] / [isTextCapable]。本类只持有状态流并把 UI 动作
  * 路由到仓库或协作者。
+ *
+ * 本版组织（法律审计条件轮结构重排）：状态声明按「公开不变式显式标注类
+ * 型」书写；init 的安全模式门拆成独立挂起函数；组选择器开关集中到单一
+ * 私有入口；删除/建议/再生等动作管线全部经私有协作者函数收口。
  */
 @OptIn(FlowPreview::class)
 class SessionListViewModel(
@@ -63,10 +67,8 @@ class SessionListViewModel(
          * `internal` for unit testing; the parse is the part most likely to
          * meet malformed model output, and it is pure.
          */
-        internal fun parseGroupSuggestion(
-            text: String,
-            folders: List<SessionFolderRow>,
-        ): GroupSuggestion? = parseGroupSuggestionText(text, folders)
+        internal fun parseGroupSuggestion(text: String, folders: List<SessionFolderRow>): GroupSuggestion? =
+            parseGroupSuggestionText(text, folders)
 
         /**
          * Factory for use with `androidx.lifecycle.viewmodel.compose.viewModel`.
@@ -84,13 +86,9 @@ class SessionListViewModel(
             appContext: Context,
         ): ViewModelProvider.Factory = object : ViewModelProvider.Factory {
             @Suppress("UNCHECKED_CAST")
-            override fun <T : ViewModel> create(modelClass: Class<T>): T {
-                return SessionListViewModel(
-                    chatRepository = chatRepository,
-                    providerRepository = providerRepository,
-                    context = appContext,
-                ) as T
-            }
+            override fun <T : ViewModel> create(modelClass: Class<T>) = SessionListViewModel(
+                chatRepository, providerRepository, appContext,
+            ) as T
         }
     }
 
@@ -106,8 +104,8 @@ class SessionListViewModel(
      * otherwise the onboarding UI flashes on launch for users with existing
      * sessions. Mirrors iOS `didInitialLoad` on ContentView.
      */
-    private val _isInitialLoadComplete = MutableStateFlow(false)
-    val isInitialLoadComplete: StateFlow<Boolean> = _isInitialLoadComplete.asStateFlow()
+    private val initialLoad: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    val isInitialLoadComplete: StateFlow<Boolean> = initialLoad.asStateFlow()
 
     // Search — owned by the debounced engine collaborator; these names are
     // the screen-facing surface and stay put.
@@ -121,9 +119,9 @@ class SessionListViewModel(
 
     // The list to actually show: search results when searching, otherwise all sessions
     val displayedSessions: StateFlow<List<SessionRow>> = combine(
-        _allSessions, searchResults, appliedSearchQuery, isSearchActive
-    ) { all, results, q, active ->
-        if (active && q.isNotBlank()) results else all
+        appliedSearchQuery, isSearchActive, searchResults, _allSessions,
+    ) { query, searching, hits, everything ->
+        if (searching && query.isNotBlank()) hits else everything
     }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyList())
 
     // ─── Session groups ("folders") ────────────────────────────────────────
@@ -137,7 +135,7 @@ class SessionListViewModel(
      * filed session as an orphan and draws a flat list, then visibly reflows —
      * the "group cards only show up after a moment" symptom iOS hit.
      */
-    val folders = MutableStateFlow<List<SessionFolderRow>>(emptyList())
+    val folders: MutableStateFlow<List<SessionFolderRow>> = MutableStateFlow(emptyList())
 
     /**
      * Which groups are collapsed. Never persisted to the DB, but mirrored to
@@ -147,18 +145,21 @@ class SessionListViewModel(
      * exists to prevent. (getStringSet's return value must be copied, never
      * mutated in place.)
      */
-    private val uiPrefs = context.getSharedPreferences("session_list_ui", Context.MODE_PRIVATE)
-    val collapsedFolderIds = MutableStateFlow<Set<String>>(
-        uiPrefs.getStringSet("collapsedFolderIds", emptySet())?.toSet() ?: emptySet(),
+    private val prefs = context.getSharedPreferences("session_list_ui", Context.MODE_PRIVATE)
+    val collapsedFolderIds: MutableStateFlow<Set<String>> = MutableStateFlow(
+        prefs.getStringSet("collapsedFolderIds", emptySet()).orEmpty().toSet(),
     )
 
-    private fun setCollapsedFolders(ids: Set<String>) {
-        collapsedFolderIds.value = ids
-        uiPrefs.edit().putStringSet("collapsedFolderIds", ids).apply()
+    private fun setCollapsedFolders(target: Set<String>) {
+        collapsedFolderIds.value = target
+        with(prefs.edit()) {
+            putStringSet("collapsedFolderIds", target)
+            apply()
+        }
     }
 
     /** Non-null while the group picker is open. */
-    val groupPickerRequest = MutableStateFlow<GroupPickerRequest?>(null)
+    val groupPickerRequest: MutableStateFlow<GroupPickerRequest?> = MutableStateFlow(null)
 
     /**
      * Sessions the picker is about to file.
@@ -191,20 +192,20 @@ class SessionListViewModel(
     }
 
     /** True while a suggestion request is in flight (drives the spinner). */
-    val groupSuggesting = MutableStateFlow(false)
+    val groupSuggesting: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     /** Last successful suggestion, consumed by the sheet. Cleared on re-run. */
-    val groupSuggestion = MutableStateFlow<GroupSuggestion?>(null)
+    val groupSuggestion: MutableStateFlow<GroupSuggestion?> = MutableStateFlow(null)
 
     /** True when the last attempt failed — the button relabels to invite a retry. */
-    val groupSuggestFailed = MutableStateFlow(false)
+    val groupSuggestFailed: MutableStateFlow<Boolean> = MutableStateFlow(false)
 
     // Multi-select
-    val isSelecting = MutableStateFlow(false)
-    val selectedIds = MutableStateFlow<Set<String>>(emptySet())
+    val isSelecting: MutableStateFlow<Boolean> = MutableStateFlow(false)
+    val selectedIds: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
 
     // Session IDs currently regenerating their titles (UI overlay)
-    val regeneratingIds = MutableStateFlow<Set<String>>(emptySet())
+    val regeneratingIds: MutableStateFlow<Set<String>> = MutableStateFlow(emptySet())
 
     // [T-android-newchat-list-autoscroll] One-shot signal: a session id that
     // we have never seen before has appeared at the TOP of the list (the list
@@ -218,63 +219,65 @@ class SessionListViewModel(
     // happens while the UI isn't collecting (mid-navigation) is still
     // delivered on the next collect.
     val newTopSessionEvent = MutableSharedFlow<Unit>(
-        replay = 0,
-        extraBufferCapacity = 1,
+        replay = 0, extraBufferCapacity = 1,
         onBufferOverflow = BufferOverflow.DROP_OLDEST,
     )
 
     // Baseline of session ids already observed. Seeded on the FIRST emission
     // (so pre-existing sessions never fire the event); thereafter any id not
     // in this set that lands at index 0 is a genuinely-new session.
-    private var knownSessionIds: Set<String> = emptySet()
-    private var newTopBaselineSeeded = false
+    private var seenSessionIds: Set<String> = emptySet()
+    private var topBaselineSeeded = false
 
     init {
-        // T-android-crash-safe-mode-v2: gate the cold-start session list
-        // observer behind the safe-mode flag. The Room observable issues a
-        // full SELECT on first collect; if a malformed row was contributing
-        // to the crash burst, we don't want to re-deserialize it before the
-        // user has acknowledged the share-logs dialog.
         viewModelScope.launch {
-            if (com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) {
-                android.util.Log.w(
-                    TAG,
-                    "SessionListVM init: safe-mode active, deferring observeSessions",
-                )
-                // Mark initial-load complete so the empty-state UI surfaces
-                // immediately (rather than an indefinite progress spinner).
-                _isInitialLoadComplete.value = true
-                // Subscribe for the safe-mode-cleared signal and then begin
-                // observing. registerSafeModeClearedListener fires exactly
-                // once on ON → OFF; after that we start the Flow collector
-                // for the rest of the VM's life.
-                val started = CompletableDeferred<Unit>()
-                val unsub = com.openminis.app.crash.CrashFrequencyDetector
-                    .registerSafeModeClearedListener {
-                        if (!started.isCompleted) started.complete(Unit)
-                    }
-                started.await()
-                runCatching { unsub() }
-            }
-            chatRepository.observeSessionIndex().collect {
-                _allSessions.value = it
-                if (!_isInitialLoadComplete.value) _isInitialLoadComplete.value = true
-                detectNewTopSession(it)
+            awaitSafeModeClearance()
+            chatRepository.observeSessionIndex().collect { emission ->
+                _allSessions.value = emission
+                initialLoad.value = true
+                detectNewTopSession(emission)
             }
         }
         // [T-android-session-grouping] Started alongside the session collector,
         // not after it — see `folders` for why ordering matters on first paint.
         viewModelScope.launch {
-            chatRepository.observeFolders().collect { folders.value = it }
+            chatRepository.observeFolders().collect { next -> folders.value = next }
         }
         // The debounced search pipeline lives in [SessionSearchEngine],
         // constructed above.
     }
 
+    /**
+     * T-android-crash-safe-mode-v2: gate the cold-start session list
+     * observer behind the safe-mode flag. The Room observable issues a
+     * full SELECT on first collect; if a malformed row was contributing
+     * to the crash burst, we don't want to re-deserialize it before the
+     * user has acknowledged the share-logs dialog. Suspend until safe mode
+     * is off (immediately returns when it never was on).
+     */
+    private suspend fun awaitSafeModeClearance() {
+        if (!com.openminis.app.crash.CrashFrequencyDetector.isSafeMode()) return
+        android.util.Log.w(
+            TAG,
+            "SessionListVM init: safe-mode active, deferring observeSessions",
+        )
+        // Mark initial-load complete so the empty-state UI surfaces
+        // immediately (rather than an indefinite progress spinner).
+        initialLoad.value = true
+        // registerSafeModeClearedListener fires exactly once on ON → OFF;
+        // after that the caller starts the Flow collector for the rest of
+        // the VM's life.
+        val cleared = CompletableDeferred<Unit>()
+        val unsubscribe = com.openminis.app.crash.CrashFrequencyDetector
+            .registerSafeModeClearedListener { cleared.complete(Unit) }
+        cleared.await()
+        runCatching { unsubscribe() }
+    }
+
     fun toggleSelect(id: String) {
-        selectedIds.value = selectedIds.value.toMutableSet().also {
-            if (id in it) it.remove(id) else it.add(id)
-        }
+        val next = selectedIds.value.toMutableSet()
+        if (!next.remove(id)) next.add(id)
+        selectedIds.value = next
     }
 
     /**
@@ -286,17 +289,17 @@ class SessionListViewModel(
      * showed checkboxes and the id sat invisibly pre-selected.
      */
     fun enterSelection(id: String) {
-        selectedIds.value = selectedIds.value + id
         isSelecting.value = true
+        selectedIds.value += id
     }
 
     fun selectAll() {
-        selectedIds.value = _allSessions.value.map { it.id }.toSet()
+        selectedIds.value = _allSessions.value.mapTo(HashSet()) { it.id }
     }
 
     fun clearSelection() {
-        selectedIds.value = emptySet()
         isSelecting.value = false
+        selectedIds.value = setOf()
     }
 
     // ─── 删除 ─────────────────────────────────────────────────────────────
@@ -345,31 +348,27 @@ class SessionListViewModel(
      * "暂不分组" for a group the user cannot see — and label the action 更换 when
      * there is nothing to change from. Mirrors partitionByFolder's presence test.
      */
-    private fun isFiled(session: SessionRow?): Boolean {
-        val fid = session?.folderId ?: return false
-        return folders.value.any { it.id == fid }
+    private fun isFiled(session: SessionRow?) = folders.value.any { group ->
+        group.id == session?.folderId
+    }
+
+    /** 组选择器唯一开箱口：单会话（上下文菜单）与多选（工具栏）共用。 */
+    private fun openGroupPicker(ids: List<String>, anyFiled: Boolean, fromMultiSelect: Boolean) {
+        groupPickerRequest.value = GroupPickerRequest(ids, anyFiled, fromMultiSelect)
     }
 
     /** Open the picker for ONE session (context-menu entry point). */
     fun requestGroupPicker(sessionId: String) {
-        val filed = isFiled(_allSessions.value.firstOrNull { it.id == sessionId })
-        groupPickerRequest.value = GroupPickerRequest(
-            sessionIds = listOf(sessionId),
-            anyFiled = filed,
-            fromMultiSelect = false,
-        )
+        val row = _allSessions.value.firstOrNull { it.id == sessionId }
+        openGroupPicker(listOf(sessionId), isFiled(row), fromMultiSelect = false)
     }
 
     /** Open the picker for the current multi-selection (toolbar entry point). */
     fun requestGroupPickerForSelection() {
-        val ids = selectedIds.value.toList()
-        if (ids.isEmpty()) return
-        val anyFiled = _allSessions.value.any { it.id in ids && isFiled(it) }
-        groupPickerRequest.value = GroupPickerRequest(
-            sessionIds = ids,
-            anyFiled = anyFiled,
-            fromMultiSelect = true,
-        )
+        val picked = selectedIds.value.toList()
+        if (picked.isEmpty()) return
+        val anyFiled = _allSessions.value.any { it.id in picked && isFiled(it) }
+        openGroupPicker(picked, anyFiled, fromMultiSelect = true)
     }
 
     fun dismissGroupPicker() {
@@ -409,7 +408,10 @@ class SessionListViewModel(
             AppLogger.warning(TAG, "[GroupSuggest] SKIPPED reason=no-provider-runtime")
             return
         }
-        val sessionIds = request.sessionIds
+        launchGroupSuggestion(request.sessionIds, providers)
+    }
+
+    private fun launchGroupSuggestion(sessionIds: List<String>, providers: ProviderRepository) {
         if (sessionIds.isEmpty()) {
             AppLogger.error(TAG, "[GroupSuggest] FAILED reason=no-sessions-selected")
             groupSuggestFailed.value = true
@@ -422,9 +424,8 @@ class SessionListViewModel(
 
         viewModelScope.launch(Dispatchers.IO) {
             try {
-                val result = SessionGroupSuggester(chatRepository, providers, context)
-                    .run(sessionIds)
-                withContext(Dispatchers.Main) { groupSuggestion.value = result }
+                val outcome = SessionGroupSuggester(chatRepository, providers, context).run(sessionIds)
+                withContext(Dispatchers.Main) { groupSuggestion.value = outcome }
             } catch (e: Exception) {
                 // iOS's [T-ios-folder-suggest-retry] lesson: the UI flag alone
                 // left "failed — try again" with nothing in the log to hunt
@@ -446,32 +447,7 @@ class SessionListViewModel(
     fun applyGroupChoice(choice: GroupChoice) {
         val request = groupPickerRequest.value ?: return
         viewModelScope.launch {
-            when (choice) {
-                is GroupChoice.Existing ->
-                    chatRepository.setFolderForSessions(choice.folderId, request.sessionIds)
-                is GroupChoice.Create -> {
-                    // [T-android-group-ai-suggest] Stamp provenance when the
-                    // name being created is the one AI Suggest proposed. The
-                    // `origin` column exists for exactly this and nothing
-                    // branches on it today — but recording it at the moment we
-                    // know is the only chance; the picker's create path cannot
-                    // reconstruct it later.
-                    val suggested = groupSuggestion.value as? GroupSuggestion.Create
-                    val fromAi = suggested != null &&
-                        suggested.name.trim().equals(choice.name.trim(), ignoreCase = true)
-                    val folder = chatRepository.createFolder(
-                        choice.name,
-                        choice.description,
-                        origin = if (fromAi) SessionFolderRow.AI_ORIGIN else SessionFolderRow.MANUAL_ORIGIN,
-                    )
-                    chatRepository.setFolderForSessions(folder.id, request.sessionIds)
-                    // A brand-new group starts expanded so the sessions the
-                    // user just filed are visible immediately.
-                    setCollapsedFolders(collapsedFolderIds.value - folder.id)
-                }
-                GroupChoice.RemoveFromGroup ->
-                    chatRepository.setFolderForSessions(null, request.sessionIds)
-            }
+            resolveGroupChoice(choice, request)
             AppLogger.info(
                 TAG,
                 "[Group] applied ${choice::class.simpleName} to ${request.sessionIds.size} session(s)",
@@ -480,19 +456,46 @@ class SessionListViewModel(
         }
     }
 
+    private suspend fun resolveGroupChoice(choice: GroupChoice, request: GroupPickerRequest) {
+        when (choice) {
+            GroupChoice.RemoveFromGroup ->
+                chatRepository.setFolderForSessions(null, request.sessionIds)
+            is GroupChoice.Existing ->
+                chatRepository.setFolderForSessions(choice.folderId, request.sessionIds)
+            is GroupChoice.Create -> createGroupAndFile(choice, request)
+        }
+    }
+
+    private suspend fun createGroupAndFile(choice: GroupChoice.Create, request: GroupPickerRequest) {
+        // [T-android-group-ai-suggest] Stamp provenance when the
+        // name being created is the one AI Suggest proposed. The
+        // `origin` column exists for exactly this and nothing
+        // branches on it today — but recording it at the moment we
+        // know is the only chance; the picker's create path cannot
+        // reconstruct it later.
+        val suggested = groupSuggestion.value as? GroupSuggestion.Create
+        val fromAi = suggested != null &&
+            suggested.name.trim().equals(choice.name.trim(), ignoreCase = true)
+        val folder = chatRepository.createFolder(
+            choice.name,
+            choice.description,
+            origin = if (fromAi) SessionFolderRow.AI_ORIGIN else SessionFolderRow.MANUAL_ORIGIN,
+        )
+        chatRepository.setFolderForSessions(folder.id, request.sessionIds)
+        // A brand-new group starts expanded so the sessions the
+        // user just filed are visible immediately.
+        setCollapsedFolders(collapsedFolderIds.value - folder.id)
+    }
+
     /**
      * Accordion toggle: expanding one group collapses the rest, so the list
      * never turns into a wall of simultaneously-open groups.
      */
     fun toggleFolderCollapsed(folderId: String) {
-        val collapsed = collapsedFolderIds.value
-        setCollapsedFolders(
-            if (folderId in collapsed) {
-                folders.value.map { it.id }.toSet() - folderId
-            } else {
-                collapsed + folderId
-            },
-        )
+        val next = collapsedFolderIds.value.let { cur ->
+            if (folderId in cur) folders.value.map { it.id }.toSet() - folderId else cur + folderId
+        }
+        setCollapsedFolders(next)
     }
 
     /**
@@ -506,9 +509,7 @@ class SessionListViewModel(
      */
     fun deleteFolderWithSessions(folderId: String) = runDeletion {
         val memberIds = chatRepository.sessionIdsFiledUnder(folderId)
-        for (id in memberIds) {
-            deleteConversation(id)
-        }
+        memberIds.forEach { deleteConversation(it) }
         chatRepository.dissolveFolder(folderId)
         setCollapsedFolders(collapsedFolderIds.value - folderId)
         AppLogger.info(
@@ -532,23 +533,25 @@ class SessionListViewModel(
      */
     fun dissolveFolder(folderId: String) {
         viewModelScope.launch {
-            val freed = chatRepository.dissolveFolder(folderId)
+            val released = chatRepository.dissolveFolder(folderId)
             setCollapsedFolders(collapsedFolderIds.value - folderId)
-            AppLogger.info(TAG, "[Group] dissolved ${folderId.take(8)}, freed ${freed.size} session(s)")
+            AppLogger.info(TAG, "[Group] dissolved ${folderId.take(8)}, freed ${released.size} session(s)")
         }
     }
 
     /** Member count per group, for the picker subtitles and group cards. */
     val folderMemberCounts: StateFlow<Map<String, Int>> =
-        combine(_allSessions, folders) { sessions, _ ->
-            sessions.mapNotNull { it.folderId }.groupingBy { it }.eachCount()
-        }.stateIn(viewModelScope, SharingStarted.Eagerly, emptyMap())
+        combine(_allSessions, folders) { rows, _ ->
+            rows.mapNotNull { it.folderId }.groupingBy { it }.eachCount()
+        }.stateIn(
+            viewModelScope, SharingStarted.Eagerly, emptyMap(),
+        )
 
     fun togglePin(id: String) {
         viewModelScope.launch {
             val session = chatRepository.sessionById(id) ?: return@launch
-            val newPinnedAt = if (session.pinnedAt != null) null else System.currentTimeMillis()
-            chatRepository.dao.setPinStamp(id, newPinnedAt)
+            val newStamp = if (session.pinnedAt != null) null else System.currentTimeMillis()
+            chatRepository.dao.setPinStamp(id, newStamp)
         }
     }
 
@@ -560,42 +563,47 @@ class SessionListViewModel(
 
     fun regenerateTitle(id: String) {
         viewModelScope.launch(Dispatchers.IO) {
-            withContext(Dispatchers.Main) {
-                regeneratingIds.value = regeneratingIds.value + id
-            }
-            try {
+            markRegenerating(id) {
                 SessionTitleRegenerator(chatRepository, providerRepository, context)
                     .generate(id, origin = "manual")
-            } finally {
-                withContext(Dispatchers.Main) {
-                    regeneratingIds.value = regeneratingIds.value - id
-                }
             }
         }
     }
 
+    /** 标题再生期间挂 regeneratingIds 标记；无论成败必摘除。 */
+    private suspend fun markRegenerating(id: String, work: suspend () -> Unit) {
+        withContext(Dispatchers.Main) { regeneratingIds.value += id }
+        try {
+            work()
+        } finally {
+            withContext(Dispatchers.Main) { regeneratingIds.value -= id }
+        }
+    }
+
     fun duplicateSession(id: String) {
-        viewModelScope.launch {
-            val session = chatRepository.sessionById(id) ?: return@launch
-            val messages = chatRepository.historyFor(id)
-            val newSession = chatRepository.createSession(
-                modelId = session.modelId,
-                title = "${session.title ?: "Chat"} (Copy)",
-                characterId = session.characterId,
-                characterSnapshotJson = session.characterSnapshotJson,
-                personaId = session.personaId,
-                personaSnapshotJson = session.personaSnapshotJson,
-                chatBackgroundPath = session.chatBackgroundPath,
+        viewModelScope.launch { cloneSession(id) }
+    }
+
+    private suspend fun cloneSession(id: String) {
+        val origin = chatRepository.sessionById(id) ?: return
+        val history = chatRepository.historyFor(id)
+        val copy = chatRepository.createSession(
+            modelId = origin.modelId,
+            title = "${origin.title ?: "Chat"} (Copy)",
+            characterId = origin.characterId,
+            characterSnapshotJson = origin.characterSnapshotJson,
+            personaId = origin.personaId,
+            personaSnapshotJson = origin.personaSnapshotJson,
+            chatBackgroundPath = origin.chatBackgroundPath,
+        )
+        history.forEach { row ->
+            chatRepository.appendMessage(
+                sessionId = copy.id,
+                role = row.role,
+                partsJson = row.partsJson,
+                tokenUsage = row.tokenUsage,
+                reasoningContent = row.reasoningContent,
             )
-            for (msg in messages) {
-                chatRepository.appendMessage(
-                    sessionId = newSession.id,
-                    role = msg.role,
-                    partsJson = msg.partsJson,
-                    tokenUsage = msg.tokenUsage,
-                    reasoningContent = msg.reasoningContent,
-                )
-            }
         }
     }
 
@@ -610,33 +618,30 @@ class SessionListViewModel(
      *   (the folder_id row can only be written once the session exists —
      *   iOS defers the same way via pendingFolderDraft).
      */
-    fun createNewSession(
-        groupId: String? = null,
-        folderId: String? = null,
-    ): String? {
-        var id = "__new__${java.util.UUID.randomUUID()}"
-        if (groupId != null) id += "__grp__$groupId"
-        if (folderId != null) id += "__fld__$folderId"
-        return id
-    }
+    fun createNewSession(groupId: String? = null, folderId: String? = null): String? =
+        buildString {
+            append("__new__").append(java.util.UUID.randomUUID())
+            groupId?.let { append("__grp__").append(it) }
+            folderId?.let { append("__fld__").append(it) }
+        }
 
     /**
      * [T-android-newchat-list-autoscroll] Emit [newTopSessionEvent] when a
      * never-before-seen session id appears at index 0 (the newest session,
      * since the list is updated_at DESC). The first emission only seeds the
      * baseline so existing sessions don't trigger a scroll on launch. Reorders
-     * of existing sessions keep their ids (already in [knownSessionIds]) so
+     * of existing sessions keep their ids (already in [seenSessionIds]) so
      * they never fire. Runs on the collector coroutine; no thread switch.
      */
     private fun detectNewTopSession(sessions: List<SessionRow>) {
         val topId = sessions.firstOrNull()?.id
-        if (!newTopBaselineSeeded) {
-            knownSessionIds = sessions.mapTo(HashSet()) { it.id }
-            newTopBaselineSeeded = true
+        if (!topBaselineSeeded) {
+            seenSessionIds = sessions.mapTo(HashSet()) { it.id }
+            topBaselineSeeded = true
             return
         }
-        val isNewTop = topId != null && topId !in knownSessionIds
-        knownSessionIds = knownSessionIds + sessions.map { it.id }
+        val isNewTop = topId != null && topId !in seenSessionIds
+        seenSessionIds += sessions.map { it.id }
         if (isNewTop) newTopSessionEvent.tryEmit(Unit)
     }
 

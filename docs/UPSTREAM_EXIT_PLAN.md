@@ -1063,6 +1063,64 @@ MainActivity/MinisApp **不挪路径、不改包声明**，只重写文件内容
   相关 55 例（含 Robolectric 类 MainActivityLaunchRulesTest 单跑）+
   `:app:assemblePreviewDebug` 出包通过；Robolectric 全量以 CI 为准。
 
+### P4.5 · 法律审计条件轮（C1-C3） — 黄档 — [x]（2026-10-01，分支 tasks/exit-c1）
+
+4.0 闭源分发前，法律审计开出三项放行条件；本轮逐项处置记档：
+
+**C1 · 五件真衍生候选重写（主体项）**。审计逐段判定 P3.7 后仍有
+「语句级映射与方法组织结构残留」的五件（当时合计 2,422 行），全部就地
+真重写——语句组织彻底重做，公开签名与行为逐字不变：
+
+| 件 | 剩余匹配主体（修前诊断） | 重写组织 | 相似度 |
+|---|---|---|---|
+| `ui/chat/StreamingFade.kt` | tick 三分支缓出逐句同构、ingest 六步控制流、平行下标时间戳数组、尾摘除循环 | 在飞状态单列表（区间+出生时间戳同记录，平行数组消失）；ingest 两阶段（归一化→一次性规划）；tick 过滤式重建；区间阶段归类后单式求值；驱动器改条件组合式 | 64.4%→**34.5%** |
+| `ui/sessions/SessionListViewModel.kt` | 状态声明样板、init 安全模式门、组选择器/建议/应用三组函数体、标题再生与复制管线 | 公开状态显式类型标注；安全模式门拆独立挂起函数；组选择器开关收口 openGroupPicker 单入口；建议发射拆 launchGroupSuggestion；应用选择拆 resolveGroupChoice/createGroupAndFile；再生标记抽 markRegenerating；复制拆 cloneSession；草稿 id 改 buildString | 52.4%→**30.0%** |
+| `ui/markdown/MarkdownParser.kt` | AST 类层级、extractMath 主循环与 atLineStart 双份局部函数、findClose/findDollar 盲扫、stripBlockquoteMarkers 行内改写、restore when 分派 | 围栏状态抽 FenceState 小状态机（主循环与 codeMask 共用）；闭定界符搜索统一 startsWith 探针；定界失败统一 fallback；有序表消费抽独立函数；段落停止判据提 endsParagraph；剥引用标记改 markerStripped 纯函数；restoreBlock 直通分支前置；restoreParagraph 缓冲重组 | 44.0%→**20.0%** |
+| `data/FileMentionIndex.kt` | walkBounded 七参签名与三处具名调用、Entry 构建样板、refresh/缓存判据 | 走查参数收拢 WalkSpec 单对象；条目构建集中 selfEntry 工厂；BFS 与单层收集合并单函数；缓存判据与扫描启动拆 rescan；词边界匹配改 probe 单游标式；顶层根判定改 firstOrNull 式 | 53.7%→**34.5%** |
+| `provider/ImageBudget.kt` | 压缩入口 try/catch、阶梯循环、规划循环、溢写双 try/catch | compressBytes 改 runCatching 管线表达式体；阶梯命中改倒置判据 + also 记日志；消息级与请求级循环收拢「累计+单件计费」形态；数据类版面压缩；扩展名映射表化；溢写失败路径统一 runSpilloverStep | 54.6%→**31.6%** |
+
+冻结面（逐字不动）：各件公开签名（ingest/tick/overlay/alphas/
+hasActiveRanges、FadeRange 三字段、LocalAppendOnlyFade/
+LocalLiveIncremental、VM 全部公开属性与方法、Block 形状等）；时间常量
+350/300/90/160 与动画曲线；ImageBudget 五常量、阶梯与占位文案；
+Markdown 全部正则与数学抽取语义、MdParser 日志；`/var/minis/…` 路径拼装
+与评分档位表。行为钉零改动全绿：MarkdownParserToleranceTest 16 +
+LatexCodeMaskTest 7 + FileMentionIndexTest 9 + ImageBudgetTest 8 +
+GroupSuggestionParseTest 12 = **52 例**。
+
+**C2 · APK 内随附 Apache-2.0 许可文本**。`libs/poishadow-all-5.2.5-4.jar`
+（shaded Apache POI，内嵌 org.apache.poi/commons/xmlbeans/log4j-api、
+openxmlformats 与 microsoft schemas、fasterxml aalto、codehaus stax2、
+zaxxer sparsebits 等，jar 内无 LICENSE/NOTICE）与
+`libs/RealTimeCutVADLibraryForAndroid-1.0.5.aar`（MIT；内嵌 Silero VAD
+模型 MIT、ONNX Runtime MIT、WebRTC audio-processing BSD-3）此前均无随
+附文本。修法（Android 惯例）：新建
+`src/android/app/src/main/assets/third_party_licenses/`，放入
+`APACHE-2.0.txt`（apache.org canonical 全文，sha1 2b8b8152…c491890）与
+`NOTICE.txt`（poishadow 内嵌组件逐包名列举 + VAD 及其内嵌件 + Gradle
+Apache 依赖汇总 + KaTeX/jieba/textstyles/phosphor MIT 指路——许可文本
+本就随资产/raw 分发，NOTICE 只指路不复制）。`assembleStableDebug` 后
+`unzip -l` 验证 `assets/third_party_licenses/` 两文件入包。评估：现有
+AboutScreen 无许可区，本轮不加 UI，纯资产随附（审计只要求文本随附可
+见）。
+
+**C3 · THIRD_PARTY_LICENSES.md 补自研声明**。新增「Bundled skills
+（本仓自研资产）」小节两行：`skills/card-organizer`（PR#11/3826e58f 起）
+与 `skills/wenyou-maker`（PR#4/e56c5b37 起）为本仓自研，无外部许可约束
+（审计引用 e56c5c37 在本仓对象库不可达，按可查证提交记档）。
+
+度量快照（next 1a6a6864 → 本刀树，审计口径 mixed_similarity）：
+- 五件全部落入「基本自有」档（<40%），见上表；
+- 行为钉 52 例零改动全绿；非 Robolectric 全量单测 1,177 条 0 失败
+  （1 skipped，228 类；Robolectric 全量以 CI 为准）；
+- `:app:assembleStableDebug` 出包，`unzip -l` 验证
+  `assets/third_party_licenses/`（APACHE-2.0.txt + NOTICE.txt）随包可
+  见，入包 Apache 全文与 apache.org canonical 逐字节一致（sha1
+  2b8b8152…c491890）；
+- 改动桶三档：≥80% 1f/22（ToolOutcome 记档件，不变）、半血
+  84f/18,087 → 79f/15,665、基本自有 80f/24,560 → **85f/26,915**
+  （+5 件即本轮五件）。
+
 ### P5 · 协议切换与法律动作 — [ ]
 
 - [ ] 分发物内上游代码清零的审计复核（重跑本工具 + 抽查）
@@ -1122,3 +1180,4 @@ MainActivity/MinisApp **不挪路径、不改包声明**，只重写文件内容
 | 2026-10-01 | 本 PR（P3.7 终盘清剿） | 未动桶 37 件/6,863 行清零（33 件就地真重写 + 5 小 prefs 合并为 data/GlobalSwitchStore——对象名与键冻结消费方零改动；CrashFileReporter 经 SPI、NativeCrashHandler 经 JNI 符号钉路径只重写内容；UI 收口纠偏：PR#81 漏掉的未动桶 15 个 UI 件本轮补上）+ 改动桶 ≥80% 20 件重写（LLMProvider 接口缝就地重写签名面冻结、File 三工具/ToolOutcome 消费面冻结；ToolOutcome 记档）+ MarkdownClipboard 上游裸 NUL 字节损坏清除（行为逐字节等价）+ 行为钉 4 件 41 例（MarkdownParser 容忍度/KaTeX 注入协议双向/ImageBudget 预算/FileMentionIndex 索引）+ 二轮行形重排 | 血统：上游未动 37f/6,863 → **0f/0**，上游改动 133f/36,228 → 165f/42,591，Novex 新增 529→530f；改动桶三档 ≥80% 20f/3,008 → **1f/22（仅 ToolOutcome 记档件）**、半血 45f/12,818 → 89f/21,007、基本自有 68f/20,402 → 75f/21,562；全仓除 ToolOutcome 外无 ≥80% 件，P4 骨架五件套均在半血档待 P4 |
 | 2026-09-30 | 本 PR（质量审计修复轮） | 审计报告 `docs/ARCHITECTURE_QUALITY_AUDIT.md` 入档；D1 包根归位：novex.android 根散件 20 件 → 19 件卡片族进 `ui.cards`、ContentPaths 进 `data`、LegacyUiBridge 桥件留根保旧名（`com.openminis.app.ui` 红线区 14 件 + MinisApp 不动，拆除条件入 P3.6 批次 E）；D2 对账失败分支直接测试 7 例（ProviderConfigStoreReconcileTest 5 例：拒空配置/坏镜像 DB 权威/哈希错位镜像重导入落库/DAO 失败镜像救命/legacy lastUsed 改写 + RoundTrip 疑缩守护 1 例 + WAL 残留清理加固）；P3.6 门面拆除排期表（审计 §2 五类 32 件逐件：消费者数+可拆条件，编排门面立只减不增规矩，大手术记档不本刀做）；ARCHITECTURE.md 修订（model-transport 依赖方向修正、provider/openai 失真剔除、novex.android 终态版图与四条规矩）；顺手清 D5 两漏网：transport/models AppLogger→logkit.RunLog 9 处直引、transport ClaudeOAuthManager→authkit.ClaudeLoginFlow 穿透改接 1 处 | 包根 20 件 → 1 件（桥）；novex.android.ui.cards 19 件（→ui 72 import 边随文件整体迁移）；data 30→31；血统三分类不变（机械搬家 + 新增测试与文档，零旧路径文件增删）；ClaudeOAuthManager 门面消费者 4→3 |
 | 2026-10-01 | 本 PR（P4 骨架收口） | 崩溃线五件半血骨架就地真重写（结构/分解/控制流重做，冻结面逐字）：MainActivity（崩溃分享保存链五件拆分+深链裁决提纯函数 resolveLaunchDeepLink）、MinisApp（初始化语义序逐句保留，FGS 超时判定与 T268 重放决策提纯函数，徽标对账收敛单点）、LLMProvider（签名面逐字冻结，空流检测改 StreamEvidence 归约）、FileBrowserViewModel（导航/解析/读取/排序分解）、MinisTextKitSelection（选区边界提顶层纯函数，矩形族与跨片走查重排）+ THIRD_PARTY_LICENSES.md 重写为 2026-10 树（删退役表与 iOS SPM，补漏列依赖与 vendored/资产/数据快照）；行为钉新增 4 件 37 例 + AtomicCellSelectionTest 升级为真实函数钉（12 例） | 五件相似度 62.9→38.6 / 47.5→34.9 / 52.5→38.2 / 61.0→36.6 / 60.5→30.2（全部 <40%）；改动桶 ≥80% 1f/22（ToolOutcome 记档不变）、半血 89f→84f、基本自有 75f→80f；血统未动桶 0f 不变、死代码 0f；非 Robolectric 全量 1,170 条 0 失败 + 五件相关 55 例 + assemblePreviewDebug 出包 |
+| 2026-10-01 | 本 PR（P4.5 法律审计条件轮） | C1 五件真衍生候选就地真重写（StreamingFade 在飞单列表+两阶段 ingest+过滤式 tick、SessionListViewModel 结构重排（安全模式门拆分/组选择器单入口/建议与再生管线收口）、MarkdownParser FenceState 状态机+探针式闭符搜索+markerStripped 纯函数、FileMentionIndex WalkSpec+selfEntry 工厂+单函数 BFS、ImageBudget runCatching 管线+扩展名映射表化；公开签名与冻结面逐字不动）；C2 APK 随附 Apache-2.0 全文 + NOTICE（assets/third_party_licenses/，assembleStableDebug unzip -l 验证入包、canonical sha1 一致；AboutScreen 无许可区不加 UI）；C3 THIRD_PARTY_LICENSES 补 card-organizer/wenyou-maker 自研声明 | 五件相似度 64.4→34.5 / 52.4→30.0 / 44.0→20.0 / 53.7→34.5 / 54.6→31.6（全部 <40% 基本自有档）；行为钉 52 例零改动全绿；非 Robolectric 全量 1,177 条 0 失败（1 skipped，228 类）；改动桶 ≥80% 1f/22（ToolOutcome 记档不变）、半血 89f→79f、基本自有 80f→85f；血统未动桶 0f、死代码 0f 不变 |

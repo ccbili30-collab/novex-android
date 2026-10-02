@@ -22,6 +22,11 @@ MIT License. The complete license text is included in
 | jieba 分词词典 | `src/android/app/src/main/assets/jieba/` | **MIT** | 随 [cppjieba](https://github.com/yanyiwu/cppjieba) 发行的分词词典（dict.txt 等） |
 | [textstyles](https://github.com/oh-story-claudecode) 文体预设 | `src/android/app/src/main/assets/textstyles/genre/*.md`（含 `textstyles/LICENSE`） | **MIT** (oh-story-claudecode) | 中文文体预设语料；许可文件随资产同目录分发 |
 
+## Bundled skills（本仓自研资产）
+
+- `skills/card-organizer`（`src/android/app/src/main/assets/skills/card-organizer/`）：**本仓自研**（PR#11，3826e58f 起），无外部许可约束。
+- `skills/wenyou-maker`（`src/android/app/src/main/assets/skills/wenyou-maker/`）：**本仓自研**（PR#4，e56c5b37 起），无外部许可约束。
+
 ## Native C/C++ components
 
 | Component | Version / Source | License | Notes |
