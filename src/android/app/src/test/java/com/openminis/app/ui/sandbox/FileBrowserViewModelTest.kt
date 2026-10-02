@@ -35,9 +35,14 @@ class FileBrowserViewModelTest {
 
     private lateinit var root: File
 
+    // 目录读取与 Main 同一个 Unconfined 调度器：launch 体在构造线程同步跑完，
+    // 状态即时就绪（awaitLoaded 立即通过）。不用真实 Dispatchers.IO——那要
+    // 毫秒轮询等后台线程，在 CI 慢盘上会拖死测试执行器（PR#85 定位实锤）。
+    private val testDispatcher = UnconfinedTestDispatcher()
+
     @Before
     fun setUp() {
-        Dispatchers.setMain(UnconfinedTestDispatcher())
+        Dispatchers.setMain(testDispatcher)
         root = tmp.newFolder("root")
     }
 
@@ -78,7 +83,7 @@ class FileBrowserViewModelTest {
     @Test
     fun `initial load lists folders first then files by name`() {
         makeTree()
-        val vm = FileBrowserViewModel(rootPath = root, appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
 
         // 小写口径字典序：zebra < zed（b < d）。
@@ -92,7 +97,7 @@ class FileBrowserViewModelTest {
     @Test
     fun `hidden dotfiles appear only after the toggle`() {
         makeTree()
-        val vm = FileBrowserViewModel(rootPath = root, appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
         assertFalse(names(vm).contains(".dotfile"))
 
@@ -111,7 +116,7 @@ class FileBrowserViewModelTest {
         File(root, "zed/nested").mkdir()
         File(root, "zed/nested/deep.txt").writeText("d")
         // 入口即 zed：T145 的返回地板。
-        val vm = FileBrowserViewModel(rootPath = root, initialPath = File(root, "zed"), appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, initialPath = File(root, "zed"), appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
         assertEquals(listOf("nested"), names(vm))
         assertFalse(state(vm).canGoBack)
@@ -135,7 +140,7 @@ class FileBrowserViewModelTest {
     fun `breadcrumb jumps are clamped to the entry directory`() {
         makeTree()
         File(root, "zed/inner").mkdir()
-        val vm = FileBrowserViewModel(rootPath = root, initialPath = File(root, "zed/inner"), appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, initialPath = File(root, "zed/inner"), appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
 
         // 面包屑跳到 index 0（逻辑根）——入口在 zed/inner，必须被 clamp 回入口。
@@ -145,7 +150,7 @@ class FileBrowserViewModelTest {
         assertFalse(state(vm).canGoBack)
 
         // 入口在根时（initialPath=null）面包屑跳根合法。
-        val fromRoot = FileBrowserViewModel(rootPath = root, appContext = null)
+        val fromRoot = FileBrowserViewModel(rootPath = root, appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(fromRoot)
         fromRoot.navigateTo(file(fromRoot, "zed"))
         awaitLoaded(fromRoot)
@@ -161,7 +166,7 @@ class FileBrowserViewModelTest {
         // bravo 10 字节 > alpha 2 字节；目录条目 size=0。
         File(root, "alpha.txt").writeText("ab")
         File(root, "bravo.txt").writeText("0123456789")
-        val vm = FileBrowserViewModel(rootPath = root, appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
 
         vm.setSort(key = FileSortKey.SIZE, ascending = false)
@@ -183,7 +188,7 @@ class FileBrowserViewModelTest {
     @Test
     fun `deleteItem removes the entry and reloads`() {
         makeTree()
-        val vm = FileBrowserViewModel(rootPath = root, appContext = null)
+        val vm = FileBrowserViewModel(rootPath = root, appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
 
         vm.deleteItem(file(vm, "alpha.txt"))
@@ -195,7 +200,7 @@ class FileBrowserViewModelTest {
 
     @Test
     fun `missing directory yields an error terminal state`() {
-        val vm = FileBrowserViewModel(rootPath = File(root, "nope"), appContext = null)
+        val vm = FileBrowserViewModel(rootPath = File(root, "nope"), appContext = null, ioDispatcher = testDispatcher)
         awaitLoaded(vm)
         assertTrue(state(vm).isEmpty)
         // listFiles() 对不存在目录返回 null → 空列表终态（与基线一致），
@@ -209,6 +214,7 @@ class FileBrowserViewModelTest {
         val vm = FileBrowserViewModel(
             rootPath = root, appContext = null,
             displayLinuxPrefix = "/var/minis/workspace",
+            ioDispatcher = testDispatcher,
         )
         awaitLoaded(vm)
         assertEquals("/var/minis/workspace", state(vm).currentLinuxPath)

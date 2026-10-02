@@ -383,10 +383,3 @@ androidComponents {
         variant.manifestPlaceholders.put("novexUpdateChannel", "preview")
     }
 }
-
-// TEMP DEBUG (PR#85 CI 崩溃定位实验)：排除 FileBrowserViewModelTest——CI 绿则实锤该类为崩溃源。
-tasks.withType<Test>().configureEach {
-    filter {
-        excludeTestsMatching("com.openminis.app.ui.sandbox.FileBrowserViewModelTest")
-    }
-}

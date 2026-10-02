@@ -3,6 +3,7 @@ package com.openminis.app.ui.sandbox
 import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
@@ -68,6 +69,9 @@ class FileBrowserViewModel(
     // /data/user/0/.../minis-sessions/<sid>/workspace/foo.py。为 null 时回退
     // 用 [linuxRootPath]。
     private val displayLinuxPrefix: String? = null,
+    // 目录读取跑在哪个调度器上。生产默认 Dispatchers.IO；单测注入测试
+    // 调度器（真实 IO + 毫秒轮询的组合在 CI 慢盘上会拖死测试执行器）。
+    private val ioDispatcher: CoroutineDispatcher = Dispatchers.IO,
 ) : ViewModel() {
 
     private val _uiState = MutableStateFlow(FileBrowserUiState())
@@ -226,7 +230,7 @@ class FileBrowserViewModel(
     // ─── 目录内容与排序 ────────────────────────────────────────────────────
 
     fun deleteItem(item: FileItem) {
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             runCatching {
                 if (item.isDirectory) item.file.deleteRecursively() else item.file.delete()
             }.onSuccess {
@@ -253,18 +257,19 @@ class FileBrowserViewModel(
         _uiState.value = newState.copy(items = sorted, isEmpty = sorted.isEmpty())
     }
 
-    /** 名称兜底的字典序（小写口径）。 */
-    private val nameOrder: Comparator<FileItem> =
+    /** 名称兜底的字典序（小写口径）。放 companion：init 块的 loadItems 在
+     *  注入 Unconfined 调度器时会同步重入排序链，实例字段此刻尚未初始化。 */
+    private fun nameOrder(): Comparator<FileItem> =
         compareBy { it.name.lowercase() }
 
     /** 各排序键的主比较器；平键时名称兜底。 */
     private fun primaryOrder(state: FileBrowserUiState): Comparator<FileItem> = when (state.sortKey) {
-        FileSortKey.NAME -> nameOrder
-        FileSortKey.MODIFIED -> compareBy<FileItem> { it.modifiedMs }.then(nameOrder)
-        FileSortKey.SIZE -> compareBy<FileItem> { it.size }.then(nameOrder)
+        FileSortKey.NAME -> nameOrder()
+        FileSortKey.MODIFIED -> compareBy<FileItem> { it.modifiedMs }.then(nameOrder())
+        FileSortKey.SIZE -> compareBy<FileItem> { it.size }.then(nameOrder())
         FileSortKey.KIND -> compareBy<FileItem> {
             if (it.isDirectory) "" else it.file.extension.lowercase()
-        }.then(nameOrder)
+        }.then(nameOrder())
     }
 
     private fun sortComparator(state: FileBrowserUiState): Comparator<FileItem> {
@@ -283,7 +288,7 @@ class FileBrowserViewModel(
     private fun loadItems() {
         _uiState.value = _uiState.value.copy(isLoading = true)
         val hostPath = currentHostPath
-        viewModelScope.launch(Dispatchers.IO) {
+        viewModelScope.launch(ioDispatcher) {
             // 先快照 showHidden，避免 setter 与后台加载竞争读到撕裂值
             // （T-hidden-files a3e7f1d0）。
             val includeHidden = _uiState.value.showHidden
