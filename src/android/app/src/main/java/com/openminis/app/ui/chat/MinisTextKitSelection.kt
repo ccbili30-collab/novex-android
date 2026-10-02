@@ -36,6 +36,56 @@ import androidx.compose.ui.unit.IntSize
  * [LocalMinisSelectionController] 消费。
  */
 
+// ─── 选区边界的纯算法（顶层 internal，行为钉见 SentenceSelectionBoundsTest） ─
+
+/** 「句停点」= 常见拉丁 + CJK 标点加换行的并集；句级扫描在此断句。 */
+private val SENTENCE_STOPS = charArrayOf(
+    '。', '？', '！', '；', '：', '，', '、',
+    '.', '?', '!', ';', ':', ',',
+    '\n', '\r',
+)
+
+/**
+ * 长按的句级选区边界（散文本路径）。[offset] 落在空白/标点上时向外找
+ * 最近句停点，段落末尾/两个 CJK 字形之间的长按仍能得到非折叠选区；
+ * 实在找不到词回落「选这一个字符」，用户仍有可见选区可拖。
+ *
+ * hi 含停点字符本身（复制时更自然），两端修空白。
+ */
+internal fun sentenceSelectionBounds(text: String, offset: Int): Pair<Int, Int> {
+    if (text.isEmpty()) return 0 to 0
+    val len = text.length
+    val press = offset.coerceIn(0, len)
+
+    // LO：最近前置句停点之后（无则 0），跳过句内前导空白。
+    var lo = minOf(press, len - 1).coerceAtLeast(0)
+    while (lo > 0 && text[lo - 1] !in SENTENCE_STOPS) lo--
+    while (lo < len && text[lo].isWhitespace()) lo++
+    // HI：按点起第一个句停点（停点计入），修尾随空白。
+    var hi = press
+    while (hi < len && text[hi] !in SENTENCE_STOPS) hi++
+    if (hi < len) hi++
+    while (hi > lo && text[hi - 1].isWhitespace()) hi--
+
+    if (hi > lo) return lo to hi
+    // 退化——回落单字符，用户仍有可见选区可拖。
+    val single = press.coerceIn(0, (len - 1).coerceAtLeast(0))
+    return single to (single + 1).coerceAtMost(len)
+}
+
+/**
+ * 原子单元（表格单元格）的整格边界：掐掉两端空白。空格全空白格返回
+ * 0 to 0（调用方回落折叠光标）。见 [TextShard.isAtomicUnit] 的立论。
+ */
+internal fun atomicCellBounds(text: String): Pair<Int, Int> {
+    val first = text.indexOfFirst { !it.isWhitespace() }
+    if (first < 0) return 0 to 0
+    val last = text.indexOfLast { !it.isWhitespace() }
+    return first to last + 1
+}
+
+// ─── 公开数据形状（冻结面） ───────────────────────────────────────────────
+
 /**
  * 跨重组稳定的句柄，标识聊天消息里的一个承文本节点。(messageId, shardId)
  * 组合在聊天列表内唯一——messageId 圈定单条 ChatMessage，shardId 圈定该消
@@ -134,75 +184,21 @@ class SelectionController {
      * 或字符不在词内时回落折叠光标。
      */
     fun beginSelectionWord(pos: TextPosition) {
-        val shard = currentShards()[pos.shard]
-        if (shard == null || shard.plainText.isEmpty()) {
-            beginSelection(pos)
-            return
-        }
-        val text = shard.plainText
-        // 表格单元格整格选中——见 TextShard.isAtomicUnit。
-        if (shard.isAtomicUnit) {
-            val cellStart = text.indexOfFirst { !it.isWhitespace() }
-            if (cellStart < 0) {
-                beginSelection(pos)
-                return
-            }
-            val cellEnd = text.indexOfLast { !it.isWhitespace() } + 1
-            selection.value = TextSelection(
-                start = TextPosition(pos.shard, cellStart),
-                end = TextPosition(pos.shard, cellEnd),
-            )
-            return
-        }
-        val (lo, hi) = wordBoundsAt(text, pos.charOffset)
-        if (hi <= lo) {
-            beginSelection(pos)
-            return
-        }
+        val bounds = shardBoundsAt(pos) ?: return beginSelection(pos)
+        if (bounds.first >= bounds.second) return beginSelection(pos)
         selection.value = TextSelection(
-            start = TextPosition(pos.shard, lo),
-            end = TextPosition(pos.shard, hi),
+            start = TextPosition(pos.shard, bounds.first),
+            end = TextPosition(pos.shard, bounds.second),
         )
     }
 
-    /**
-     * 计算 [text] 中包住 [offset] 的词区间——按**句级**扩展而非纯词切分：
-     * [offset] 落在空白/标点上时向外找最近的词边界，段落末尾/两个 CJK 字
-     * 形之间的长按仍能得到非折叠选区；实在找不到词回落「选这一个字符」，
-     * 用户仍有可见选区可拖。
-     */
-    private fun wordBoundsAt(text: String, offset: Int): Pair<Int, Int> {
-        if (text.isEmpty()) return 0 to 0
-        val len = text.length
-        val clamped = offset.coerceIn(0, len)
-
-        // 句级选择：长按要抓一段有意义的文本——拉丁取词样跑段，CJK 向两侧
-        // 扩到标点/空白边界，用户拿到从句大小的选区（中文阅读器的惯例）。
-        // 系统 TextView 的词迭代器对 CJK 太激进（单字选择），近乎折叠的高
-        // 亮不可发现。「句停点」= 常见拉丁 + CJK 标点加换行的并集。
-        val sentenceStops = setOf(
-            '。', '？', '！', '；', '：', '，', '、',
-            '.', '?', '!', ';', ':', ',',
-            '\n', '\r',
-        )
-        // 向后扫 LO：最近前置句停点之后（无则 0）。
-        var lo = clamped.coerceAtMost(len - 1).coerceAtLeast(0)
-        while (lo > 0 && text[lo - 1] !in sentenceStops) lo--
-        // 跳过句内前导空白，选区不从空格起头。
-        while (lo < len && text[lo].isWhitespace()) lo++
-        // 向前扫 HI：按点起第一个句停点（停点本身计入——标点被选上，复制
-        // 时更自然）。
-        var hi = clamped.coerceIn(0, len)
-        while (hi < len && text[hi] !in sentenceStops) hi++
-        if (hi < len) hi++ // 含停点字符
-        // 修尾随空白。
-        while (hi > lo && text[hi - 1].isWhitespace()) hi--
-        if (hi <= lo) {
-            // 退化——回落单字符，用户仍有可见选区可拖。
-            val s = clamped.coerceIn(0, (len - 1).coerceAtLeast(0))
-            return s to (s + 1).coerceAtMost(len)
-        }
-        return lo to hi
+    /** 长按命中的 (lo, hi)：原子单元整格，散文本句级；退化时 (0,0)。 */
+    private fun shardBoundsAt(pos: TextPosition): Pair<Int, Int>? {
+        val shard = currentShards()[pos.shard] ?: return null
+        val text = shard.plainText
+        if (text.isEmpty()) return null
+        return if (shard.isAtomicUnit) atomicCellBounds(text)
+        else sentenceSelectionBounds(text, pos.charOffset)
     }
 
     /** 把活动选区尾锚延到 [pos]（拖动更新）。 */
@@ -212,16 +208,18 @@ class SelectionController {
 
     /** 换首锚（左手柄拖动）。 */
     fun replaceStart(pos: TextPosition) {
-        val cur = selection.value ?: return
-        if (cur.start == pos) return
-        selection.value = cur.copy(start = pos)
+        mutateEndpoint(isStart = true, pos)
     }
 
     /** 换尾锚（右手柄拖动）。 */
     fun replaceEnd(pos: TextPosition) {
+        mutateEndpoint(isStart = false, pos)
+    }
+
+    private fun mutateEndpoint(isStart: Boolean, pos: TextPosition) {
         val cur = selection.value ?: return
-        if (cur.end == pos) return
-        selection.value = cur.copy(end = pos)
+        val updated = if (isStart) cur.copy(start = pos) else cur.copy(end = pos)
+        if (updated != cur) selection.value = updated
     }
 
     fun clearSelection() {
@@ -317,12 +315,24 @@ class SelectionController {
         shards.remove(id)
     }
 
-    /** 当前已组合分片的只读快照。 */
+    /** 分片当前占住的窗口矩形；positionInWindow 为 Zero（未挂载）时尺寸仍如实。 */
     private fun shardWindowRect(shard: TextShard): Rect {
         val origin = shard.positionInWindow()
         val size = shard.sizePx()
         return Rect(origin, Size(size.width.toFloat(), size.height.toFloat()))
     }
+
+    /** 窗口点 → 某分片局部坐标的最近合法落点（拖出侧边时钳回矩形内）。 */
+    private fun clampIntoShard(shard: TextShard, rect: Rect, point: Offset): Offset {
+        val origin = shard.positionInWindow()
+        val x = point.x.coerceIn(rect.left, rect.right.coerceAtLeast(rect.left)) - origin.x
+        val y = point.y.coerceIn(rect.top, rect.bottom.coerceAtLeast(rect.top)) - origin.y
+        return Offset(x, y)
+    }
+
+    /** 分片可视中心线的 y（拖出侧边时的最近候选度量）。 */
+    private fun centerLineY(shard: TextShard): Float =
+        shard.positionInWindow().y + shard.sizePx().height / 2f
 
     // ─── 命中测试 ──────────────────────────────────────────────────────────
 
@@ -332,9 +342,7 @@ class SelectionController {
      */
     fun hitTest(windowPoint: Offset): TextPosition? {
         val (shard, localPoint) = locateShard(windowPoint) ?: return null
-        val charOffset = shard.textLayoutResult.getOffsetForPosition(localPoint)
-            .coerceIn(0, shard.plainText.length)
-        return TextPosition(shard.id, charOffset)
+        return positionInShard(shard, localPoint)
     }
 
     /**
@@ -343,16 +351,20 @@ class SelectionController {
      * MinisTextKit 分片、好弹自己的长按菜单）不该吸附到恰好最近的某个助
      * 手分片上。
      */
-    fun hitTestStrict(windowPoint: Offset): TextPosition? {
-        for (shard in shards.values) {
-            if (shard.positionInWindow() == Offset.Zero) continue
-            if (!shardWindowRect(shard).contains(windowPoint)) continue
-            val local = windowPoint - shard.positionInWindow()
-            val charOffset = shard.textLayoutResult.getOffsetForPosition(local)
-                .coerceIn(0, shard.plainText.length)
-            return TextPosition(shard.id, charOffset)
-        }
-        return null
+    fun hitTestStrict(windowPoint: Offset): TextPosition? =
+        shards.values.asSequence()
+            .filter { it.positionInWindow() != Offset.Zero }
+            .firstNotNullOfOrNull { shard ->
+                val rect = shardWindowRect(shard)
+                if (!rect.contains(windowPoint)) return@firstNotNullOfOrNull null
+                positionInShard(shard, windowPoint - shard.positionInWindow())
+            }
+
+    /** 分片内局部点 → 最近字符的 [TextPosition]。 */
+    private fun positionInShard(shard: TextShard, localPoint: Offset): TextPosition {
+        val charOffset = shard.textLayoutResult.getOffsetForPosition(localPoint)
+            .coerceIn(0, shard.plainText.length)
+        return TextPosition(shard.id, charOffset)
     }
 
     /** 找罩住 [windowPoint] 的注册分片及对应局部坐标点；无直接命中时给垂
@@ -360,27 +372,18 @@ class SelectionController {
     private fun locateShard(windowPoint: Offset): Pair<TextShard, Offset>? {
         var nearest: Pair<TextShard, Offset>? = null
         for (shard in shards.values) {
-            val origin = shard.positionInWindow()
             val rect = shardWindowRect(shard)
             if (rect.contains(windowPoint)) {
-                return shard to (windowPoint - origin)
+                return shard to (windowPoint - shard.positionInWindow())
             }
-            // 记住垂直最近的分片作回落。
-            val clampedX = windowPoint.x.coerceIn(rect.left, rect.right.coerceAtLeast(rect.left))
-            val clampedY = windowPoint.y.coerceIn(rect.top, rect.bottom.coerceAtLeast(rect.top))
-            val candidate = shard to Offset(clampedX - origin.x, clampedY - origin.y)
+            // 记住垂直最近的分片作回落（平距离保先见者——与先见者的严格
+            // 更近才替换口径一致）。
+            val candidate = shard to clampIntoShard(shard, rect, windowPoint)
             val incumbent = nearest
-            if (incumbent == null) {
-                nearest = candidate
-            } else {
-                val incumbentCenterY = incumbent.first.positionInWindow().y + incumbent.first.sizePx().height / 2f
-                val candidateCenterY = origin.y + shard.sizePx().height / 2f
-                if (kotlin.math.abs(candidateCenterY - windowPoint.y) <
-                    kotlin.math.abs(incumbentCenterY - windowPoint.y)
-                ) {
-                    nearest = candidate
-                }
-            }
+            val closer = incumbent == null ||
+                kotlin.math.abs(centerLineY(shard) - windowPoint.y) <
+                kotlin.math.abs(centerLineY(incumbent.first) - windowPoint.y)
+            if (closer) nearest = candidate
         }
         return nearest
     }
@@ -395,27 +398,25 @@ class SelectionController {
     fun handleAnchor(handle: Handle): Offset? {
         val sel = selection.value ?: return null
         val (first, last) = orderedEndpoints(sel) ?: return null
-        val endpoint = when (handle) {
-            Handle.Start -> first
-            Handle.End -> last
-        }
+        val endpoint = if (handle == Handle.Start) first else last
         val shard = shards[endpoint.shard] ?: return null
         // 分片已注册但 LayoutCoordinates 已分离（行滚出视野、可组合件还没
         // dispose）时 positionInWindow 回落 Offset.Zero——那会把手柄 Popup
         // 摔到窗口左上角。改回 null，宿主先藏手柄等分片重挂——对齐系统选
         // 择 UX。
         val origin = shard.positionInWindow().takeIf { it != Offset.Zero } ?: return null
+        val box = endpointLineBox(shard, handle, endpoint.charOffset) ?: return null
+        val lateral = if (handle == Handle.Start) box.left else box.right
+        return Offset(origin.x + lateral, origin.y + box.bottom)
+    }
+
+    /** 端点字符所在光标行的包围盒；空文本/越界取盒失败为 null。 */
+    private fun endpointLineBox(shard: TextShard, handle: Handle, charOffset: Int): Rect? {
         val tlr = shard.textLayoutResult
         val laidOutLen = tlr.layoutInput.text.length
         if (laidOutLen <= 0) return null
-        val box = runCatching {
-            tlr.getBoundingBox(anchorCharIndex(handle, endpoint.charOffset.coerceIn(0, laidOutLen), laidOutLen))
-        }.getOrNull() ?: return null
-        val anchorPoint = when (handle) {
-            Handle.Start -> Offset(origin.x + box.left, origin.y + box.bottom)
-            Handle.End -> Offset(origin.x + box.right, origin.y + box.bottom)
-        }
-        return anchorPoint
+        val charIndex = anchorCharIndex(handle, charOffset.coerceIn(0, laidOutLen), laidOutLen)
+        return runCatching { tlr.getBoundingBox(charIndex) }.getOrNull()
     }
 
     /** 手柄锚对应的字符下标：Start 取偏移处字符、End 取前一字符（右缘）。 */
@@ -434,18 +435,19 @@ class SelectionController {
      * 正是「一滚选区就漂移」缺陷的成因。
      */
     fun grabHandleAt(p: Offset, hitSlopPx: Float): Handle? {
-        val startDist = distanceToHandleAnchor(handleAnchor(Handle.Start), p, hitSlopPx)
-        val endDist = distanceToHandleAnchor(handleAnchor(Handle.End), p, hitSlopPx)
+        val candidates = listOf(Handle.Start, Handle.End)
+            .map { it to handleGrabDistance(it, p, hitSlopPx) }
         // 慷慨的圆形命中区，圆心略低于各锚点（可见圆点挂在 anchor.y 报告的
         // 文字基线下约 hitSlopPx 处）。hitSlopPx 调用点默认 48 dp——拇指
         // 指腹量级的宽容。
-        val nearest = if (startDist <= endDist) Handle.Start to startDist else Handle.End to endDist
-        return if (nearest.second <= hitSlopPx * 1.5f) nearest.first else null
+        val (handle, distance) = candidates.minByOrNull { it.second }
+            ?: return null
+        return if (distance <= hitSlopPx * 1.5f) handle else null
     }
 
-    /** 圆心向下偏 hitSlopPx/2（点在圆点可视位置上也算命中）。 */
-    private fun distanceToHandleAnchor(anchor: Offset?, p: Offset, hitSlopPx: Float): Float {
-        if (anchor == null) return Float.MAX_VALUE
+    /** 圆心向下偏 hitSlopPx/2（点在圆点可视位置上也算命中）；无锚为无穷远。 */
+    private fun handleGrabDistance(handle: Handle, p: Offset, hitSlopPx: Float): Float {
+        val anchor = handleAnchor(handle) ?: return Float.MAX_VALUE
         val dx = p.x - anchor.x
         val dy = p.y - (anchor.y + hitSlopPx / 2f)
         return kotlin.math.sqrt(dx * dx + dy * dy)
@@ -457,12 +459,11 @@ class SelectionController {
      * 时 null——调用方保自己的默认。
      */
     fun handlesCenterX(): Float? {
-        val s = handleAnchor(Handle.Start)
-        val e = handleAnchor(Handle.End)
-        return when {
-            s != null && e != null -> (s.x + e.x) / 2f
-            s != null -> s.x
-            e != null -> e.x
+        val anchors = listOf(Handle.Start, Handle.End)
+            .mapNotNull { handleAnchor(it) }
+        return when (anchors.size) {
+            2 -> (anchors[0].x + anchors[1].x) / 2f
+            1 -> anchors[0].x
             else -> null
         }
     }
@@ -473,22 +474,24 @@ class SelectionController {
      * 活动选区的联合包围矩形（窗口坐标），只走已注册分片。浮动工具条定位
      * 用。无选区、或选区分片全未组合时 null。
      */
-    fun selectionWindowRect(): Rect? {
-        val sel = selection.value ?: return null
-        val (first, last) = orderedEndpoints(sel) ?: return null
-        val firstShard = shards[first.shard] ?: return null
-        val lastShard = shards[last.shard] ?: return null
-        val firstBox = firstShard.textLayoutResult.getBoundingBox(
-            first.charOffset.coerceIn(0, firstShard.textLayoutResult.layoutInput.text.length - 1)
-                .coerceAtLeast(0),
+    fun selectionWindowRect(): Rect? = selection.value?.let { sel ->
+        val (first, last) = orderedEndpoints(sel) ?: return@let null
+        val firstShard = shards[first.shard] ?: return@let null
+        val lastShard = shards[last.shard] ?: return@let null
+        val firstBox = endpointCharBox(firstShard, first.charOffset) ?: return@let null
+        val lastBox = endpointCharBox(lastShard, last.charOffset) ?: return@let null
+        Rect(
+            firstShard.positionInWindow() + Offset(firstBox.left, firstBox.top),
+            lastShard.positionInWindow() + Offset(lastBox.right, lastBox.bottom),
         )
-        val lastBox = lastShard.textLayoutResult.getBoundingBox(
-            last.charOffset.coerceIn(0, lastShard.textLayoutResult.layoutInput.text.length - 1)
-                .coerceAtLeast(0),
-        )
-        val topLeft = firstShard.positionInWindow() + Offset(firstBox.left, firstBox.top)
-        val bottomRight = lastShard.positionInWindow() + Offset(lastBox.right, lastBox.bottom)
-        return Rect(topLeft, bottomRight)
+    }
+
+    /** 端点字符的包围盒（offset 处字符，钳到已布局末字符）。 */
+    private fun endpointCharBox(shard: TextShard, charOffset: Int): Rect? {
+        val tlr = shard.textLayoutResult
+        val lastIndex = (tlr.layoutInput.text.length - 1).coerceAtLeast(0)
+        val index = charOffset.coerceIn(0, lastIndex)
+        return runCatching { tlr.getBoundingBox(index) }.getOrNull()
     }
 
     /**
@@ -496,26 +499,15 @@ class SelectionController {
      * 在动的那只手柄走。手柄分片未注册（出屏）时 null。尺寸取端点字符的
      * 行高而非整分片——工具条贴住实际移动的那一行，不是整段。
      */
-    fun draggedHandleLineRect(handle: Handle): Rect? {
-        val sel = selection.value ?: return null
+    fun draggedHandleLineRect(handle: Handle): Rect? = selection.value?.let { sel ->
         // Handle 枚举对应选区按文档序的**可视首/尾**，不是 selection.start
         // vs selection.end（那两个取决于用户先抓哪边）。用有序对，「拖右手
         // 柄」永远跟右/下端点，无论它存在 selection.start 还是 end。
-        val ordered = orderedEndpoints(sel) ?: return null
-        val endpoint = when (handle) {
-            Handle.Start -> ordered.first
-            Handle.End -> ordered.second
-        }
-        val shard = shards[endpoint.shard] ?: return null
-        val origin = shard.positionInWindow()
-        if (origin == Offset.Zero) return null
-        val tlr = shard.textLayoutResult
-        val len = tlr.layoutInput.text.length
-        if (len <= 0) return null
-        val box = runCatching {
-            tlr.getBoundingBox(anchorCharIndex(handle, endpoint.charOffset.coerceIn(0, len), len))
-        }.getOrNull() ?: return null
-        return windowRectOf(origin, box)
+        val (first, last) = orderedEndpoints(sel) ?: return@let null
+        val endpoint = if (handle == Handle.Start) first else last
+        val shard = shards[endpoint.shard] ?: return@let null
+        val origin = shard.positionInWindow().takeIf { it != Offset.Zero } ?: return@let null
+        endpointLineBox(shard, handle, endpoint.charOffset)?.let { windowRectOf(origin, it) }
     }
 
     /**
@@ -523,52 +515,49 @@ class SelectionController {
      * 时，取选区内最低仍可见分片的底行）。工具条锚在选区**末尾**上方——
      * 菜单与尾手柄扎堆，而不是飘到首手柄（可能隔着很多行）旁边。
      */
-    fun visibleSelectionEndLineRect(): Rect? {
-        val sel = selection.value ?: return null
-        val (first, last) = orderedEndpoints(sel) ?: return null
+    fun visibleSelectionEndLineRect(): Rect? = selection.value?.let { sel ->
+        val (first, last) = orderedEndpoints(sel) ?: return@let null
 
         // 尾分片仍组合且在屏：直接取它的行。
         val lastShard = shards[last.shard]
-        val lastOrigin = lastShard?.positionInWindow()
-        if (lastShard != null && lastOrigin != Offset.Zero) {
-            val tlr = lastShard.textLayoutResult
-            val len = tlr.layoutInput.text.length
-            val charIdx = (last.charOffset - 1).coerceIn(0, (len - 1).coerceAtLeast(0))
-            val box = if (len > 0) runCatching { tlr.getBoundingBox(charIdx) }.getOrNull() else null
-            if (box != null && lastOrigin != null) {
-                return windowRectOf(lastOrigin, box)
-            }
+        if (lastShard != null && lastShard.positionInWindow() != Offset.Zero) {
+            visibleTailLineFromShard(lastShard, last)?.let { return@let it }
         }
 
         // 回落：尾手柄分片已出屏。找选区内仍在组合的最**底**分片——用户看
         // 到的高亮「尾巴」。
-        var tail: TextShard? = null
-        var tailBottom = Float.NEGATIVE_INFINITY
-        for ((id, shard) in shards) {
-            val origin = shard.positionInWindow()
-            val visible = origin != Offset.Zero && shardParticipatesIn(id, first, last)
-            if (!visible) continue
-            val bottom = origin.y + shard.sizePx().height
-            if (bottom <= tailBottom) continue
-            tailBottom = bottom
-            tail = shard
-        }
-        val tailShard = tail ?: return null
-        val tlr = tailShard.textLayoutResult
+        val tail = shards.entries.asSequence()
+            .filter { (id, shard) ->
+                shard.positionInWindow() != Offset.Zero && shardParticipatesIn(id, first, last)
+            }
+            .maxByOrNull { (_, shard) -> shard.positionInWindow().y + shard.sizePx().height }
+            ?.value
+            ?: return@let null
+        lowestVisibleLineOf(tail)
+    }
+
+    /** 尾分片在屏时其端点字符所在行的窗口矩形。 */
+    private fun visibleTailLineFromShard(shard: TextShard, last: TextPosition): Rect? {
+        val tlr = shard.textLayoutResult
+        val len = tlr.layoutInput.text.length
+        if (len <= 0) return null
+        val charIdx = (last.charOffset - 1).coerceIn(0, len - 1)
+        val box = runCatching { tlr.getBoundingBox(charIdx) }.getOrNull() ?: return null
+        return windowRectOf(shard.positionInWindow(), box)
+    }
+
+    /** 分片**末字符**所在行的窗口矩形；x 范围用分片体宽近似。 */
+    private fun lowestVisibleLineOf(shard: TextShard): Rect? {
+        val tlr = shard.textLayoutResult
         if (tlr.layoutInput.text.length <= 0) return null
-        // 该分片**末字符**所在行作可视行。
         val lastLine = tlr.lineCount - 1
         if (lastLine < 0) return null
-        val lineTop = runCatching { tlr.getLineTop(lastLine) }.getOrNull() ?: return null
-        val lineBottom = runCatching { tlr.getLineBottom(lastLine) }.getOrNull() ?: return null
-        val origin = tailShard.positionInWindow()
-        // 用分片体宽近似该行的可视 x 范围。
-        return Rect(
-            left = origin.x,
-            top = origin.y + lineTop,
-            right = origin.x + tailShard.sizePx().width,
-            bottom = origin.y + lineBottom,
-        )
+        val origin = shard.positionInWindow()
+        val lineHeight = runCatching {
+            tlr.getLineTop(lastLine) to tlr.getLineBottom(lastLine)
+        }.getOrNull() ?: return null
+        val width = shard.sizePx().width
+        return Rect(origin.x, origin.y + lineHeight.first, origin.x + width, origin.y + lineHeight.second)
     }
 
     /**
@@ -577,44 +566,50 @@ class SelectionController {
      * 子集。工具条跟可见部分走，而不是端点一出视野就消失。无可绘制部分
      * （两端点与中间分片全出屏）时 null——调用方回落固定锚位。
      */
-    fun visibleSelectionWindowRect(): Rect? {
-        val sel = selection.value ?: return null
-        val (first, last) = orderedEndpoints(sel) ?: return null
-        var minL = Float.POSITIVE_INFINITY
-        var minT = Float.POSITIVE_INFINITY
-        var maxR = Float.NEGATIVE_INFINITY
-        var maxB = Float.NEGATIVE_INFINITY
-        for ((id, shard) in shards) {
-            if (!shardParticipatesIn(id, first, last)) continue
-            val tlr = shard.textLayoutResult
-            val laidOutLen = tlr.layoutInput.text.length
-            if (laidOutLen <= 0) continue
-            val from = if (id == first.shard) first.charOffset.coerceIn(0, laidOutLen) else 0
-            val to = if (id == last.shard) last.charOffset.coerceIn(0, laidOutLen) else laidOutLen
-            val lo = minOf(from, to)
-            val hi = maxOf(from, to)
-            // positionInWindow 在 LayoutCoordinates 分离后回落
-            // Offset.Zero——跳过那些，反正也画不出来。
-            val origin = if (hi > lo) shard.positionInWindow() else Offset.Zero
-            if (origin == Offset.Zero) continue
-            val startBox = runCatching {
-                tlr.getBoundingBox(lo.coerceAtMost(laidOutLen - 1).coerceAtLeast(0))
-            }.getOrNull() ?: continue
-            val endBox = runCatching {
-                tlr.getBoundingBox((hi - 1).coerceIn(0, laidOutLen - 1))
-            }.getOrNull() ?: continue
-            // 两盒取并——盖住选区在本分片内跨多行的情形。
-            val left = origin.x + minOf(startBox.left, endBox.left)
-            val top = origin.y + minOf(startBox.top, endBox.top)
-            val right = origin.x + maxOf(startBox.right, endBox.right)
-            val bottom = origin.y + maxOf(startBox.bottom, endBox.bottom)
-            if (left < minL) minL = left
-            if (top < minT) minT = top
-            if (right > maxR) maxR = right
-            if (bottom > maxB) maxB = bottom
-        }
-        if (!minL.isFinite() || !maxR.isFinite() || maxR <= minL || maxB <= minT) return null
-        return Rect(minL, minT, maxR, maxB)
+    fun visibleSelectionWindowRect(): Rect? = selection.value?.let { sel ->
+        val (first, last) = orderedEndpoints(sel) ?: return@let null
+        val visiblePieces = shards.entries.asSequence()
+            .mapNotNull { (id, shard) -> visibleShardPiece(id, shard, first, last) }
+            .toList()
+        if (visiblePieces.isEmpty()) return@let null
+        Rect(
+            visiblePieces.minOf { it.left }, visiblePieces.minOf { it.top },
+            visiblePieces.maxOf { it.right }, visiblePieces.maxOf { it.bottom },
+        )
+    }
+
+    /** 选区在本分片上的可见矩形；本分片不参与/无可画内容时 null。 */
+    private fun visibleShardPiece(
+        id: TextShardId,
+        shard: TextShard,
+        first: TextPosition,
+        last: TextPosition,
+    ): Rect? {
+        if (!shardParticipatesIn(id, first, last)) return null
+        val tlr = shard.textLayoutResult
+        val laidOutLen = tlr.layoutInput.text.length
+        if (laidOutLen <= 0) return null
+        val from = if (id == first.shard) first.charOffset.coerceIn(0, laidOutLen) else 0
+        val to = if (id == last.shard) last.charOffset.coerceIn(0, laidOutLen) else laidOutLen
+        val lo = minOf(from, to)
+        val hi = maxOf(from, to)
+        // positionInWindow 在 LayoutCoordinates 分离后回落
+        // Offset.Zero——跳过那些，反正也画不出来。
+        val origin = if (hi > lo) shard.positionInWindow() else Offset.Zero
+        if (origin == Offset.Zero) return null
+        val startBox = runCatching {
+            tlr.getBoundingBox(lo.coerceAtMost(laidOutLen - 1).coerceAtLeast(0))
+        }.getOrNull() ?: return null
+        val endBox = runCatching {
+            tlr.getBoundingBox((hi - 1).coerceIn(0, laidOutLen - 1))
+        }.getOrNull() ?: return null
+        // 两盒取并——盖住选区在本分片内跨多行的情形。
+        return Rect(
+            left = origin.x + minOf(startBox.left, endBox.left),
+            top = origin.y + minOf(startBox.top, endBox.top),
+            right = origin.x + maxOf(startBox.right, endBox.right),
+            bottom = origin.y + maxOf(startBox.bottom, endBox.bottom),
+        )
     }
 
     /** 分片 id 是否参与该选区（是端点、或在两端点之间）。 */
@@ -638,23 +633,20 @@ class SelectionController {
      * 可比）。
      */
     fun orderedEndpoints(sel: TextSelection): Pair<TextPosition, TextPosition>? {
-        val a = sel.start
-        val b = sel.end
+        val (a, b) = sel.start to sel.end
         if (a.shard == b.shard) {
             return if (a.charOffset <= b.charOffset) a to b else b to a
         }
         // 两端点都有文档序键时优先用它——分片出屏/未注册也能比。键拿不到
         // 再回落 y 比较。
-        val keyA = shardOrderKey(a.shard)
-        val keyB = shardOrderKey(b.shard)
-        if (keyA != null && keyB != null && a.shard.messageId == b.shard.messageId) {
-            return if (keyA <= keyB) a to b else b to a
+        val docKeyA = shardOrderKey(a.shard)
+        val docKeyB = shardOrderKey(b.shard)
+        if (docKeyA != null && docKeyB != null && a.shard.messageId == b.shard.messageId) {
+            return if (docKeyA <= docKeyB) a to b else b to a
         }
-        val shardA = shards[a.shard] ?: return null
-        val shardB = shards[b.shard] ?: return null
-        val yA = shardA.positionInWindow().y
-        val yB = shardB.positionInWindow().y
-        return if (yA <= yB) a to b else b to a
+        val windowYA = shards[a.shard]?.positionInWindow()?.y ?: return null
+        val windowYB = shards[b.shard]?.positionInWindow()?.y ?: return null
+        return if (windowYA <= windowYB) a to b else b to a
     }
 
     // ─── 选中文本提取 ──────────────────────────────────────────────────────
@@ -665,7 +657,7 @@ class SelectionController {
      * 区里的每个分片被拖过时都注册过）。
      */
     fun selectedPlainText(documentRegistry: Map<TextShardId, String> = emptyMap()): String {
-        val sel = selection.value ?: return ""
+        val sel = selection.value ?: return "" // 无选区即空串。
 
         // [T-android-copy-selection-not-whole-message] orderedEndpoints() 仅在
         // 端点分片被回收出屏**且**无文档序键时（长拖）返回 null。此时回落
@@ -673,24 +665,24 @@ class SelectionController {
         // [T-android-copy-long-reply-incomplete] 修复在这里和下面跨片分支
         // 返回了整条消息 markdown——多分片部分选择粘出整条回复正是那个
         // 原因。）走查也空（真退化的单分片回收）时保原折叠子串。
-        val ordered = orderedEndpoints(sel) ?: run {
-            val walked = crossShardSelectedText(sel.start, sel.end, documentRegistry)
-            return walked.ifEmpty { collapsedFallback(sel) }
-        }
-        val (first, last) = ordered
+        val (first, last) = orderedEndpoints(sel)
+            ?: return crossShardSelectedText(sel.start, sel.end, documentRegistry)
+                .ifEmpty { collapsedFallback(sel) }
 
         // 单分片选择——plainText 的精确子串。刻意**不走**消息缓存：单分片
         // 内的选择是普通的短选/半段复制，必须是精确子串。
         if (first.shard == last.shard) {
-            val txt = shards[first.shard]?.plainText
-                ?: documentRegistry[first.shard]
-                ?: return ""
-            val a = first.charOffset.coerceIn(0, txt.length)
-            val b = last.charOffset.coerceIn(0, txt.length)
-            return txt.substring(minOf(a, b), maxOf(a, b))
+            val txt = shards[first.shard]?.plainText ?: documentRegistry[first.shard] ?: return ""
+            return substringBetween(txt, first.charOffset, last.charOffset)
         }
 
         return crossShardSelectedText(first, last, documentRegistry)
+    }
+
+    private fun substringBetween(txt: String, a: Int, b: Int): String {
+        val from = a.coerceIn(0, txt.length)
+        val to = b.coerceIn(0, txt.length)
+        return txt.substring(minOf(from, to), maxOf(from, to))
     }
 
     /**
@@ -707,35 +699,35 @@ class SelectionController {
      * 走查结果，不回落整条消息。
      */
     private fun crossShardSelectedText(
-        first: TextPosition,
-        last: TextPosition,
+        first: TextPosition, last: TextPosition,
         documentRegistry: Map<TextShardId, String>,
     ): String {
-        val collected = StringBuilder()
+        // 走查段序列：首选中分片的尾段 → 中间分片全文 → 末选中分片的头段。
+        // 首分片之前的旁观分片不收（started 门），段间以换行接续。
+        val segments = mutableListOf<String>()
         var started = false
-        for (id in registeredShardsInOrder()) {
+        loop@ for (id in registeredShardsInOrder()) {
             val txt = shards[id]?.plainText ?: documentRegistry[id] ?: continue
-            when (id) {
-                first.shard -> {
-                    collected.append(txt.substring(first.charOffset.coerceIn(0, txt.length), txt.length))
+            when {
+                id == first.shard -> {
+                    segments += txt.substring(first.charOffset.coerceIn(0, txt.length), txt.length)
                     started = true
                 }
-                last.shard -> {
-                    if (started) collected.append('\n')
-                    collected.append(txt.substring(0, last.charOffset.coerceIn(0, txt.length)))
-                    break
+                id == last.shard -> {
+                    if (started) segments += txt.substring(0, last.charOffset.coerceIn(0, txt.length))
+                    break@loop
                 }
-                else -> if (started) collected.append('\n').append(txt)
+                started -> segments += txt
             }
         }
-        val walk = collected.toString()
+        val walk = segments.joinToString("\n")
 
         // 同消息选择：试着用缓存在选区内 markdown 的头尾锚切片找回非分片
         // 块（代码/表格）。跨消息没有单一源串，走查即终稿。
-        if (first.shard.messageId == last.shard.messageId) {
-            spliceNonShardSpan(first, last, walk, documentRegistry)?.let { return it }
-        }
-        return walk
+        val sameMessage = first.shard.messageId == last.shard.messageId
+        return if (sameMessage) {
+            spliceNonShardSpan(first, last, walk, documentRegistry) ?: walk
+        } else walk
     }
 
     /**
@@ -745,22 +737,20 @@ class SelectionController {
      * 容时返回 null——调用方保留精确走查。
      */
     private fun spliceNonShardSpan(
-        first: TextPosition,
-        last: TextPosition,
-        walk: String,
+        first: TextPosition, last: TextPosition, walk: String,
         documentRegistry: Map<TextShardId, String>,
     ): String? {
         val md = messageMarkdownCache[first.shard.messageId]?.takeIf { it.isNotEmpty() } ?: return null
-
         val firstText = shards[first.shard]?.plainText ?: documentRegistry[first.shard] ?: return null
         val lastText = shards[last.shard]?.plainText ?: documentRegistry[last.shard] ?: return null
 
         // 头锚：起始偏移之后一段选中文本；尾锚：结束偏移之前一段。
-        val headSel = firstText.substring(first.charOffset.coerceIn(0, firstText.length))
-        val tailSel = lastText.substring(0, last.charOffset.coerceIn(0, lastText.length))
-
-        val headAnchor = distinctiveAnchor(headSel, fromStart = true)
-        val tailAnchor = distinctiveAnchor(tailSel, fromStart = false)
+        val headAnchor = distinctiveAnchor(
+            firstText.substring(first.charOffset.coerceIn(0, firstText.length)), fromStart = true,
+        )
+        val tailAnchor = distinctiveAnchor(
+            lastText.substring(0, last.charOffset.coerceIn(0, lastText.length)), fromStart = false,
+        )
         if (headAnchor.isEmpty() || tailAnchor.isEmpty()) return null
 
         val sliceStart = md.indexOf(headAnchor)
@@ -779,19 +769,16 @@ class SelectionController {
         return if (sliceCrossesNonShardBlock(slice)) slice else null
     }
 
+    /** markdown 表头分隔行形态（`|---|---|`）；散文里孤立的行内 `|` 不误报。 */
+    private val tableDelimiterRow = Regex("""(?m)^\s*\|?\s*:?-{3,}.*\|""")
+
     /**
      * [T-android-copy-selection-not-whole-message] 启发式：原始 markdown 切
      * 片里有没有**不注册**为 MinisTextKit 文本分片的块（围栏代码、表格、
      * 展示数学）？用来判定 markdown 切片是否携带逐片走查会丢的内容。
      */
-    private fun sliceCrossesNonShardBlock(slice: String): Boolean {
-        if (slice.contains("```") || slice.contains("~~~")) return true
-        if (slice.contains("$$")) return true
-        // markdown 表格要表头行加分隔行（`|---|---|`）。认分隔行形态，散
-        // 文里孤立的行内 `|` 不误报。
-        val tableDelimiter = Regex("""(?m)^\s*\|?\s*:?-{3,}.*\|""")
-        return tableDelimiter.containsMatchIn(slice)
-    }
+    private fun sliceCrossesNonShardBlock(slice: String): Boolean =
+        listOf("```", "~~~", "$$").any(slice::contains) || tableDelimiterRow.containsMatchIn(slice)
 
     /**
      * 从选中跑段的一端挑一个短而独特的锚子串，供在原始 markdown 中定位。
@@ -801,25 +788,24 @@ class SelectionController {
         val trimmed = selected.trim()
         if (trimmed.isEmpty()) return ""
         val cap = 24
+        val head = trimmed.take(cap)
         return when {
             trimmed.length <= cap -> trimmed
-            fromStart -> trimmed.substring(0, cap)
-            else -> trimmed.substring(trimmed.length - cap)
+            fromStart -> head
+            else -> trimmed.takeLast(cap)
         }
     }
 
     private fun collapsedFallback(sel: TextSelection): String {
         val txt = shards[sel.start.shard]?.plainText ?: return ""
-        val a = sel.start.charOffset.coerceIn(0, txt.length)
-        val b = sel.end.charOffset.coerceIn(0, txt.length)
-        return txt.substring(minOf(a, b), maxOf(a, b))
+        return substringBetween(txt, sel.start.charOffset, sel.end.charOffset)
     }
 
     /** 当前已组合分片，按可视自上而下排序。 */
     private fun registeredShardsInOrder(): List<TextShardId> =
-        shards.values
-            .sortedBy { it.positionInWindow().y }
-            .map { it.id }
+        shards.entries
+            .sortedBy { it.value.positionInWindow().y }
+            .map { it.key }
 }
 
 /**
@@ -862,70 +848,74 @@ fun RegisterSelectionShard(shard: TextShard?) {
  * 片局部坐标系，且只画落在本分片内的那部分选区。
  */
 fun DrawScope.drawSelectionForShard(
-    shardId: TextShardId,
-    result: TextLayoutResult,
-    selection: TextSelection,
-    controller: SelectionController?,
-    color: Color,
+    shardId: TextShardId, result: TextLayoutResult, selection: TextSelection,
+    controller: SelectionController?, color: Color,
 ) {
-    val laidOutText = result.layoutInput.text.text
-    val maxOffset = laidOutText.length
+    val maxOffset = result.layoutInput.text.text.length
     val lineCount = result.lineCount
     if (maxOffset == 0 || lineCount == 0) return
 
-    val ordered = controller?.orderedEndpoints(selection) ?: run {
-        val a = selection.start
-        val b = selection.end
-        if (a.shard == b.shard && a.charOffset <= b.charOffset) a to b else b to a
+    val ordered = controller?.orderedEndpoints(selection) ?: selection.let { sel ->
+        val sameShardAscending = sel.start.shard == sel.end.shard && sel.start.charOffset <= sel.end.charOffset
+        if (sameShardAscending) sel.start to sel.end else sel.end to sel.start
     }
     val (first, last) = ordered
 
-    // 定本分片内的 [from, to] 字符区间。
+    // 定本分片内的 [lo, hi] 字符区间：首端点在此取其偏移、尾端点在此取
+    // 已布局长度；本分片在两端点**之间**时全长参与（经控制器判序）。
     val isFirstHere = first.shard == shardId
     val isLastHere = last.shard == shardId
     if (!isFirstHere && !isLastHere) {
         // 本分片位于两端点**之间**——只有选区真的横穿我们才包含。经控制
         // 器的已注册分片窗口 y 快照判序。
-        if (controller == null) return
-        if (!controller.isShardBetween(first.shard, last.shard, shardId)) return
+        if (controller == null || !controller.isShardBetween(first.shard, last.shard, shardId)) return
     }
-
-    val from = if (isFirstHere) first.charOffset.coerceIn(0, maxOffset) else 0
-    val to = if (isLastHere) last.charOffset.coerceIn(0, maxOffset) else maxOffset
-    val lo = minOf(from, to)
-    val hi = maxOf(from, to)
+    val startOffset = if (isFirstHere) first.charOffset.coerceIn(0, maxOffset) else 0
+    val endOffset = if (isLastHere) last.charOffset.coerceIn(0, maxOffset) else maxOffset
+    val lo = minOf(startOffset, endOffset)
+    val hi = maxOf(startOffset, endOffset)
     if (hi <= lo) return
 
-    val startLine = result.getLineForOffset(lo).coerceIn(0, lineCount - 1)
-    val endLine = result.getLineForOffset((hi - 1).coerceAtLeast(0)).coerceIn(0, lineCount - 1)
-    if (endLine < startLine) return
-
-    for (line in startLine..endLine) {
-        val lineStart = if (line == startLine) lo else result.getLineStart(line)
-        val lineEndRaw = if (line == endLine) hi else result.getLineEnd(line)
-        val lineEnd = lineEndRaw.coerceAtMost(maxOffset)
-        if (lineEnd <= lineStart) continue
-        var left = Float.POSITIVE_INFINITY
-        var right = Float.NEGATIVE_INFINITY
-        for (offset in lineStart until lineEnd) {
-            val box = result.getBoundingBox(offset)
-            if (box.width <= 0f) continue
-            if (box.left < left) left = box.left
-            if (box.right > right) right = box.right
-        }
-        if (!left.isFinite() || right <= left) continue
-        // 若这是本分片内选区的末条可视行、而我们**不含**最终端点，把高亮
-        // 延到行右缘——跨分片选择才有连续感。
-        val finalLineHere = line == endLine && isLastHere
-        val drawRight = if (!finalLineHere) maxOf(right, result.getLineRight(line)) else right
-        val top = result.getLineTop(line)
-        val bottom = result.getLineBottom(line)
-        drawRect(
-            color = color,
-            topLeft = Offset(left, top),
-            size = Size(drawRight - left, bottom - top),
-        )
+    val firstLine = result.getLineForOffset(lo).coerceIn(0, lineCount - 1)
+    val lastLine = result.getLineForOffset((hi - 1).coerceAtLeast(0)).coerceIn(0, lineCount - 1)
+    for (line in firstLine..lastLine) {
+        drawSelectionLine(line, line == firstLine, line == lastLine, lo, hi, isLastHere, result, color, maxOffset)
     }
+}
+
+/** 单行高亮：行内字符盒联合求左右缘；非本分片末行延到行右缘保证跨片连续感。 */
+private fun DrawScope.drawSelectionLine(
+    line: Int,
+    isFirstLine: Boolean,
+    isLastLine: Boolean,
+    lo: Int,
+    hi: Int,
+    isLastHere: Boolean,
+    result: TextLayoutResult,
+    color: Color,
+    maxOffset: Int,
+) {
+    val lineStart = if (isFirstLine) lo else result.getLineStart(line)
+    val lineEnd = if (isLastLine) hi else result.getLineEnd(line)
+    if (lineEnd.coerceAtMost(maxOffset) <= lineStart) return
+    var left = Float.POSITIVE_INFINITY
+    var right = Float.NEGATIVE_INFINITY
+    for (offset in lineStart until lineEnd.coerceAtMost(maxOffset)) {
+        val box = result.getBoundingBox(offset)
+        if (box.width <= 0f) continue
+        left = minOf(left, box.left)
+        right = maxOf(right, box.right)
+    }
+    if (!left.isFinite() || right <= left) return
+    // 若这是本分片内选区的末条可视行、而我们**不含**最终端点，把高亮
+    // 延到行右缘——跨分片选择才有连续感。
+    val finalLineHere = isLastLine && isLastHere
+    val drawRight = if (finalLineHere) right else maxOf(right, result.getLineRight(line))
+    drawRect(
+        color = color,
+        topLeft = Offset(left, result.getLineTop(line)),
+        size = Size(drawRight - left, result.getLineBottom(line) - result.getLineTop(line)),
+    )
 }
 
 /**
@@ -940,9 +930,7 @@ fun DrawScope.drawSelectionForShard(
  */
 private fun shardOrderKey(id: TextShardId): Int? {
     val s = id.shardId
-    val lastColon = s.lastIndexOf(':')
-    if (lastColon < 0) return null
-    return s.substring(lastColon + 1).toIntOrNull()
+    return if (':' in s) s.substringAfterLast(':').toIntOrNull() else null
 }
 
 /**
@@ -970,13 +958,11 @@ internal fun SelectionController.isShardBetween(
     }
     // 索引解析失败或选区跨消息：回落 y 比较。
     val registry = currentShards()
-    val shardA = registry[a] ?: return false
-    val shardB = registry[b] ?: return false
-    val shardM = registry[middle] ?: return false
-    val yA = shardA.positionInWindow().y
-    val yB = shardB.positionInWindow().y
-    val yM = shardM.positionInWindow().y
-    return yM in minOf(yA, yB)..maxOf(yA, yB)
+    fun centerY(key: TextShardId): Float? = registry[key]?.positionInWindow()?.y
+    val spanLow = minOf(centerY(a) ?: return false, centerY(b) ?: return false)
+    val spanHigh = maxOf(centerY(a) ?: return false, centerY(b) ?: return false)
+    val middleY = centerY(middle) ?: return false
+    return middleY in spanLow..spanHigh
 }
 
 /**
@@ -984,30 +970,18 @@ internal fun SelectionController.isShardBetween(
  * 的便捷件——包成控制器要的 `positionInWindow` 与 `sizePx` 闭包。
  */
 fun buildTextShard(
-    id: TextShardId,
-    plainText: String,
-    layoutResult: TextLayoutResult,
-    coordinatesProvider: () -> LayoutCoordinates?,
-    rawMarkdown: String? = null,
-    renderedToRawOffset: ((Int) -> Int)? = null,
-    isAtomicUnit: Boolean = false,
-): TextShard = TextShard(
-    id = id,
-    plainText = plainText,
-    textLayoutResult = layoutResult,
-    isAtomicUnit = isAtomicUnit,
-    positionInWindow = {
-        val coords = coordinatesProvider()
-        if (coords != null && coords.isAttached) coords.positionInWindow() else Offset.Zero
-    },
-    sizePx = {
-        val coords = coordinatesProvider()
-        if (coords != null && coords.isAttached) {
-            IntSize(coords.size.width, coords.size.height)
-        } else {
-            IntSize.Zero
-        }
-    },
-    renderedToRawOffset = renderedToRawOffset,
-    rawMarkdown = rawMarkdown,
-)
+    id: TextShardId, plainText: String, layoutResult: TextLayoutResult,
+    coordinatesProvider: () -> LayoutCoordinates?, rawMarkdown: String? = null,
+    renderedToRawOffset: ((Int) -> Int)? = null, isAtomicUnit: Boolean = false,
+): TextShard {
+    fun attached(): LayoutCoordinates? =
+        coordinatesProvider()?.takeIf { it.isAttached }
+    return TextShard(
+        id, plainText, layoutResult,
+        positionInWindow = { attached()?.positionInWindow() ?: Offset.Zero },
+        sizePx = { attached()?.let { IntSize(it.size.width, it.size.height) } ?: IntSize.Zero },
+        isAtomicUnit = isAtomicUnit,
+        renderedToRawOffset = renderedToRawOffset,
+        rawMarkdown = rawMarkdown,
+    )
+}
