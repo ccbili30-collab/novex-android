@@ -63,11 +63,14 @@ Per-component versions are pinned in src/android/app/build.gradle.kts.
 3. Bundled web/UI assets (MIT)
 -------------------------------
 
-These assets ship inside the APK with their own license context; the
-full texts remain bundled alongside the assets themselves:
+KaTeX 与 jieba 的分发物内未附许可全文，MIT 标准参考文本随包于本目录
+MIT.txt（各组件版权行以上游项目发布为准）；textstyles 与 Phosphor 的
+全文随各自资产目录分发：
 
-    - KaTeX 0.16.21 + mhchem      assets/katex/          (MIT)
-    - jieba 词典（cppjieba 发行）  assets/jieba/          (MIT)
+    - KaTeX 0.16.21 + mhchem      assets/katex/          (MIT, 参考文本
+                                  见本目录 MIT.txt)
+    - jieba 词典（cppjieba 发行）  assets/jieba/          (MIT, 参考文本
+                                  见本目录 MIT.txt)
     - textstyles 文体预设语料      assets/textstyles/     (MIT, 参见
                                   assets/textstyles/LICENSE)
     - Phosphor Icons              res/raw/phosphor_icons_license.txt (MIT)
@@ -81,3 +84,4 @@ full texts remain bundled alongside the assets themselves:
 
 
 Apache License 2.0 full text: assets/third_party_licenses/APACHE-2.0.txt
+MIT reference text:           assets/third_party_licenses/MIT.txt
