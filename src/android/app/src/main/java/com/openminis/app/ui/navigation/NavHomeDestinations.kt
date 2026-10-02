@@ -110,7 +110,7 @@ internal fun NavGraphBuilder.registerHomeDestinations(deps: NavDeps) {
                             navController.safeNavigate(Routes.chat(sessionId))
                         },
                         onAddProviderClick = {
-                            navController.safeNavigate(Routes.ADD_PROVIDER)
+                            navController.safeNavigate(Routes.PROVIDER_ONBOARDING)
                         },
                         onSelectModelsClick = {
                             navController.safeNavigate(Routes.ONBOARDING_MODELS)

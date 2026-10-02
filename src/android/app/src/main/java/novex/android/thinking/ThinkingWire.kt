@@ -78,6 +78,17 @@ sealed interface ThinkingWireFormat {
         override val tag = "deepseek_sibling"
     }
 
+    /**
+     * 智谱 GLM 直连（open.bigmodel.cn）：开档与 [DeepSeekSibling] 同形态
+     * （thinking:{type:"enabled"} + 根级 reasoning_effort 兄弟键），差异在
+     * 关档——GLM-5.3 系文档明确 thinking.type:"disabled" 会报错，也不能省略
+     * （省略落回厂商默认 enabled+max，与关闭意图相反），故按官方迁移指引发
+     * enabled + reasoning_effort=low 模拟关闭。
+     */
+    data object GlmZhipuSibling : StorageFormat {
+        override val tag = "glm_zhipu_sibling"
+    }
+
     /** 无档位的根级布尔开关（点线路径自定）。 */
     data class BooleanToggle(val path: String) : StorageFormat {
         override val tag = "boolean_toggle"
@@ -142,6 +153,7 @@ sealed interface ThinkingWireFormat {
                 "reasoning_effort_nested" -> ReasoningEffortNested(o.optional("offValue"))
                 QwenDual.tag -> QwenDual
                 DeepSeekSibling.tag -> DeepSeekSibling
+                GlmZhipuSibling.tag -> GlmZhipuSibling
                 "boolean_toggle" -> BooleanToggle(o.optString("path", "thinking"))
                 "extra_body_toggle" -> ExtraBodyToggle(o.optString("path", "thinking.enabled"))
                 "anthropic_thinking" -> AnthropicThinking(

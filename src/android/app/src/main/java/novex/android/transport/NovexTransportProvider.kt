@@ -13,6 +13,8 @@ import novex.android.data.model.LLMUsage
 import novex.android.data.model.ThinkingLevel
 import novex.android.data.model.hasImageInput
 import novex.android.logkit.RunLog
+import novex.android.data.model.NovexProviderPresets
+import novex.android.thinking.ThinkingContract
 import com.openminis.app.provider.ImageBudget
 import com.openminis.app.provider.ImageDegradationLearning
 import com.openminis.app.provider.LLMProvider
@@ -511,10 +513,12 @@ class NovexTransportProvider(
             ToolDefinition(definition.name, definition.description, parameters.toString())
         }
         val extras = thinkingParameters(maxTokens, thinkingLevel) ?: JSONObject()
-        // token 上限键按主机选择（贴已删上游 openai 包口径）：OpenRouter 主机收
-        // max_tokens（wire() 默认键），其余一切端点收 max_completion_tokens——OpenAI
-        // 对 o 系/gpt-5 拒收 max_tokens（整线 400），中转前端同受此约束。
-        if (!isOpenRouterHost) extras.put("max_completion_tokens", maxTokens)
+        // token 上限键按主机白名单选择：只有已知拒收 max_tokens 的端点才发
+        // OpenAI 专用的 max_completion_tokens——api.openai.com 对 o 系/gpt-5 收
+        // max_tokens 直接 400，Azure deployments 线此前已走此键（保持）。其余
+        // 端点（智谱、DeepSeek、各兼容中转）只认 max_tokens（wire() 默认键，
+        // 不加附加键）：把 max_completion_tokens 发给它们同样整单 400。
+        if (requiresMaxCompletionTokensKey) extras.put("max_completion_tokens", maxTokens)
         // [OpenMinis#191] OpenRouter 不自动给 Claude 系开 Anthropic prompt caching——
         // 必须显式携带顶层 cache_control 断点，否则 cache_read/write 恒 0（3-6 倍成本
         // 超支）。门槛=主机匹配 + anthropic/ 模型前缀，其余模型请求体逐字节不变。
@@ -810,6 +814,7 @@ class NovexTransportProvider(
                 isMistral = isMistralHost,
                 isDashScope = isDashScopeHost,
                 isXAI = isXAIHost,
+                isZhipuDirect = isZhipuDirectHost,
                 offEffort = explicitOffEffort,
             ),
         )
@@ -860,6 +865,32 @@ class NovexTransportProvider(
     private val isMistralHost: Boolean get() = loweredBase.contains("mistral.ai")
     private val isDashScopeHost: Boolean get() = loweredBase.contains("dashscope")
     private val isXAIHost: Boolean get() = loweredBase.contains("api.x.ai") || loweredBase.contains("//x.ai")
+    /**
+     * 智谱官方直连（open.bigmodel.cn）：GLM 思考席位的命中门槛。严格 URI host
+     * 相等（复用 [NovexProviderPresets.ZHIPU_HOST] 的解析）——子串 contains 会
+     * 把 open.bigmodel.cn.relay.tld 这类伪造域中转误判成官方直连。GLM 机型走
+     * 中转时思考参数形态由网关翻译，交给通用线。
+     */
+    private val isZhipuDirectHost: Boolean get() = NovexProviderPresets.isZhipuBase(basePath)
+    /**
+     * 已知拒收 max_tokens、必须用 OpenAI 专用 max_completion_tokens 的端点/机型
+     * （host 白名单 + 模型族信号）：
+     *  - host 白名单：api.openai.com（o 系/gpt-5 收 max_tokens 整单 400）与
+     *    Azure deployments 线（此前一直发该键，口径保持）；
+     *  - 模型族信号：OpenAI 原生 o 系 / gpt-5 机型无论落在哪个 host 都发——
+     *    中转前端转投 OpenAI 时同样拒收 max_tokens（PR#63 事故，1df2dbae 的
+     *    「除 OpenRouter 全发」口径即为此）。模式复用思考座次表的 o-star 与
+     *    gpt-5-star glob（大小写与点线归一在 ThinkingContract.Scope 内，别处
+     *    不再自造）。
+     * 其余端点与机型一律走 wire() 的默认 max_tokens——智谱/DeepSeek 等只认
+     * 这个键（[T-provider-onboarding] 根因①的修复面保持不变）。
+     */
+    private val requiresMaxCompletionTokensKey: Boolean
+        get() = isAzureLine || loweredBase.contains("api.openai.com") || isOpenAiNativeTierModel
+
+    private val isOpenAiNativeTierModel: Boolean
+        get() = ThinkingContract.Scope.globs("o*", model.id) ||
+            ThinkingContract.Scope.globs("gpt-5*", model.id)
     /** [P3.3 裁军→内置] 前尘 API 中转预设（gemini 系省略思考参数的内置席）。 */
     private val usesUnifiedReasoningEffort: Boolean
         get() = isAzureLine || loweredBase.contains("volces") || loweredBase.contains("ark.") ||

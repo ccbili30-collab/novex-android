@@ -71,6 +71,14 @@ Removed / historical: **Shizuku API + provider (dev.rikka.shizuku 13.1.5, MIT)
 
 Test-only dependencies: JUnit 4.13.2 (**EPL-1.0**), MockWebServer 4.12.0 (**Apache-2.0**), kotlinx-coroutines-test 1.9.0 (**Apache-2.0**), org.json 20231013 (**Public Domain / JSON License**).
 
+## Provider trademarks (logos)
+
+「选择接入方式」引导页（provider onboarding）内的各供应商 logo（智谱 Z
+图标、DeepSeek 鲸鱼标识）为相应公司的**商标**，此处仅用于标识对应服务
+（nominative use，指名使用）：帮助用户辨认正在配置哪家供应商的接口，不构
+成对来源的背书或关联。自定义卡片的小鸟图形为本项目自有素材。若权利方提出
+异议，相关图形将移除并以中性占位替代。
+
 ## Bundled web/UI assets
 
 | Asset | Location | License |
