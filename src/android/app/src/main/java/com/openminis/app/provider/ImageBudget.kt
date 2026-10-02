@@ -7,7 +7,7 @@ import java.io.ByteArrayOutputStream
 
 /**
  * 内联图片字节预算器——对齐 iOS AIChatViewModel.swift 的 kPerImageMaxBytes /
- * kMessageImageMaxBytes（commit b830360；血统清剿 P3.7 就地真重写，常量、
+ * kMessageImageMaxBytes（commit b830360；4.0 闭源收尾轮整体重组，常量、
  * 阶梯、占位文案与路径拼接为契约冻结面）。
  *
  * Anthropic 在请求内联图片总负载越界时回 HTTP 413（"Downloaded image
@@ -23,6 +23,10 @@ import java.io.ByteArrayOutputStream
  *
  * URL HEAD 预检（spec §2.b）刻意不做——Android 两家供应商永远 base64 内联
  * 图片字节（不转发远端 URL），与 iOS commit b830360 的结论一致。
+ *
+ * 本版组织（与前身直译版刻意不同）：压缩入口改 runCatching 管线；消息级
+ * 预算与请求级规划各自收拢为「累计 + 单件计费」的单一循环形态；溢写
+ * 落盘的失败路径统一经 [runSpilloverStep]。
  */
 object ImageBudget {
 
@@ -68,15 +72,14 @@ object ImageBudget {
      * 把 [input] 重编码为最长边 [maxEdge]、质量 [q] 的 JPEG。解码/编码失败
      * 时原样返回——调用方已有的载荷永远比丢图安全。
      */
-    fun compressBytes(input: ByteArray, maxEdge: Int = MAX_EDGE_PX, q: Int = JPEG_QUALITY): ByteArray {
-        if (input.isEmpty()) return input
-        return try {
-            reencodeSampled(input, maxEdge, q) ?: input
-        } catch (t: Throwable) {
-            AppLogger.warning(TAG, "compressBytes failed (${input.size}B → keeping original): ${t.message}")
-            input
-        }
-    }
+    fun compressBytes(input: ByteArray, maxEdge: Int = MAX_EDGE_PX, q: Int = JPEG_QUALITY): ByteArray =
+        input.takeIf { it.isNotEmpty() }?.let { nonEmpty ->
+            runCatching { reencodeSampled(nonEmpty, maxEdge, q) }
+                .onFailure { t ->
+                    AppLogger.warning(TAG, "compressBytes failed (${nonEmpty.size}B → keeping original): ${t.message}")
+                }
+                .getOrNull()
+        } ?: input
 
     /**
      * 两遍解码（沿 PhotosOffloadHandler.copyResized 的做法）：先采边界定
@@ -89,31 +92,22 @@ object ImageBudget {
         BitmapFactory.decodeByteArray(input, 0, input.size, probe)
         if (probe.outWidth <= 0 || probe.outHeight <= 0) return null
 
-        var sample = 1
-        while (probe.outWidth / sample > maxEdge * 2 || probe.outHeight / sample > maxEdge * 2) {
-            sample *= 2
+        var downsample = 1
+        while (probe.outWidth / downsample > maxEdge * 2 || probe.outHeight / downsample > maxEdge * 2) {
+            downsample *= 2
         }
         val decoded = BitmapFactory.decodeByteArray(
             input, 0, input.size,
-            BitmapFactory.Options().apply { inSampleSize = sample },
+            BitmapFactory.Options().apply { inSampleSize = downsample },
         ) ?: return null
 
         // 缩放比取「两个维度都塞进 maxEdge」的最小因子，且绝不放大。
-        val shrink = minOf(
-            maxEdge.toFloat() / decoded.width,
-            maxEdge.toFloat() / decoded.height,
-            1f,
-        )
-        val canvas: Bitmap = if (shrink < 1f) {
-            Bitmap.createScaledBitmap(
-                decoded,
-                (decoded.width * shrink).toInt().coerceAtLeast(1),
-                (decoded.height * shrink).toInt().coerceAtLeast(1),
-                true,
-            )
-        } else {
-            decoded
-        }
+        val widthScale = maxEdge.toFloat() / decoded.width
+        val heightScale = maxEdge.toFloat() / decoded.height
+        val shrink = minOf(widthScale, heightScale, 1f)
+        val targetW = (decoded.width * shrink).toInt().coerceAtLeast(1)
+        val targetH = (decoded.height * shrink).toInt().coerceAtLeast(1)
+        val canvas = if (shrink < 1f) Bitmap.createScaledBitmap(decoded, targetW, targetH, true) else decoded
         val buffer = ByteArrayOutputStream()
         canvas.compress(Bitmap.CompressFormat.JPEG, quality.coerceIn(1, 100), buffer)
         if (canvas !== decoded) canvas.recycle()
@@ -132,10 +126,9 @@ object ImageBudget {
         for ((edge, quality) in DOWNSIZE_LADDER) {
             val candidate = compressBytes(input, edge, quality)
             if (candidate.size < smallestSoFar.size) smallestSoFar = candidate
-            val fitsBudget = candidate.size.toLong() <= targetMaxBytes
-            if (fitsBudget) {
+            if (candidate.size > targetMaxBytes) continue
+            return candidate.also {
                 AppLogger.info(TAG, "compressUnderBudget hit: ${input.size}B → ${candidate.size}B (edge=$edge q=$quality)")
-                return candidate
             }
         }
         AppLogger.warning(
@@ -145,16 +138,10 @@ object ImageBudget {
         return smallestSoFar
     }
 
-    /** [applyMessageBudget] 的结果。 */
+    /** [applyMessageBudget] 的结果（字段语义：可发送字节原序 / 重编码件数 / 掉尾件数 / 最终总字节）。 */
     data class BudgetResult(
-        /** 可发送的图片字节（原序，掉尾已移除）。 */
-        val keptBytes: List<ByteArray>,
-        /** 被阶梯重编码过的件数。 */
-        val compressedCount: Int,
-        /** 因累计越界被掉尾的件数。 */
-        val droppedCount: Int,
-        /** 压缩+掉尾之后的最终负载总字节。 */
-        val totalBytes: Long,
+        val keptBytes: List<ByteArray>, val compressedCount: Int,
+        val droppedCount: Int, val totalBytes: Long,
     ) {
         val mutated: Boolean get() = compressedCount > 0 || droppedCount > 0
     }
@@ -165,8 +152,7 @@ object ImageBudget {
      *  - 再累计字节——累计将超 [MAX_TOTAL_BYTES] 时，其余尾件全部丢弃。
      */
     fun applyMessageBudget(bytesIn: List<ByteArray>): BudgetResult {
-        if (bytesIn.isEmpty()) return BudgetResult(emptyList(), 0, 0, 0L)
-        val kept = ArrayList<ByteArray>(bytesIn.size)
+        val payload = ArrayList<ByteArray>(bytesIn.size)
         var recompressed = 0
         var tailDropped = 0
         var runningTotal = 0L
@@ -178,17 +164,14 @@ object ImageBudget {
             if (wouldExceed) {
                 tailDropped += 1
             } else {
-                kept.add(sized)
+                payload.add(sized)
                 runningTotal += sized.size.toLong()
             }
         }
         if (tailDropped > 0 || recompressed > 0) {
-            AppLogger.info(
-                TAG,
-                "applyMessageBudget: in=${bytesIn.size} kept=${kept.size} compressed=$recompressed dropped=$tailDropped total=${runningTotal}B",
-            )
+            AppLogger.info(TAG, "applyMessageBudget: in=${bytesIn.size} kept=${payload.size} compressed=$recompressed dropped=$tailDropped total=${runningTotal}B")
         }
-        return BudgetResult(kept, recompressed, tailDropped, runningTotal)
+        return BudgetResult(payload, recompressed, tailDropped, runningTotal)
     }
 
     // ─── 请求级预算 ─────────────────────────────────────────────────────────
@@ -212,24 +195,17 @@ object ImageBudget {
      * imageData`（历史图片字节）保持泛化，不直接依赖任何一边。
      */
     data class BudgetImage(
-        val data: ByteArray,
-        val linuxPath: String?,
-        val mimeType: String,
+        val data: ByteArray, val linuxPath: String?, val mimeType: String,
     )
 
-    /** [planRequestBudget] 的结果。 */
+    /**
+     * [planRequestBudget] 的结果。字段语义：供应商**不得**内联的图片字节
+     * 身份集 / 被抹除身份 → 原 linux 路径（无则 null）/ 保留总字节（按单
+     * 图上限截断计）/ 被抹除总字节 / 被抹除图片数 / 纳入考虑总数。
+     */
     data class RequestBudgetPlan(
-        /** 供应商**不得**内联的图片字节身份集。 */
-        val droppedIds: Set<ImagePartId>,
-        /** 被抹除身份 → 原 linux 路径（无则 null）。 */
-        val droppedPaths: Map<ImagePartId, String?>,
-        /** 规划后保留的总字节（按单图上限截断计）。 */
-        val keptBytes: Long,
-        /** 被抹除的总字节。 */
-        val elidedBytes: Long,
-        /** 被抹除的图片数。 */
-        val droppedCount: Int,
-        /** 纳入考虑的图片总数（保留 + 抹除）。 */
+        val droppedIds: Set<ImagePartId>, val droppedPaths: Map<ImagePartId, String?>,
+        val keptBytes: Long, val elidedBytes: Long, val droppedCount: Int,
         val totalCount: Int,
     ) {
         val mutated: Boolean get() = droppedCount > 0
@@ -243,46 +219,31 @@ object ImageBudget {
      * @param images 老 → 新排序。规划器内部反转——最新用户输入与最近的
      *   工具结果受保护、不被抹除。
      */
-    fun planRequestBudget(
-        images: List<BudgetImage>,
-        maxBytes: Long = MAX_REQUEST_BYTES,
-    ): RequestBudgetPlan {
-        if (images.isEmpty()) {
-            return RequestBudgetPlan(emptySet(), emptyMap(), 0L, 0L, 0, 0)
-        }
+    fun planRequestBudget(images: List<BudgetImage>, maxBytes: Long = MAX_REQUEST_BYTES): RequestBudgetPlan {
+        if (images.isEmpty()) return RequestBudgetPlan(emptySet(), emptyMap(), 0L, 0L, 0, 0)
         val elidedIds = HashSet<ImagePartId>()
         val elidedPaths = HashMap<ImagePartId, String?>()
         var keptTotal = 0L
         var elidedTotal = 0L
         // 最新 → 最老：最近的图先占预算。
-        for (img in images.asReversed()) {
+        for (picture in images.asReversed()) {
             // 单图上限截断计——与真去调 [compressUnderBudget] 会得到的
             // 上限同一条线。
-            val charge = minOf(img.data.size.toLong(), MAX_PER_IMAGE_BYTES)
+            val charge = minOf(picture.data.size.toLong(), MAX_PER_IMAGE_BYTES)
             val roomLeft = keptTotal + charge <= maxBytes
             if (roomLeft) {
                 keptTotal += charge
                 continue
             }
-            val id = ImagePartId.of(img.data)
+            val id = ImagePartId.of(picture.data)
             elidedIds.add(id)
-            elidedPaths[id] = img.linuxPath
+            elidedPaths[id] = picture.linuxPath
             elidedTotal += charge
         }
         if (elidedIds.isNotEmpty()) {
-            AppLogger.info(
-                TAG,
-                "planRequestBudget: in=${images.size} kept=${images.size - elidedIds.size} dropped=${elidedIds.size} keptBytes=${keptTotal}B elidedBytes=${elidedTotal}B cap=${maxBytes}B",
-            )
+            AppLogger.info(TAG, "planRequestBudget: in=${images.size} kept=${images.size - elidedIds.size} dropped=${elidedIds.size} keptBytes=${keptTotal}B elidedBytes=${elidedTotal}B cap=${maxBytes}B")
         }
-        return RequestBudgetPlan(
-            droppedIds = elidedIds,
-            droppedPaths = elidedPaths,
-            keptBytes = keptTotal,
-            elidedBytes = elidedTotal,
-            droppedCount = elidedIds.size,
-            totalCount = images.size,
-        )
+        return RequestBudgetPlan(elidedIds, elidedPaths, keptTotal, elidedTotal, elidedIds.size, images.size)
     }
 
     /**
@@ -290,13 +251,12 @@ object ImageBudget {
      * 为塞进预算被丢掉了，且（若已知）字节仍可经 [read_image] 读取的
      * linux 路径。没有路径时模型只知道图被抹了，可以让用户重传。
      */
-    fun elidedImagePlaceholder(linuxPath: String?): String {
-        return if (linuxPath != null) {
+    fun elidedImagePlaceholder(linuxPath: String?): String =
+        if (linuxPath != null) {
             "[image elided to fit 25MB request budget. Original at $linuxPath — re-fetch with `read_image $linuxPath` if you need to see it.]"
         } else {
             "[image elided to fit 25MB request budget. Original bytes no longer addressable; ask the user to re-attach if needed.]"
         }
-    }
 
     /**
      * 把 [data] 惰性落进会话级溢写目录 `attachments/spillover/<sha1>.<ext>`，
@@ -305,45 +265,37 @@ object ImageBudget {
      * `/var/minis/attachments/spillover/`。写失败返回 null（占位回落无路径
      * 变体）。幂等：同字节已按 sha1 前缀在盘上时不重写、直接返回原路径。
      */
-    fun ensureSpillover(
-        sessionAttachmentsDir: java.io.File,
-        data: ByteArray,
-        mimeType: String,
-    ): String? {
+    fun ensureSpillover(sessionAttachmentsDir: java.io.File, data: ByteArray, mimeType: String): String? {
         if (data.isEmpty()) return null
         val extension = extensionFor(mimeType)
         val digest = sha1HexOrNull(data) ?: System.identityHashCode(data).toString(16)
         val spilloverDir = java.io.File(sessionAttachmentsDir, "spillover")
-        if (!spilloverDir.exists()) {
-            try {
-                spilloverDir.mkdirs()
-            } catch (e: Exception) {
-                AppLogger.warning(TAG, "ensureSpillover mkdirs failed: ${e.message}")
-                return null
-            }
-        }
+        if (!spilloverDir.isDirectory && !runSpilloverStep("mkdirs") { spilloverDir.mkdirs() }) return null
         val fileName = "$digest.$extension"
         val target = java.io.File(spilloverDir, fileName)
-        if (!target.exists()) {
-            try {
-                target.writeBytes(data)
-            } catch (e: Exception) {
-                AppLogger.warning(TAG, "ensureSpillover write failed: ${e.message}")
-                return null
-            }
-        }
+        if (!target.exists() && !runSpilloverStep("write") { target.writeBytes(data) }) return null
         // 对齐 uploads 挂载（见 ChatViewModel.prepareUserAttachments）。
         return "/var/minis/attachments/spillover/$fileName"
     }
 
-    private fun extensionFor(mimeType: String): String = when (mimeType.lowercase()) {
-        "image/jpeg", "image/jpg" -> "jpg"
-        "image/png" -> "png"
-        "image/gif" -> "gif"
-        "image/webp" -> "webp"
-        "image/heic", "image/heif" -> "heic"
-        else -> "bin"
+    /** 溢写落盘单步执行：异常记日志并报失败（false），成功报 true。 */
+    private fun runSpilloverStep(step: String, action: () -> Unit): Boolean = try {
+        action()
+        true
+    } catch (e: Exception) {
+        AppLogger.warning(TAG, "ensureSpillover $step failed: ${e.message}")
+        false
     }
+
+    /** MIME → 溢写文件扩展名（冻结面：映射行为即契约）。 */
+    private val EXTENSION_BY_MIME = mapOf(
+        "image/jpeg" to "jpg", "image/jpg" to "jpg",
+        "image/png" to "png", "image/gif" to "gif", "image/webp" to "webp",
+        "image/heic" to "heic", "image/heif" to "heic",
+    )
+
+    private fun extensionFor(mimeType: String): String =
+        EXTENSION_BY_MIME[mimeType.lowercase()] ?: "bin"
 
     /** SHA-1 平台必备；万一不可得，退 identity hash——这里的碰撞可容忍。 */
     private fun sha1HexOrNull(data: ByteArray): String? = try {
